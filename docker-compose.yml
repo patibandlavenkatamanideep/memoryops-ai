@@ -1,0 +1,72 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-memoryops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memoryops}
+      POSTGRES_DB: ${POSTGRES_DB:-memoryops}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Migrations + seed run in lexical order on first boot.
+      - ./infra/db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./infra/db/seed.sql:/docker-entrypoint-initdb.d/zzz_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-memoryops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./services/api
+    environment:
+      MEMORYOPS_STORAGE: postgres
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-memoryops}:${POSTGRES_PASSWORD:-memoryops}@db:5432/${POSTGRES_DB:-memoryops}
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-heuristic}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./services/worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-memoryops}:${POSTGRES_PASSWORD:-memoryops}@db:5432/${POSTGRES_DB:-memoryops}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
