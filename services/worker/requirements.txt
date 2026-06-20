@@ -1,0 +1,3 @@
+# The worker reuses the API package on PYTHONPATH; it shares the API's deps.
+# For the Postgres-backed worker, also install the API's postgres extras.
+-r ../api/requirements.txt
