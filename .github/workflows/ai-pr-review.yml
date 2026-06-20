@@ -1,0 +1,152 @@
+name: PR Invariant Evidence Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: invariant-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  invariant-gate:
+    name: PR Invariant Evidence Gate
+    runs-on: ubuntu-latest
+    env:
+      REVIEW_MARKER: "<!-- memoryops-invariant-gate -->"
+      # No LLM keys: this gate is deterministic and offline.
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Detect sensitive surfaces
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            | sort | tee /tmp/changed_files.txt
+
+          match() { grep -Eq "$1" /tmp/changed_files.txt && echo "true" || echo "false"; }
+
+          policy_broker="$(match '^services/api/app/services/policy_broker\.py')"
+          redaction="$(match '^services/api/app/core/redaction\.py')"
+          repo_isolation="$(match '^services/api/app/db/')"
+          gateway="$(match '^services/api/app/services/gateway\.py')"
+          write_audit="$(match '^services/api/app/services/(write_service|audit)\.py')"
+          migrations="$(match '^infra/db/')"
+          evals_tests="$(match '^(evals/|services/api/tests/)')"
+          docs_claims="$(match '^(README\.md|docs/)')"
+
+          {
+            echo "policy_broker=$policy_broker"
+            echo "redaction=$redaction"
+            echo "repo_isolation=$repo_isolation"
+            echo "gateway=$gateway"
+            echo "write_audit=$write_audit"
+            echo "migrations=$migrations"
+            echo "evals_tests=$evals_tests"
+            echo "docs_claims=$docs_claims"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install API dev deps
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Unit tests
+        id: unit_tests
+        continue-on-error: true
+        working-directory: services/api
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: pytest -q | tee /tmp/unit_tests.txt
+
+      - name: Eval harness
+        id: evals
+        continue-on-error: true
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: python evals/run_evals.py | tee /tmp/evals.txt
+
+      - name: Build evidence report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkbox() { [[ "$1" == "true" ]] && echo "- [x] $2" || echo "- [ ] $2"; }
+          {
+            echo "$REVIEW_MARKER"
+            echo "## MemoryOps AI — PR Invariant Evidence Gate (v0.1)"
+            echo
+            echo "CI-only, deterministic, no LLM call. Deterministic checks are"
+            echo "enforced; this checklist is advisory. Policy: docs/ai-pr-review-policy.md"
+            echo
+            echo "### Sensitive surfaces changed"
+            checkbox "${{ steps.detect.outputs.policy_broker }}" "Policy broker (policy-before-storage)"
+            checkbox "${{ steps.detect.outputs.redaction }}" "Redaction / secret + injection detection"
+            checkbox "${{ steps.detect.outputs.repo_isolation }}" "Repository (tenant isolation + deletion)"
+            checkbox "${{ steps.detect.outputs.gateway }}" "Gateway (temporary chat, degradation)"
+            checkbox "${{ steps.detect.outputs.write_audit }}" "Write service / audit (provenance, auditability)"
+            checkbox "${{ steps.detect.outputs.migrations }}" "DB migrations / RLS posture"
+            checkbox "${{ steps.detect.outputs.evals_tests }}" "Evals / tests"
+            checkbox "${{ steps.detect.outputs.docs_claims }}" "README / docs claims"
+            echo
+            echo "### CI evidence from this run"
+            echo "- Unit tests: ${{ steps.unit_tests.outcome }}"
+            echo "- Eval harness (invariants): ${{ steps.evals.outcome }}"
+            echo
+            echo "### Changed files"
+            sed 's/^/- `/' /tmp/changed_files.txt | sed 's/$/`/'
+          } > /tmp/comment.md
+          cat /tmp/comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post or update PR comment
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = process.env.REVIEW_MARKER;
+            const body = fs.readFileSync("/tmp/comment.md", "utf8");
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100,
+            });
+            const previous = comments.data.find(
+              (c) => c.user.type === "Bot" && c.body.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Enforce deterministic checks
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed="false"
+          [[ "${{ steps.unit_tests.outcome }}" != "success" ]] && { echo "Unit tests failed."; failed="true"; }
+          [[ "${{ steps.evals.outcome }}" != "success" ]] && { echo "Eval harness failed."; failed="true"; }
+          [[ "$failed" == "true" ]] && exit 1 || echo "All deterministic checks passed."

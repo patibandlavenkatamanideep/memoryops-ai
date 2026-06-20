@@ -48,8 +48,10 @@ services:
 
   worker:
     build:
-      context: ./services/worker
+      context: .
+      dockerfile: services/worker/Dockerfile
     environment:
+      MEMORYOPS_STORAGE: postgres
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-memoryops}:${POSTGRES_PASSWORD:-memoryops}@db:5432/${POSTGRES_DB:-memoryops}
       REDIS_URL: redis://redis:6379/0
     depends_on:

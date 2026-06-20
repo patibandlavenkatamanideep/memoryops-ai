@@ -1,0 +1,11 @@
+# Railway service config for the MemoryOps AI API.
+# Set the service "Root Directory" to services/api in the Railway dashboard.
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"

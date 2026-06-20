@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API — tests + lint + evals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dev deps
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        working-directory: services/api
+        run: ruff check app
+
+      - name: Unit tests
+        working-directory: services/api
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: pytest -q
+
+      - name: Eval harness (invariants)
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: python evals/run_evals.py
+
+  web:
+    name: Web — build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install
+        working-directory: apps/web
+        run: npm ci || npm install
+
+      - name: Build
+        working-directory: apps/web
+        run: npm run build
