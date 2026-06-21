@@ -101,6 +101,25 @@ export default function ChatPage() {
               </span>
             )}
 
+            {t.resp.loop_evidence && (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(t.resp.loop_evidence).map(([loop, status]) => (
+                  <span
+                    key={loop}
+                    className={`chip ${
+                      status === "completed"
+                        ? "border-emerald-600 text-emerald-400"
+                        : status === "safe_degraded"
+                        ? "border-amber-600 text-amber-400"
+                        : "border-slate-600 text-slate-400"
+                    }`}
+                  >
+                    {loop}: {status}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {t.resp.used_memories.length > 0 && (
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Memory used</p>

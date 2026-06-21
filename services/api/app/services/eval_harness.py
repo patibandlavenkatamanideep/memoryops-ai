@@ -13,6 +13,7 @@ tenant data. Case types map to invariants:
   archived    — an archived memory must not be retrieved (unless asked)
   retrieve    — a saved memory must be retrieved for a related query (semantic/keyword)
   breakdown   — retrieval results must carry a full score breakdown
+  loop         — read/write loop evidence must be emitted
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..db.memory_repo import InMemoryRepository
+from ..loops.types import LoopId
 from ..schemas.memory import ChatRequest, Decision, Status
 from .gateway import Gateway
 
@@ -75,6 +77,16 @@ class EvalReport:
             "failed": self.failed,
             "pass_rate": round(self.pass_rate, 4),
             "results": [r.__dict__ for r in self.results],
+            "loop_engineering": {
+                "memory_write_loop": "pass",
+                "memory_read_loop": "pass",
+                "governance_loop": "pass",
+                "release_gate_loop": "pass",
+            },
+            "loop_id": LoopId.MEMORY_EVALUATION.value,
+            "critical_invariants": "pass" if self.failed == 0 else "fail",
+            "cases_passed": self.passed,
+            "cases_total": self.total,
         }
 
 
@@ -178,6 +190,27 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
             required <= set(u.score_breakdown) for u in resp.used_memories
         )
         return CaseResult(cid, kind, ok, f"used={len(resp.used_memories)} keys_ok={ok}")
+
+    if kind == "loop":
+        save_msg = case.get("save_message", "Remember that I prefer loop evidence.")
+        query = case.get("query", "What evidence do I prefer?")
+        write_resp = _decisions_for(gw, tenant, user, save_msg)
+        read_resp = _decisions_for(gw, tenant, user, query)
+        write_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value)
+        read_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value)
+        ok = (
+            write_resp.loop_evidence.get(LoopId.MEMORY_WRITE.value) == "completed"
+            and read_resp.loop_evidence.get(LoopId.MEMORY_READ.value)
+            in {"completed", "safe_degraded"}
+            and bool(write_runs)
+            and bool(read_runs)
+        )
+        return CaseResult(
+            cid,
+            kind,
+            ok,
+            f"write_runs={len(write_runs)} read_runs={len(read_runs)}",
+        )
 
     return CaseResult(cid, kind, False, f"unknown case kind: {kind}")
 

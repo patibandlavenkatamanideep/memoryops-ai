@@ -73,6 +73,14 @@ is never compressed (it is never retrieved/composed in the first place).
 Explainability metadata (`used_memories` + score breakdown) is built on the
 uncompressed path. See [docs/token-compression.md](token-compression.md).
 
+## Loop governance (v0.2.2)
+
+The governance surface is modeled as `memory.governance`. Viewing, editing,
+approving, rejecting, archiving, and deleting memory emits loop events with
+structured evidence and links to audit events where a governance record is
+written. This keeps operational loop traces separate from append-only audit
+records while making the state transition visible.
+
 ## Retention & feedback
 
 - `memory_feedback` captures `helpful | wrong | outdated | sensitive | not_relevant` and feeds the

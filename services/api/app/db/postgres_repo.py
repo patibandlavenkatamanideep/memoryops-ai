@@ -14,7 +14,16 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import get_settings
-from ..models.sqlalchemy_models import AuditLogORM, Base, MemoryRecordORM, SettingsORM
+from ..loops.metrics import summarize_loop_runs
+from ..loops.types import LoopEvent, LoopId, LoopRun, LoopState, LoopStatus
+from ..models.sqlalchemy_models import (
+    AuditLogORM,
+    Base,
+    LoopEventORM,
+    LoopRunORM,
+    MemoryRecordORM,
+    SettingsORM,
+)
 from ..schemas.memory import MemoryType, Sensitivity, Source, Status
 from .entities import StoredAudit, StoredMemory, StoredSettings
 from .repository import Repository
@@ -48,6 +57,42 @@ def _to_stored(row: MemoryRecordORM) -> StoredMemory:
         updated_at=row.updated_at,
         archived_at=row.archived_at,
         deleted_at=row.deleted_at,
+    )
+
+
+def _parse_dt(value) -> str:
+    if value is None:
+        return ""
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _loop_run_from_row(row: LoopRunORM) -> LoopRun:
+    return LoopRun(
+        id=row.id,
+        loop_id=LoopId(row.loop_id),
+        trace_id=row.trace_id,
+        tenant_id=row.tenant_id,
+        user_id=row.user_id,
+        status=LoopStatus(row.status),
+        started_at=_parse_dt(row.started_at),
+        ended_at=_parse_dt(row.ended_at) if row.ended_at else None,
+        metadata=row.extra_metadata or {},
+    )
+
+
+def _loop_event_from_row(row: LoopEventORM) -> LoopEvent:
+    return LoopEvent(
+        id=row.id,
+        loop_run_id=row.loop_run_id,
+        loop_id=LoopId(row.loop_id),
+        trace_id=row.trace_id,
+        state_from=LoopState(row.state_from) if row.state_from else None,
+        state_to=LoopState(row.state_to),
+        event_type=row.event_type,
+        reason=row.reason,
+        evidence=row.evidence or {},
+        audit_event_id=row.audit_event_id,
+        created_at=_parse_dt(row.created_at),
     )
 
 
@@ -304,4 +349,97 @@ class PostgresRepository(Repository):
             "by_status": by_status,
             "audit_events": len(audit),
             "by_action": by_action,
+            "loops": summarize_loop_runs(self.list_loop_runs(tenant_id=tenant_id)),
         }
+
+    # ── loops ────────────────────────────────────────────────────────────────
+    def add_loop_run(self, run: LoopRun) -> LoopRun:
+        with self._scoped(run.tenant_id or "", run.user_id or "") as s:
+            row = LoopRunORM(
+                id=run.id,
+                loop_id=run.loop_id.value,
+                trace_id=run.trace_id,
+                tenant_id=run.tenant_id,
+                user_id=run.user_id,
+                status=run.status.value,
+                extra_metadata=run.metadata,
+            )
+            s.add(row)
+            s.commit()
+            return run
+
+    def update_loop_run(self, run: LoopRun) -> LoopRun:
+        with self._scoped(run.tenant_id or "", run.user_id or "") as s:
+            row = s.get(LoopRunORM, run.id)
+            if not row:
+                raise ValueError("loop run not found")
+            row.status = run.status.value
+            row.ended_at = datetime.fromisoformat(run.ended_at) if run.ended_at else None
+            row.extra_metadata = run.metadata
+            s.commit()
+            return run
+
+    def list_loop_runs(
+        self,
+        *,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[LoopRun]:
+        with self._scoped(tenant_id or "", user_id or "") as s:
+            stmt = select(LoopRunORM)
+            if loop_id:
+                stmt = stmt.where(LoopRunORM.loop_id == loop_id)
+            if trace_id:
+                stmt = stmt.where(LoopRunORM.trace_id == trace_id)
+            if tenant_id:
+                stmt = stmt.where(LoopRunORM.tenant_id == tenant_id)
+            if user_id:
+                stmt = stmt.where(LoopRunORM.user_id == user_id)
+            if status:
+                stmt = stmt.where(LoopRunORM.status == status)
+            stmt = stmt.order_by(LoopRunORM.started_at.desc()).limit(limit)
+            return [_loop_run_from_row(r) for r in s.scalars(stmt)]
+
+    def add_loop_event(self, event: LoopEvent) -> LoopEvent:
+        with self._scoped("", "") as s:
+            row = LoopEventORM(
+                id=event.id,
+                loop_run_id=event.loop_run_id,
+                loop_id=event.loop_id.value,
+                trace_id=event.trace_id,
+                state_from=event.state_from.value if event.state_from else None,
+                state_to=event.state_to.value,
+                event_type=event.event_type,
+                reason=event.reason,
+                evidence=event.evidence,
+                audit_event_id=event.audit_event_id,
+            )
+            s.add(row)
+            s.commit()
+            return event
+
+    def list_loop_events(
+        self,
+        *,
+        loop_run_id: str | None = None,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> list[LoopEvent]:
+        with self._scoped("", "") as s:
+            stmt = select(LoopEventORM)
+            if loop_run_id:
+                stmt = stmt.where(LoopEventORM.loop_run_id == loop_run_id)
+            if loop_id:
+                stmt = stmt.where(LoopEventORM.loop_id == loop_id)
+            if trace_id:
+                stmt = stmt.where(LoopEventORM.trace_id == trace_id)
+            if event_type:
+                stmt = stmt.where(LoopEventORM.event_type == event_type)
+            stmt = stmt.order_by(LoopEventORM.created_at.desc()).limit(limit)
+            return [_loop_event_from_row(r) for r in s.scalars(stmt)]

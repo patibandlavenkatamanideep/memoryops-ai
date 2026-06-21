@@ -58,5 +58,11 @@
     "kind": "breakdown",
     "save_message": "Remember that I prefer concise answers.",
     "query": "How detailed should answers be?"
+  },
+  {
+    "id": "golden-loop-evidence-present",
+    "kind": "loop",
+    "save_message": "Remember that I prefer loop-engineered memory systems.",
+    "query": "What kind of memory systems do I prefer?"
   }
 ]

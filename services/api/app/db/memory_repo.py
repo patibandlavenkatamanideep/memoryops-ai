@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from ..loops.metrics import summarize_loop_runs
+from ..loops.types import LoopEvent, LoopRun
 from .entities import StoredAudit, StoredMemory, StoredSettings
 from .repository import Repository
 
@@ -24,6 +26,8 @@ class InMemoryRepository(Repository):
         self._memories: dict[str, StoredMemory] = {}
         self._audit: list[StoredAudit] = []
         self._settings: dict[tuple[str, str], StoredSettings] = {}
+        self._loop_runs: dict[str, LoopRun] = {}
+        self._loop_events: list[LoopEvent] = []
 
     # ── memory ───────────────────────────────────────────────────────────────
     def create_memory(self, memory: StoredMemory) -> StoredMemory:
@@ -149,4 +153,63 @@ class InMemoryRepository(Repository):
             "by_status": by_status,
             "audit_events": len(audit),
             "by_action": by_action,
+            "loops": summarize_loop_runs(
+                [r for r in self._loop_runs.values() if r.tenant_id in (tenant_id, None)]
+            ),
         }
+
+    # ── loops ────────────────────────────────────────────────────────────────
+    def add_loop_run(self, run: LoopRun) -> LoopRun:
+        self._loop_runs[run.id] = run
+        return run
+
+    def update_loop_run(self, run: LoopRun) -> LoopRun:
+        self._loop_runs[run.id] = run
+        return run
+
+    def list_loop_runs(
+        self,
+        *,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[LoopRun]:
+        rows = list(self._loop_runs.values())
+        if loop_id:
+            rows = [r for r in rows if r.loop_id.value == loop_id]
+        if trace_id:
+            rows = [r for r in rows if r.trace_id == trace_id]
+        if tenant_id:
+            rows = [r for r in rows if r.tenant_id == tenant_id]
+        if user_id:
+            rows = [r for r in rows if r.user_id == user_id]
+        if status:
+            rows = [r for r in rows if r.status.value == status]
+        return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
+
+    def add_loop_event(self, event: LoopEvent) -> LoopEvent:
+        self._loop_events.append(event)
+        return event
+
+    def list_loop_events(
+        self,
+        *,
+        loop_run_id: str | None = None,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> list[LoopEvent]:
+        rows = self._loop_events
+        if loop_run_id:
+            rows = [e for e in rows if e.loop_run_id == loop_run_id]
+        if loop_id:
+            rows = [e for e in rows if e.loop_id.value == loop_id]
+        if trace_id:
+            rows = [e for e in rows if e.trace_id == trace_id]
+        if event_type:
+            rows = [e for e in rows if e.event_type == event_type]
+        return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]

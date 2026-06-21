@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ..loops.types import LoopEvent, LoopRun
 from .entities import StoredAudit, StoredMemory, StoredSettings
 
 
@@ -83,3 +84,36 @@ class Repository(ABC):
     # ── metrics ──────────────────────────────────────────────────────────────
     @abstractmethod
     def metrics(self, tenant_id: str) -> dict: ...
+
+    # ── loops ────────────────────────────────────────────────────────────────
+    @abstractmethod
+    def add_loop_run(self, run: LoopRun) -> LoopRun: ...
+
+    @abstractmethod
+    def update_loop_run(self, run: LoopRun) -> LoopRun: ...
+
+    @abstractmethod
+    def list_loop_runs(
+        self,
+        *,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[LoopRun]: ...
+
+    @abstractmethod
+    def add_loop_event(self, event: LoopEvent) -> LoopEvent: ...
+
+    @abstractmethod
+    def list_loop_events(
+        self,
+        *,
+        loop_run_id: str | None = None,
+        loop_id: str | None = None,
+        trace_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> list[LoopEvent]: ...

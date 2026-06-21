@@ -1,6 +1,6 @@
 # Architecture — MemoryOps AI
 
-MemoryOps AI is a **governed memory lifecycle system**. It treats memory not as a vector store but
+MemoryOps AI is a **governed loop-engineered memory lifecycle system**. It treats memory not as a vector store but
 as state that must be captured, evaluated, stored, retrieved, ranked, composed, updated, forgotten,
 and audited — under five cross-cutting planes.
 
@@ -140,6 +140,71 @@ sequenceDiagram
         GW-->>U: answer + used_memories + candidate decisions
     end
 ```
+
+### Memory write loop
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant G as Gateway
+  participant E as Extractor
+  participant P as Policy Broker
+  participant S as Store
+  participant A as Audit
+  participant L as Loop Events
+
+  U->>G: Message
+  G->>L: observed
+  G->>E: Extract candidate
+  E->>L: classified
+  E->>P: Candidate memory
+  P->>L: policy_checked
+  P->>S: Save / pending / block
+  S->>L: executed
+  S->>A: Audit event
+  A->>L: audited
+  L->>L: completed
+```
+
+### Memory read loop
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant R as Retriever
+  participant K as Ranker
+  participant C as Context Composer
+  participant H as Headroom Optional
+  participant LLM as LLM
+  participant LE as Loop Events
+
+  U->>R: Query
+  R->>LE: observed
+  R->>R: Tenant/status/deleted filters
+  R->>LE: policy_checked
+  R->>K: Candidate memories
+  K->>C: Ranked memories
+  C->>H: Optional compression
+  H->>LLM: Compressed or original context
+  LE->>LE: completed or safe_degraded
+```
+
+## Loop engineering layer (v0.2.2)
+
+Loop engineering makes the major memory workflows explicit:
+
+```text
+Observe -> Decide -> Act -> Verify -> Audit -> Learn
+```
+
+The six primary loops are `memory.write`, `memory.read`, `memory.governance`,
+`memory.evaluation`, `release.gate`, and `learning.continuous`. Definitions live
+in `services/api/app/loops/registry.py`; transition rules live in
+`services/api/app/loops/state_machine.py`; operational runs/events are stored via
+the repository and exposed at `/api/loops`.
+
+Loop events are separate from audit logs. Loop events answer where a workflow is
+in its decision cycle; audit logs answer who did what, when, and why.
 
 ## Write path (Phase 1 — implemented)
 

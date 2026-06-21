@@ -1,8 +1,8 @@
 # MemoryOps AI
 
-MemoryOps AI is an enterprise-shaped memory governance layer for AI assistants. It implements a
-ChatGPT-style memory lifecycle with capture, policy evaluation, typed storage, hybrid retrieval,
-controlled forgetting, auditability, and tenant isolation.
+MemoryOps AI is an enterprise-shaped, loop-engineered memory governance layer for AI assistants.
+It implements a ChatGPT-style memory lifecycle with capture, policy evaluation, typed storage,
+hybrid retrieval, controlled forgetting, auditability, and tenant isolation.
 
 Most demos treat memory as a vector database. MemoryOps AI treats memory as **governed state**.
 
@@ -186,6 +186,27 @@ The frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
 - Memory dashboard + admin/audit + architecture pages (frontend skeleton).
 - Invariant test suite + eval harness scaffolding.
 
+## Loop Engineering Layer (v0.2.2)
+
+MemoryOps models memory as a set of governed loops rather than a passive store.
+
+The core loops are:
+
+1. Memory Write Loop
+2. Memory Read Loop
+3. Governance Loop
+4. Evaluation Loop
+5. Release Gate Loop
+6. Continuous Learning Loop
+
+Each loop has explicit states, policy gates, audit events, fallback behavior, and
+evidence requirements. Loop definitions live in `services/api/app/loops/`, loop
+runs/events are exposed through `/api/loops`, and the frontend includes a Loops page.
+
+See [docs/loop-engineering.md](docs/loop-engineering.md),
+[docs/loop-contracts.md](docs/loop-contracts.md), and
+[docs/release-loop.md](docs/release-loop.md).
+
 ## Token Compression Layer (v0.2.1)
 
 MemoryOps supports an optional [Headroom](https://github.com/chopratejas/headroom)-powered
@@ -257,6 +278,8 @@ system with release discipline, review gates, and operational safety. Overview:
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — write path, read path, planes, invariants.
+- [docs/loop-engineering.md](docs/loop-engineering.md) — loop definitions, states, gates, evidence.
+- [docs/loop-contracts.md](docs/loop-contracts.md) — LoopDefinition, LoopRun, LoopEvent contracts.
 - [docs/security.md](docs/security.md) — tenant isolation, secret detection, deletion guarantee.
 - [docs/governance.md](docs/governance.md) — lifecycle, approvals, audit, retention.
 - [docs/rollout.md](docs/rollout.md) — phased delivery and production roadmap.

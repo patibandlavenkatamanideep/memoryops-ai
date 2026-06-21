@@ -73,6 +73,36 @@ class AuditLogORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class LoopRunORM(Base):
+    __tablename__ = "loop_runs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    loop_id: Mapped[str] = mapped_column(String, index=True)
+    trace_id: Mapped[str] = mapped_column(String, index=True)
+    tenant_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    extra_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+
+
+class LoopEventORM(Base):
+    __tablename__ = "loop_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    loop_run_id: Mapped[str] = mapped_column(String, index=True)
+    loop_id: Mapped[str] = mapped_column(String, index=True)
+    trace_id: Mapped[str] = mapped_column(String, index=True)
+    state_from: Mapped[str | None] = mapped_column(String, nullable=True)
+    state_to: Mapped[str] = mapped_column(String)
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    audit_event_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class SettingsORM(Base):
     __tablename__ = "memory_settings"
 

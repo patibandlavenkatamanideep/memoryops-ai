@@ -57,10 +57,19 @@ export default function AdminPage() {
       {error && <p className="text-sm text-rose-400">API error: {error}</p>}
 
       {evals && (
-        <div className="card">
+        <div className="card space-y-2">
           <span className="chip border-emerald-600 text-emerald-400">
             evals {evals.passed}/{evals.total} passed · {(evals.pass_rate * 100).toFixed(0)}%
           </span>
+          {evals.loop_engineering && (
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(evals.loop_engineering).map(([loop, status]) => (
+                <span key={loop} className="chip">
+                  {loop.replace(/_/g, " ")}: {status}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -121,6 +130,40 @@ export default function AdminPage() {
           session GUC), in addition to application-level <span className="text-slate-300">tenant_id</span>/
           <span className="text-slate-300">user_id</span> filtering. See ADR-006.
         </p>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold text-white">Loop engineering</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Loop runs</p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {metrics?.loops?.total_runs ?? 0}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Failed loops</p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {metrics?.loops?.failed ?? 0}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Safe-degraded</p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {metrics?.loops?.safe_degraded ?? 0}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Common failure</p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              {metrics?.loops?.most_common_failure_mode ?? "none"}
+            </p>
+          </div>
+          <div className="card">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Release gate</p>
+            <p className="mt-1 text-sm font-semibold text-emerald-400">documented</p>
+          </div>
+        </div>
       </div>
 
       <div className="card">

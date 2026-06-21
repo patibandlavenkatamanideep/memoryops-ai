@@ -136,6 +136,7 @@ class ChatResponse(BaseModel):
     # Optional context compression metrics (present only when compression is
     # configured and there was a context block to compress).
     compression: Compression | None = None
+    loop_evidence: dict[str, str] = Field(default_factory=dict)
     trace_id: str
 
 

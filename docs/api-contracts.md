@@ -25,7 +25,9 @@ Response:
   "candidate_memories": [{ "content": "...", "decision": "SAVE", "type": "procedural",
     "confidence": 0.92, "importance": 8, "sensitivity": "low", "reason": "...", "memory_id": "..." }],
   "audit_event_ids": ["..."], "temporary_chat": false,
-  "retrieval_mode": "hybrid", "trace_id": "..." }
+  "retrieval_mode": "hybrid",
+  "loop_evidence": { "memory.read": "completed", "memory.write": "completed" },
+  "trace_id": "..." }
 ```
 `decision ∈ {SAVE, PENDING_APPROVAL, BLOCK, DROP_LOW_UTILITY, UPDATE_EXISTING, MERGE_WITH_EXISTING}`.
 
@@ -72,3 +74,15 @@ Runs the invariant eval harness in-process. Returns
 - `GET /healthz` → `{ status, version }`
 - `GET /readyz` → `{ ready, storage, llm_provider, embeddings_provider, embedding_dim, detail }`
 - Every response carries an `x-trace-id` header.
+
+## Loop Engineering (v0.2.2)
+
+- `GET /api/loops` -> `LoopDefinition[]`
+- `GET /api/loops/{loop_id}` -> one `LoopDefinition`
+- `GET /api/loops/runs?loop_id=&trace_id=&tenant_id=&user_id=&status=` -> `LoopRun[]`
+- `GET /api/loops/events?loop_run_id=&loop_id=&trace_id=&event_type=` -> `LoopEvent[]`
+- `GET /api/loops/trace/{trace_id}` -> `{ trace_id, runs, events }`
+
+Loop metadata must be structured and safe: no raw API keys, secrets, passwords,
+or full user messages. Loop events can link to governance audit events through
+`audit_event_id`.

@@ -54,6 +54,7 @@ export interface ChatResponse {
   audit_event_ids: string[];
   temporary_chat: boolean;
   retrieval_mode?: RetrievalMode;
+  loop_evidence?: Record<string, string>;
   trace_id: string;
 }
 
@@ -80,6 +81,53 @@ export interface AuditEvent {
   memory_id?: string | null;
   trace_id?: string | null;
   created_at: string;
+}
+
+export interface LoopDefinition {
+  id: string;
+  name: string;
+  purpose: string;
+  trigger: string;
+  input_contract: string;
+  output_contract: string;
+  states: string[];
+  policy_gates: string[];
+  audit_events: string[];
+  failure_modes: string[];
+  fallback_behavior: string[];
+  evidence_required: string[];
+}
+
+export interface LoopRun {
+  id: string;
+  loop_id: string;
+  trace_id: string;
+  tenant_id?: string | null;
+  user_id?: string | null;
+  status: string;
+  started_at: string;
+  ended_at?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface LoopEvent {
+  id: string;
+  loop_run_id: string;
+  loop_id: string;
+  trace_id: string;
+  state_from?: string | null;
+  state_to: string;
+  event_type: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  audit_event_id?: string | null;
+  created_at: string;
+}
+
+export interface LoopTrace {
+  trace_id: string;
+  runs: LoopRun[];
+  events: LoopEvent[];
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -130,13 +178,32 @@ export const api = {
       by_status: Record<string, number>;
       audit_events: number;
       by_action: Record<string, number>;
+      loops?: {
+        total_runs: number;
+        by_status: Record<string, number>;
+        by_loop: Record<string, number>;
+        failed: number;
+        safe_degraded: number;
+        most_common_failure_mode?: string | null;
+      };
     }>(`/api/metrics?tenant_id=${DEMO_TENANT}`),
 
   runEvals: () =>
-    http<{ total: number; passed: number; failed: number; pass_rate: number }>(
-      "/api/evals/run",
-      { method: "POST" }
-    ),
+    http<{
+      total: number;
+      passed: number;
+      failed: number;
+      pass_rate: number;
+      loop_engineering?: Record<string, string>;
+    }>("/api/evals/run", { method: "POST" }),
+
+  loops: () => http<LoopDefinition[]>("/api/loops"),
+
+  loopRuns: () => http<LoopRun[]>(`/api/loops/runs?tenant_id=${DEMO_TENANT}`),
+
+  loopEvents: () => http<LoopEvent[]>("/api/loops/events"),
+
+  loopTrace: (traceId: string) => http<LoopTrace>(`/api/loops/trace/${traceId}`),
 
   ready: () =>
     http<{

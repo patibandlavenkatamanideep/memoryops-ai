@@ -13,7 +13,8 @@ MemoryOps AI ships in versioned GitHub Releases, following the same convention a
 ## Release checklist
 
 1. Ensure `main` is green: `pytest -q`, `ruff check app`, `python evals/run_evals.py`,
-   `npm run build`.
+   `npm run build`. See [docs/release-loop.md](docs/release-loop.md) for the
+   `release.gate` loop contract.
 2. Decide the version and a one-line summary.
 3. Tag and push:
    ```bash

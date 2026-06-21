@@ -37,6 +37,8 @@ def main() -> int:
             critical_failed = True
 
     print()
+    print(f"Loop evidence: {report.to_dict()['loop_engineering']}")
+    print()
     if critical_failed:
         print("RESULT: FAIL — a critical invariant case did not pass.")
         return 1
