@@ -44,5 +44,7 @@ RLS-ready schema (enable → enforce), pgvector index, golden + adversarial eval
 - Observability: OpenTelemetry traces → Tempo/Jaeger; metrics → Prometheus/Grafana; LLM traces →
   Langfuse.
 - Workers on Celery/Temporal with retries + dead-letter queues.
-- Deploy: API on Railway/Render, web on Vercel, managed Postgres (pgvector) + Redis.
+- Deploy: **Railway only** — one project, five services (web, api, worker,
+  managed Postgres+pgvector, Redis). No Vercel. See
+  [docs/deployment/railway.md](deployment/railway.md). (Aligned in v0.3.2.)
 - Cost controls: cache embeddings, batch extraction, track cost per write/retrieval.

@@ -55,6 +55,12 @@ cd services/api && pip install -r requirements-dev.txt && pytest -q
 docker compose up --build
 ```
 
+> **Deployment is Railway-only** (no Vercel) — one project, five services
+> (web/api/worker + Postgres + Redis). Canonical docs live in
+> `docs/deployment/railway.md`, `railway/`, and the phase gate
+> `docs/phase-gates/phase-13-infrastructure.md`; `AGENTS.md` holds the
+> operator-facing deployment workflow. (v0.3.2)
+
 ## Conventions
 
 - New lifecycle actions MUST emit an audit event via `AuditService`.

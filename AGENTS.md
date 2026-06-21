@@ -51,6 +51,25 @@ cd services/api && pip install -r requirements-dev.txt && pytest -q
 docker compose up --build
 ```
 
+## Deployment workflow (Railway-only — v0.3.2)
+
+Deployment target is **Railway only**. Do **not** add or suggest a Vercel path.
+One project (`memoryops-ai`), five services: `memoryops-web`, `memoryops-api`,
+`memoryops-worker`, Railway Postgres (+pgvector), Railway Redis.
+
+- Config-as-code lives in `railway/{api,web,worker}.railway.json`; point each
+  Railway service at its file. Builder is `DOCKERFILE`.
+- Per-service Root Directory: api → `services/api`, web → `apps/web`, worker →
+  repo root. Full settings + deploy order: `docs/deployment/railway.md`.
+- Env var contract per service: `docs/deployment/railway-env.md`. The system runs
+  with **no provider keys** (heuristic LLM + stub embeddings); set
+  `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`, `REDIS_URL` for production, and
+  build-time `NEXT_PUBLIC_API_URL` for web.
+- After deploy, run `scripts/railway_smoke_test.py` (see
+  `docs/deployment/railway-smoke-test.md`).
+- When changing deployment, update `railway/`, the three `docs/deployment/*`
+  files, and `docs/phase-gates/phase-13-infrastructure.md` together.
+
 ## Conventions
 
 - New lifecycle actions MUST emit an audit event via `AuditService`.

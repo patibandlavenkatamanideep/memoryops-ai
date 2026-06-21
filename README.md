@@ -173,6 +173,35 @@ The frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
 
 ---
 
+## Deployment — Railway only (v0.3.2)
+
+MemoryOps deploys to **Railway only**. There is **no Vercel** path. One Railway
+project (`memoryops-ai`) runs five services:
+
+| Service | Role | Source |
+|---------|------|--------|
+| `memoryops-web` | Next.js frontend | `apps/web/Dockerfile` |
+| `memoryops-api` | FastAPI backend | `services/api/Dockerfile` |
+| `memoryops-worker` | Background loops | `services/worker/Dockerfile` |
+| Railway Postgres | Store + pgvector | plugin |
+| Railway Redis | Queue / cache | plugin |
+
+Build/deploy is config-as-code under [`railway/`](railway/). Docs:
+
+- [docs/deployment/railway.md](docs/deployment/railway.md) — topology, order, rollback
+- [docs/deployment/railway-env.md](docs/deployment/railway-env.md) — env var matrix
+- [docs/deployment/railway-smoke-test.md](docs/deployment/railway-smoke-test.md) — post-deploy checks
+
+Post-deploy verification:
+
+```bash
+python scripts/railway_smoke_test.py \
+  --api-url https://memoryops-api.up.railway.app \
+  --web-url https://memoryops-web.up.railway.app
+```
+
+---
+
 ## What works today (Phase 0 + Phase 1)
 
 - Full design spine: README, architecture/security/governance/rollout docs, 5 ADRs, DB schema.

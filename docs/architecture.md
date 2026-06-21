@@ -265,6 +265,25 @@ in its decision cycle; audit logs answer who did what, when, and why.
 `services/worker` hosts decay (age out weights), reflection/compression (collapse repeats),
 conflict resolution (reconcile contradictions), and system-learning memory generation.
 
+## Deployment topology (Railway-only — v0.3.2)
+
+MemoryOps deploys to a **single Railway project** (`memoryops-ai`) with five
+services and Railway's private networking. There is **no Vercel** target.
+
+| Service | Role | Source | Health |
+|---------|------|--------|--------|
+| `memoryops-web` | Next.js frontend | `apps/web/Dockerfile` | `GET /` |
+| `memoryops-api` | FastAPI backend | `services/api/Dockerfile` | `/healthz`, `/readyz` |
+| `memoryops-worker` | Background loops | `services/worker/Dockerfile` | process liveness |
+| Railway Postgres | Store + pgvector | plugin | managed |
+| Railway Redis | Queue / cache | plugin | managed |
+
+Build/deploy settings are config-as-code under [`railway/`](../railway/). The API
+binds `$PORT`; the web build inlines `NEXT_PUBLIC_API_URL` pointing at the API
+service. Full topology, env matrix, and smoke test:
+[docs/deployment/](deployment/railway.md). Phase gate:
+[phase-13-infrastructure.md](phase-gates/phase-13-infrastructure.md).
+
 ## Typed memory model (invariant #9)
 
 | Type        | Meaning                                   | Example                                  |

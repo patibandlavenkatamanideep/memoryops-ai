@@ -20,6 +20,13 @@ soft-delete guarantee that deleted memory is never retrieved.
 - [docs/governance.md](../governance.md)
 - [ADR-005 deletion guarantee](../../infra/adr/ADR-005-deletion-guarantee.md)
 
+## Deployment governance (v0.3.2)
+Deployment is a single, auditable target — **Railway only**, one project, config
+as code in `railway/`. No Vercel or ad-hoc host. This keeps the data-residency
+and access story in one place; see
+[phase-13-infrastructure.md](phase-13-infrastructure.md) and
+[docs/deployment/railway.md](../deployment/railway.md).
+
 ## Gaps to close (→ later)
 - Retention/legal-hold/export (DSAR), regional residency, crypto-shred worker.
 
