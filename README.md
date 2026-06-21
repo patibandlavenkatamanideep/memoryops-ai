@@ -164,6 +164,30 @@ The frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
 - Memory dashboard + admin/audit + architecture pages (frontend skeleton).
 - Invariant test suite + eval harness scaffolding.
 
+## Token Compression Layer (v0.2.1)
+
+MemoryOps supports an optional [Headroom](https://github.com/chopratejas/headroom)-powered
+context compression layer. Compression runs **after** policy checks, governance
+filtering, and context composition, and **only** on the composed context block —
+never the raw user message and never before the policy broker. It reduces tokens
+sent to the LLM while preserving MemoryOps invariants (provenance, deletion
+guarantee, tenant isolation, temporary-chat behavior, explainability metadata).
+
+It is **off by default** and **not a dependency** — the app runs without
+`headroom-ai` installed, and any compression failure degrades safely to the
+uncompressed context.
+
+```bash
+pip install "headroom-ai[all]"            # optional
+export MEMORYOPS_CONTEXT_COMPRESSION=headroom   # default: none
+```
+
+Each chat response carries a `compression` block with estimated tokens saved and
+the compression ratio. See [docs/token-compression.md](docs/token-compression.md),
+[docs/integrations/headroom.md](docs/integrations/headroom.md), and
+[ADR-007](infra/adr/ADR-007-headroom-token-compression.md). Headroom is Apache-2.0;
+MemoryOps integrates it via an adapter and does not vendor its source.
+
 ## What remains (Phase 2+)
 
 - Phase 2: hybrid retriever + ranker + context composer wired into chat responses.

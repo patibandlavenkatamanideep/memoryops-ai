@@ -178,6 +178,11 @@ sequenceDiagram
 - **Ranker** — `0.35·semantic + 0.20·keyword + 0.15·importance + 0.10·recency + 0.10·confidence +
   0.10·reinforcement`.
 - **Context Composer** — compact context block with internal source IDs; never leaks hidden memory.
+- **Context Compression (v0.2.1, optional)** — after composition and before the LLM, the
+  composed *governed* context block may be compressed by an optional `ContextCompressor`
+  (`MEMORYOPS_CONTEXT_COMPRESSION=headroom`). Default is a transparent no-op. It never runs
+  before the policy broker and never touches the raw user message; failure degrades to the
+  uncompressed block. See [ADR-007](../infra/adr/ADR-007-headroom-token-compression.md).
 - **Graceful degradation** — retrieval failure is caught and the assistant still answers (#4).
 
 ## Background path (Phase 5 — scaffolded)

@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 
 
@@ -55,6 +54,30 @@ RULES: list[Rule] = [
         r"^services/api/app/services/(retriever|ranker|context_composer)\.py$",
         r"^(services/api/tests/test_retrieval\.py$|evals/)",
         "Retrieval/ranking changed without a retrieval-test or eval update.",
+    ),
+    Rule(
+        "Memory Correctness",
+        "compression-tests",
+        r"^services/api/app/compression/",
+        r"^services/api/tests/test_(context_compression|compression_invariants|headroom_fallback)\.py$",
+        "Compression code changed without a compression-behavior or invariant test.",
+    ),
+    Rule(
+        "Memory Correctness",
+        "composer-compression",
+        r"^services/api/app/services/context_composer\.py$",
+        r"^(services/api/tests/test_(compression_invariants|retrieval)\.py$|evals/)",
+        "Context composer changed without a compression-invariant or retrieval test/eval.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "compression-economics-docs",
+        r"^services/api/app/compression/|^services/api/app/services/gateway\.py$",
+        r"^(docs/token-compression\.md$|docs/phase-gates/phase-16-economics\.md$"
+        r"|docs/integrations/headroom\.md$|infra/adr/ADR-007-headroom-token-compression\.md$"
+        r"|services/api/tests/)",
+        "Compression/cost path changed without updating token-compression/economics docs "
+        "or a test.",
     ),
     Rule(
         "Security",

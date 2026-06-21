@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 
+from ..compression import get_compressor
 from ..core.llm import get_llm
 from ..core.logging import get_logger
 from ..core.reliability import safe_call
@@ -18,6 +19,7 @@ from ..db.repository import Repository
 from ..schemas.memory import (
     ChatRequest,
     ChatResponse,
+    Compression,
     Source,
     UsedMemory,
 )
@@ -42,6 +44,7 @@ class Gateway:
         self._retriever = Retriever(repo)
         self._ranker = Ranker()
         self._composer = ContextComposer()
+        self._compressor = get_compressor()
         self._llm = get_llm()
 
     def handle_chat(self, req: ChatRequest, trace_id: str) -> ChatResponse:
@@ -88,8 +91,51 @@ class Gateway:
                 metadata={"memory_count": len(used_memories)},
             )
 
+        # ── Context compression (after governance/composition, before LLM) ──────
+        # Only the governed, composed context block is compressed — never the raw
+        # user message and never pre-policy content (ADR-007). Failure degrades to
+        # the uncompressed block; it must never block the response.
+        llm_context = context_block
+        compression: Compression | None = None
+        if context_block:
+            result = self._compressor.compress_context(context_block, trace_id=trace_id)
+            if result.failed:
+                logger.warning(
+                    "context compression failed; using uncompressed context",
+                    extra={
+                        "event": "context_compression_failed",
+                        "provider": result.provider,
+                        "reason": result.reason,
+                        "fallback": True,
+                    },
+                )
+            elif result.provider != "noop":
+                llm_context = result.compressed_text
+                logger.info(
+                    "context compressed",
+                    extra={
+                        "event": "context_compression",
+                        "provider": result.provider,
+                        "original_tokens_estimate": result.original_tokens_estimate,
+                        "compressed_tokens_estimate": result.compressed_tokens_estimate,
+                        "tokens_saved_estimate": result.tokens_saved_estimate,
+                        "compression_ratio": result.compression_ratio,
+                        "fallback": False,
+                    },
+                )
+            if result.provider != "noop":
+                compression = Compression(
+                    enabled=True,
+                    provider=result.provider,
+                    original_tokens_estimate=result.original_tokens_estimate,
+                    compressed_tokens_estimate=result.compressed_tokens_estimate,
+                    tokens_saved_estimate=result.tokens_saved_estimate,
+                    compression_ratio=result.compression_ratio,
+                    fallback=result.failed,
+                )
+
         # ── Response generation ────────────────────────────────────────────────
-        answer = self._llm.complete(system=context_block, user=req.message)
+        answer = self._llm.complete(system=llm_context, user=req.message)
 
         # ── WRITE path (policy before storage) ─────────────────────────────────
         source = Source(kind="chat", excerpt=req.message, conversation_id=req.conversation_id)
@@ -123,5 +169,6 @@ class Gateway:
             candidate_memories=decisions,
             audit_event_ids=audit_ids,
             temporary_chat=False,
+            compression=compression,
             trace_id=trace_id,
         )

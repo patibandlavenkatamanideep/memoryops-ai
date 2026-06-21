@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
 
+    # Optional context compression at the LLM boundary (v0.2.1, ADR-007).
+    # "none" (default) is fully transparent; "headroom" uses the optional adapter
+    # and degrades to no-op on any failure. Compression runs only AFTER policy +
+    # governance + composition — never before the policy broker.
+    context_compression: Literal["none", "headroom"] = "none"
+    compression_require_policy_cleared: bool = True
+    headroom_mode: Literal["library", "proxy", "mcp"] = "library"
+    headroom_output_shaper: bool = False
+
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0
     retrieval_timeout_seconds: float = 3.0
@@ -50,4 +59,8 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
+    if (val := os.getenv("MEMORYOPS_CONTEXT_COMPRESSION")) in ("none", "headroom"):
+        overrides["context_compression"] = val
+    if (val := os.getenv("MEMORYOPS_COMPRESSION_REQUIRE_POLICY_CLEARED")) is not None:
+        overrides["compression_require_policy_cleared"] = val.lower() not in ("0", "false", "no")
     return Settings(**overrides)

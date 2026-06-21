@@ -55,6 +55,17 @@ Every chat response carries `used_memories` (the memory IDs + reasons that shape
 `candidate_memories` (what the extractor proposed and what the policy broker decided). The dashboard
 surfaces both so a user/judge can see *why* the assistant said what it said.
 
+## Context compression & governance order (v0.2.1)
+
+Optional token compression (Headroom, ADR-007) runs strictly **after** governance:
+policy checks, retrieval filtering, and context composition all complete first.
+Compression touches only the composed, governed context block sent to the LLM —
+never the raw user message and never pre-policy content — so the policy broker
+always inspects raw content, and deleted / wrong-tenant / temporary-chat content
+is never compressed (it is never retrieved/composed in the first place).
+Explainability metadata (`used_memories` + score breakdown) is built on the
+uncompressed path. See [docs/token-compression.md](token-compression.md).
+
 ## Retention & feedback
 
 - `memory_feedback` captures `helpful | wrong | outdated | sensitive | not_relevant` and feeds the

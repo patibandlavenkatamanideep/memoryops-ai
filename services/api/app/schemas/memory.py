@@ -108,12 +108,27 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class Compression(BaseModel):
+    """Token-compression metrics for the composed context (v0.2.1, ADR-007)."""
+
+    enabled: bool = False
+    provider: str = "noop"
+    original_tokens_estimate: int = 0
+    compressed_tokens_estimate: int = 0
+    tokens_saved_estimate: int = 0
+    compression_ratio: float = 0.0
+    fallback: bool = False
+
+
 class ChatResponse(BaseModel):
     assistant_message: str
     used_memories: list[UsedMemory] = Field(default_factory=list)
     candidate_memories: list[CandidateDecision] = Field(default_factory=list)
     audit_event_ids: list[str] = Field(default_factory=list)
     temporary_chat: bool = False
+    # Optional context compression metrics (present only when compression is
+    # configured and there was a context block to compress).
+    compression: Compression | None = None
     trace_id: str
 
 

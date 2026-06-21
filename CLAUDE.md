@@ -23,6 +23,10 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 
 - `services/api` — FastAPI. Write path lives in `app/services/` (extractor, policy_broker,
   write_service) and is orchestrated by `app/services/gateway.py`.
+- `services/api/app/compression` — optional context compression at the LLM boundary
+  (`MEMORYOPS_CONTEXT_COMPRESSION=none|headroom`). `NoopCompressor` is the default;
+  `HeadroomCompressor` is optional and degrades to no-op. Runs **after** policy/governance/
+  composition, never before the policy broker. See ADR-007.
 - `services/api/app/db` — repository abstraction. `MEMORYOPS_STORAGE=memory|postgres`.
 - `infra/db/migrations` — SQL schema (Postgres + pgvector).
 - `apps/web` — Next.js frontend.

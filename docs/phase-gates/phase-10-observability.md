@@ -11,12 +11,16 @@ surfaced on the admin dashboard and `GET /api/metrics`.
 - Every lifecycle action emits an audit event.
 - Every request log line carries `trace_id` and never leaks secrets.
 - Metrics (writes, blocks, deletes, retrievals, audit count) are queryable.
+- Token/cost signals are observable: context compression emits structured
+  `context_compression` / `context_compression_failed` events and per-request
+  savings estimates (v0.2.1; see phase-16 economics).
 
 ## Evidence
 - `services/api/app/core/logging.py` (redacting JSON formatter)
 - `services/api/app/services/audit.py`, `routes/audit.py`
+- `services/api/app/compression/metrics.py`, `services/api/app/services/gateway.py`
 - [infra/observability/README.md](../../infra/observability/README.md)
-- [ADR-004 observability](../../infra/adr/ADR-004-observability.md)
+- [ADR-004 observability](../../infra/adr/ADR-004-observability.md), [ADR-007 compression](../../infra/adr/ADR-007-headroom-token-compression.md)
 
 ## Gaps to close (→ v0.3+)
 - OpenTelemetry traces → Tempo/Jaeger; Prometheus/Grafana metrics; Langfuse LLM
