@@ -5,7 +5,6 @@
     "dockerfilePath": "apps/playground/Dockerfile"
   },
   "deploy": {
-    "startCommand": "streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true",
     "healthcheckPath": "/_stcore/health",
     "healthcheckTimeout": 100,
     "numReplicas": 1,
