@@ -164,3 +164,27 @@ class AuditEvent(BaseModel):
     trace_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+
+class MemoryProvenance(BaseModel):
+    """Where a memory came from and why it persists (v0.5 control plane).
+
+    Composed from the stored record plus its audit trail and governance loop
+    runs. Never includes embeddings or raw secrets — provenance is metadata.
+    """
+
+    memory_id: str
+    source: Source
+    status: Status
+    created_at: datetime
+    updated_at: datetime
+    reinforcement_count: int
+    # Explainability for "why this memory exists / was used": durable signals
+    # the ranker reads (no per-request usage log is persisted yet).
+    importance: int
+    confidence: float
+    weight: float
+    # The originating + lifecycle audit actions for this memory, newest first.
+    audit_trail: list[AuditEvent] = Field(default_factory=list)
+    # Governance loop run ids that touched this memory (operational evidence).
+    loop_run_ids: list[str] = Field(default_factory=list)

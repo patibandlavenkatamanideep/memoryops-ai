@@ -271,12 +271,19 @@ class PostgresRepository(Repository):
             return event
 
     def list_audit(
-        self, tenant_id: str, user_id: str | None = None, limit: int = 200
+        self,
+        tenant_id: str,
+        user_id: str | None = None,
+        *,
+        memory_id: str | None = None,
+        limit: int = 200,
     ) -> list[StoredAudit]:
         with self._scoped(tenant_id, user_id or "") as s:
             stmt = select(AuditLogORM).where(AuditLogORM.tenant_id == tenant_id)
             if user_id:
                 stmt = stmt.where(AuditLogORM.user_id == user_id)
+            if memory_id:
+                stmt = stmt.where(AuditLogORM.memory_id == memory_id)
             stmt = stmt.order_by(AuditLogORM.created_at.desc()).limit(limit)
             return [
                 StoredAudit(

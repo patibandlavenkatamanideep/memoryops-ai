@@ -79,8 +79,24 @@ export interface AuditEvent {
   action: string;
   reason: string;
   memory_id?: string | null;
+  user_id?: string | null;
   trace_id?: string | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface MemoryProvenance {
+  memory_id: string;
+  source: { kind: string; excerpt: string; message_id?: string | null; conversation_id?: string | null };
+  status: string;
+  created_at: string;
+  updated_at: string;
+  reinforcement_count: number;
+  importance: number;
+  confidence: number;
+  weight: number;
+  audit_trail: AuditEvent[];
+  loop_run_ids: string[];
 }
 
 export interface LoopDefinition {
@@ -152,10 +168,26 @@ export const api = {
       }),
     }),
 
-  memories: (status?: string) =>
-    http<MemoryRecord[]>(
-      `/api/memories?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}` +
-        (status ? `&status=${status}` : "")
+  memories: (filters?: { status?: string; memory_type?: string }) => {
+    const qs = new URLSearchParams({ tenant_id: DEMO_TENANT, user_id: DEMO_USER });
+    if (filters?.status) qs.set("status", filters.status);
+    if (filters?.memory_type) qs.set("memory_type", filters.memory_type);
+    return http<MemoryRecord[]>(`/api/memories?${qs.toString()}`);
+  },
+
+  memory: (id: string) =>
+    http<MemoryRecord>(
+      `/api/memories/${id}?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
+    ),
+
+  memoryAudit: (id: string) =>
+    http<AuditEvent[]>(
+      `/api/memories/${id}/audit?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
+    ),
+
+  memoryProvenance: (id: string) =>
+    http<MemoryProvenance>(
+      `/api/memories/${id}/provenance?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
     ),
 
   patchMemory: (id: string, patch: Record<string, unknown>) =>

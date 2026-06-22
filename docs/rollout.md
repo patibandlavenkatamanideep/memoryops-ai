@@ -7,7 +7,7 @@ Phased delivery. Status reflects this repository.
 | 0 | Design spine: README, architecture/security/governance docs, ADRs, DB schema, API contracts | ✅ Done |
 | 1 | Core write path: gateway → extractor → policy broker → write service → store → audit | ✅ Done |
 | 2 | Read path: retriever → ranker → context composer → memory-used response | 🟡 Scaffolded |
-| 3 | Governance UI: approve/reject, edit, archive, delete, audit viewer | 🟡 Scaffolded |
+| 3 | Governance UI: approve/reject, edit, archive, delete, audit viewer | ✅ Done (v0.5) |
 | 4 | Production depth: pgvector embeddings, RLS enforcement, evals, observability | 🟡 Partial |
 | 5 | Background intelligence: decay, reflection, conflict resolution, compression | 🟡 Stubbed |
 | 6 | Submission polish: landing/architecture pages, demo, screenshots | 🟡 In progress |
@@ -28,8 +28,15 @@ context block, memory-used badges. Interfaces exist in `app/services/retriever.p
 `ranker.py`, `context_composer.py`; chat returns `used_memories`.
 **Done when:** future chats use relevant memory and deleted/pending memory is never retrieved.
 
-## Phase 3 — Governance dashboard 🟡
-`PATCH`/`DELETE` endpoints exist; UI actions to be fully wired.
+## Phase 3 — Governance dashboard ✅ (v0.5)
+Browser memory control plane: `/memories`, `/memories/[id]`, `/governance`,
+`/audit`. View/filter, detail with provenance + per-memory audit timeline, inline
+edit, approve/reject queue, archive/restore, soft-delete, and recorded policy
+decisions. Additive read routes (`GET /api/memories/{id}`, `/{id}/provenance`,
+`/{id}/audit`) + `memory_id` audit filter; every action is audited and the policy
+broker stays authoritative. See [governance-ui.md](governance-ui.md),
+[memory-control-plane.md](memory-control-plane.md),
+[ADR-009](../infra/adr/ADR-009-memory-control-plane.md).
 
 ## Phase 4 — Enterprise security & evals 🟡
 RLS-ready schema (enable → enforce), pgvector index, golden + adversarial eval cases, `run_evals.py`.

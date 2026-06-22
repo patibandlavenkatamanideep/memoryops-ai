@@ -45,6 +45,20 @@ def test_deleted_memory_excluded_from_vector_search(gateway, repo):
     assert all(m.id != mem.id for m, _ in pairs)
 
 
+def test_control_plane_detail_marks_deleted_never_active(gateway, repo):
+    # v0.5: the control-plane detail/provenance path may return a soft-deleted
+    # row for forensics, but its status must remain `deleted` (never active) and
+    # it must stay out of the active inventory listing.
+    _chat(gateway, "Remember that I prefer dark mode dashboards.")
+    mem = repo.list_memories("t1", "u1")[0]
+    repo.soft_delete("t1", "u1", mem.id)
+
+    fetched = repo.get_memory("t1", "u1", mem.id)
+    assert fetched is not None
+    assert fetched.status == Status.deleted  # carries truth; UI renders deleted
+    assert mem.id not in {m.id for m in repo.list_memories("t1", "u1")}
+
+
 def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # v0.3.1: loop runs/events are operational evidence stored alongside the
     # write path. They must never re-expose a soft-deleted memory in retrieval.

@@ -121,11 +121,18 @@ class InMemoryRepository(Repository):
         return event
 
     def list_audit(
-        self, tenant_id: str, user_id: str | None = None, limit: int = 200
+        self,
+        tenant_id: str,
+        user_id: str | None = None,
+        *,
+        memory_id: str | None = None,
+        limit: int = 200,
     ) -> list[StoredAudit]:
         rows = [e for e in self._audit if e.tenant_id == tenant_id]
         if user_id:
             rows = [e for e in rows if e.user_id == user_id]
+        if memory_id:
+            rows = [e for e in rows if e.memory_id == memory_id]
         return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]
 
     # ── settings ─────────────────────────────────────────────────────────────

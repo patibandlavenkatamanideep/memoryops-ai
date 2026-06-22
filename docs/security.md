@@ -72,6 +72,20 @@ The most dangerous failures for an AI memory system are:
 - Loop traces are operational evidence, not a retrieval surface: they never re-expose a
   soft-deleted memory (`test_deletion.py::test_loop_traces_do_not_resurrect_deleted_memory`).
 
+### Memory control plane (v0.5)
+- The browser control plane is a **read + audited-action** surface only; it never
+  writes around the policy/write path, and the policy broker stays authoritative.
+- New read routes (`GET /api/memories/{id}`, `/{id}/provenance`, `/{id}/audit`) and
+  the `list_audit(memory_id=…)` filter are all tenant + user scoped at the
+  repository (`test_tenant_isolation.py`, `test_governance_api.py`).
+- Provenance responses are metadata only — no embeddings, keys, or secrets are
+  serialized.
+- Detail may return a soft-deleted row for forensics, but it always carries
+  `status=deleted`; it is never listed as active or rendered as active
+  (`test_deletion.py`, `test_governance_api.py`).
+- Demo identity (`tenant_demo`/`user_demo`) still comes from `apps/web/lib/api.ts`;
+  real auth/session and RBAC remain on the hardening roadmap below.
+
 ## Production hardening roadmap
 
 - Encryption at rest (pgcrypto / disk) + field-level encryption for high-sensitivity content.

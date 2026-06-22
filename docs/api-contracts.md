@@ -58,17 +58,34 @@ to the deterministic heuristic. New structured log events (not response fields):
 Query: `tenant_id` (req), `user_id` (req), `status` (opt), `memory_type` (opt).
 Returns `MemoryRecord[]`. Excludes `deleted` by default.
 
+## GET /api/memories/{id} (v0.5)
+Query: `tenant_id` (req), `user_id` (req). Returns a single `MemoryRecord`,
+tenant + user scoped. Soft-deleted rows are returned too (forensics) but always
+carry `status=deleted` — callers never render them as active. `404` if not in
+scope. Emits a `memory_viewed` audit event.
+
+## GET /api/memories/{id}/provenance (v0.5)
+Query: `tenant_id` (req), `user_id` (req). Returns `MemoryProvenance`:
+`{ memory_id, source, status, created_at, updated_at, reinforcement_count,
+importance, confidence, weight, audit_trail[], loop_run_ids[] }`. Metadata only —
+never embeddings or secrets.
+
+## GET /api/memories/{id}/audit (v0.5)
+Query: `tenant_id` (req), `user_id` (req), `limit` (opt, ≤1000). Returns the
+per-memory `AuditEvent[]`, newest first.
+
 ## PATCH /api/memories/{id}
 Body: `{ tenant_id, user_id, content?, importance?, confidence?, status? }`.
-`status=active` approves a pending memory; `rejected` rejects; `archived` archives.
-Returns the updated `MemoryRecord`. Emits an audit event.
+`status=active` approves a pending memory (or restores an archived one);
+`rejected` rejects; `archived` archives. `404` on a `deleted` memory — deletion is
+terminal. Returns the updated `MemoryRecord`. Emits an audit event.
 
 ## DELETE /api/memories/{id}
 Body: `{ tenant_id, user_id }`. Soft delete: `status=deleted`, `deleted_at=now()`,
 audit `memory_deleted`. The memory is never retrievable again.
 
 ## GET /api/audit
-Query: `tenant_id` (req), `user_id` (opt), `limit` (opt, ≤1000).
+Query: `tenant_id` (req), `user_id` (opt), `memory_id` (opt), `limit` (opt, ≤1000).
 Returns `AuditEvent[]` (append-only), newest first.
 
 ## GET /api/metrics

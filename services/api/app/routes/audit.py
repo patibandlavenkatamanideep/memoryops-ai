@@ -14,10 +14,11 @@ router = APIRouter(prefix="/api", tags=["governance"])
 def get_audit(
     tenant_id: str = Query(...),
     user_id: str | None = Query(None),
+    memory_id: str | None = Query(None),
     limit: int = Query(200, le=1000),
 ) -> list[AuditEvent]:
     repo = get_repository()
-    rows = repo.list_audit(tenant_id, user_id=user_id, limit=limit)
+    rows = repo.list_audit(tenant_id, user_id=user_id, memory_id=memory_id, limit=limit)
     return [
         AuditEvent(
             id=r.id,

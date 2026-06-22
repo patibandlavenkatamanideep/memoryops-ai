@@ -71,7 +71,12 @@ class Repository(ABC):
 
     @abstractmethod
     def list_audit(
-        self, tenant_id: str, user_id: str | None = None, limit: int = 200
+        self,
+        tenant_id: str,
+        user_id: str | None = None,
+        *,
+        memory_id: str | None = None,
+        limit: int = 200,
     ) -> list[StoredAudit]: ...
 
     # ── settings ─────────────────────────────────────────────────────────────

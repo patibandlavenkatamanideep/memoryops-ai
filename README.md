@@ -81,7 +81,7 @@ enforced.
 
 ```text
 memoryops-ai/
-  apps/web/            Next.js frontend (chat, memory dashboard, admin, architecture)
+  apps/web/            Next.js frontend (chat, memories, governance, audit, loops, admin, architecture)
   services/api/        FastAPI backend (gateway, extractor, policy broker, write/read path, audit)
   services/worker/     Background jobs (decay, reflection, conflict resolution, compression)
   packages/shared/     Shared types
@@ -302,10 +302,26 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   `structured_output_invalid`, `llm_fallback_used`, `memory_extraction_structured`,
   `conflict_detection_result`) + `structured`/`conflict` evals; tests need no API keys.
 
-## What remains (v0.5+)
+## What works as of v0.5 (governance UI + memory control plane)
 
-- v0.5: governance UI actions (approve/edit/archive/delete) fully wired.
-- v0.6: decay / reflection / conflict-resolution workers.
+- Browser control plane over the governed lifecycle: `/memories` (filterable
+  inventory), `/memories/[id]` (detail + provenance + per-memory audit timeline +
+  inline edit), `/governance` (approval queue + recorded policy decisions),
+  `/audit` (tenant-wide append-only history).
+- Additive read routes: `GET /api/memories/{id}`, `/{id}/provenance`,
+  `/{id}/audit`, plus a `memory_id` filter on `/api/audit`. Approve/reject/edit/
+  archive/restore/delete reuse the existing PATCH/DELETE — every action is audited
+  and the policy broker stays authoritative.
+- Deletion guarantee holds in the UI: deleted memories are never listed or shown
+  as active. Provenance is metadata only (no embeddings/secrets).
+- See [docs/governance-ui.md](docs/governance-ui.md),
+  [docs/memory-control-plane.md](docs/memory-control-plane.md), and
+  [ADR-009](infra/adr/ADR-009-memory-control-plane.md).
+
+## What remains (v0.6+)
+
+- v0.6: deletion compaction + vector-index purge verification; decay / reflection
+  / conflict-resolution workers.
 - v0.7+: observability + economics, AI PR review runtime, deployment hardening.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).

@@ -4,13 +4,35 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from ..db.entities import StoredAudit
 from ..db.factory import get_repository
 from ..deps import audit_service
 from ..loops.events import complete_loop_run_sync, emit_loop_event_sync, start_loop_run_sync
 from ..loops.types import LoopId, LoopState
-from ..schemas.memory import DeleteRequest, MemoryPatch, MemoryRecord, Status
+from ..schemas.memory import (
+    AuditEvent,
+    DeleteRequest,
+    MemoryPatch,
+    MemoryProvenance,
+    MemoryRecord,
+    Status,
+)
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
+
+
+def _audit_event(r: StoredAudit) -> AuditEvent:
+    return AuditEvent(
+        id=r.id,
+        tenant_id=r.tenant_id,
+        user_id=r.user_id,
+        memory_id=r.memory_id,
+        action=r.action,
+        reason=r.reason,
+        trace_id=r.trace_id,
+        metadata=r.metadata,
+        created_at=r.created_at,
+    )
 
 
 @router.get("", response_model=list[MemoryRecord])
@@ -93,6 +115,84 @@ def list_memories(
     )
     complete_loop_run_sync(repo, loop, metadata={"action": "view", "row_count": len(rows)})
     return [r.to_schema() for r in rows]
+
+
+@router.get("/{memory_id}", response_model=MemoryRecord)
+def get_memory_detail(
+    memory_id: str,
+    request: Request,
+    tenant_id: str = Query(...),
+    user_id: str = Query(...),
+) -> MemoryRecord:
+    """Single memory detail for the control plane.
+
+    Tenant + user scoped (invariant #1). Returns the row including soft-deleted
+    ones for governance/forensics — callers render the real ``status`` and must
+    never present a deleted row as active (the ``status`` field carries truth).
+    """
+    repo = get_repository()
+    trace_id = getattr(request.state, "trace_id", "-")
+    m = repo.get_memory(tenant_id, user_id, memory_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="memory not found")
+    audit_service().record(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        memory_id=memory_id,
+        action="memory_viewed",
+        reason="memory detail viewed",
+        trace_id=trace_id,
+        metadata={"surface": "detail"},
+    )
+    return m.to_schema()
+
+
+@router.get("/{memory_id}/audit", response_model=list[AuditEvent])
+def get_memory_audit(
+    memory_id: str,
+    tenant_id: str = Query(...),
+    user_id: str = Query(...),
+    limit: int = Query(200, le=1000),
+) -> list[AuditEvent]:
+    """Audit timeline for one memory (newest first), tenant + user scoped."""
+    repo = get_repository()
+    if not repo.get_memory(tenant_id, user_id, memory_id):
+        raise HTTPException(status_code=404, detail="memory not found")
+    rows = repo.list_audit(tenant_id, user_id, memory_id=memory_id, limit=limit)
+    return [_audit_event(r) for r in rows]
+
+
+@router.get("/{memory_id}/provenance", response_model=MemoryProvenance)
+def get_memory_provenance(
+    memory_id: str,
+    tenant_id: str = Query(...),
+    user_id: str = Query(...),
+) -> MemoryProvenance:
+    """Provenance + explainability for one memory (invariant #3).
+
+    Composes the stored ``source`` with the memory's audit trail and the
+    governance loop runs that touched it. Never returns embeddings or secrets.
+    """
+    repo = get_repository()
+    m = repo.get_memory(tenant_id, user_id, memory_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="memory not found")
+    audit_rows = repo.list_audit(tenant_id, user_id, memory_id=memory_id, limit=1000)
+    runs = repo.list_loop_runs(tenant_id=tenant_id, user_id=user_id, limit=1000)
+    loop_run_ids = [r.id for r in runs if (r.metadata or {}).get("memory_id") == memory_id]
+    return MemoryProvenance(
+        memory_id=m.id,
+        source=m.source,
+        status=m.status,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+        reinforcement_count=m.reinforcement_count,
+        importance=m.importance,
+        confidence=m.confidence,
+        weight=m.weight,
+        audit_trail=[_audit_event(r) for r in audit_rows],
+        loop_run_ids=loop_run_ids,
+    )
 
 
 @router.patch("/{memory_id}", response_model=MemoryRecord)
