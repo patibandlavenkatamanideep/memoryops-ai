@@ -102,10 +102,15 @@ host. Its Dockerfile copies `services/api`, so the Docker build context must be 
   missing `start.sh`).
 - **Builder / Dockerfile:** `DOCKERFILE`, `dockerfilePath: apps/playground/Dockerfile`
   (set in the config file).
-- **Start command:** owned by the config file —
-  `streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true`
-  (runs from the image `WORKDIR /app/apps/playground`).
-- **Health check:** `/_stcore/health` (Streamlit).
+- **Start command:** owned by the **Dockerfile `CMD`** (runs from the image
+  `WORKDIR /app/apps/playground`):
+  `sh -c "streamlit run streamlit_app.py --server.port ${PORT:-8501} --server.address 0.0.0.0 --server.headless true"`.
+  Do **not** put this start command in `railway/playground.railway.json`: a
+  config-as-code `startCommand` on a Dockerfile service runs in **exec form
+  without shell expansion**, so Streamlit would receive the literal string
+  `$PORT` and crash (healthcheck then fails). The Dockerfile `CMD` uses `sh -c`,
+  so `${PORT:-8501}` expands correctly.
+- **Health check:** `/_stcore/health` (Streamlit), `healthcheckTimeout: 300`.
 
 ## Health checks
 

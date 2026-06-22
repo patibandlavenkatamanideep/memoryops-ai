@@ -52,10 +52,13 @@ be the repo root**, so configure the service as:
 - **Root Directory:** `/` (repo root)
 - **Config File (config-as-code):** `railway/playground.railway.json`
 
-That config sets `builder = DOCKERFILE`, `dockerfilePath = apps/playground/Dockerfile`,
-and the Streamlit start command on `$PORT`. **Do not** set the Root Directory to
-`apps/playground` — the `COPY services/api` step would fail and Railway would fall
-back to its Railpack auto-detector. See [docs/playground.md](../../docs/playground.md).
+That config sets `builder = DOCKERFILE` and `dockerfilePath = apps/playground/Dockerfile`.
+The **start command comes from the Dockerfile `CMD`** (`sh -c "streamlit run … --server.port ${PORT:-8501} …"`),
+not from the config — a config-as-code `startCommand` on a Dockerfile service runs
+without shell expansion, so `$PORT` would be passed literally and Streamlit would
+crash. **Do not** set the Root Directory to `apps/playground` — the
+`COPY services/api` step would fail and Railway would fall back to its Railpack
+auto-detector. See [docs/playground.md](../../docs/playground.md).
 
 ## How it stays safe
 
