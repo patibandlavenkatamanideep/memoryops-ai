@@ -3,6 +3,10 @@
 Canonical reference for the HTTP surface. Changes to `services/api/app/routes/**`
 must update this file (enforced by the PR Invariant Evidence Gate).
 
+> **Stable as of v1.0.** This surface follows a `1.x` additive-compatibility
+> promise — existing endpoints keep their methods/paths/required fields and
+> responses only gain fields. See [api-stability.md](api-stability.md).
+
 Base URL (dev): `http://localhost:8000`. Interactive docs: `/docs`.
 
 ## POST /api/chat

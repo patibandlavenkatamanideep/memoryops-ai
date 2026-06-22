@@ -1,5 +1,11 @@
 # MemoryOps AI
 
+> **v1.0 — production-ready governed memory runtime.** The public HTTP API and
+> Python SDK are **stable** under a `1.x` additive-compatibility promise
+> ([docs/api-stability.md](docs/api-stability.md)). See the
+> [CHANGELOG](CHANGELOG.md), [production-readiness](docs/production-readiness.md),
+> and [known limitations](docs/limitations.md).
+
 MemoryOps AI is an enterprise-shaped, loop-engineered memory governance layer for AI assistants.
 It implements a ChatGPT-style memory lifecycle with capture, policy evaluation, typed storage,
 hybrid retrieval, controlled forgetting, auditability, and tenant isolation.
@@ -435,6 +441,17 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   operator-run final step (see [docs/images/playground/](docs/images/playground/)).
   See [docs/playground.md](docs/playground.md).
 
+## What works as of v1.0 (production-ready governed memory runtime)
+
+- **Stable contracts** — the public HTTP API and Python SDK are declared stable
+  under a `1.x` additive-compatibility promise
+  ([docs/api-stability.md](docs/api-stability.md)); package versions are `1.0.0`.
+- **Release-readiness docs** — a consolidated [known-limitations](docs/limitations.md)
+  page, a [production-readiness](docs/production-readiness.md) map (each invariant
+  → where enforced; production-capable vs demo-only), and a full
+  [CHANGELOG](CHANGELOG.md).
+- v1.0 is **stabilization + documentation**: no behavior changes vs v0.12.
+
 ## Roadmap
 
 - **v0.7** — physical deletion compaction + vector purge verification ✅
@@ -443,18 +460,18 @@ MemoryOps integrates it via an adapter and does not vendor its source.
 - **v0.10** — retention policies + legal hold + consent-aware memory ✅
 - **v0.11** — assistant SDK + integration examples ✅
 - **v0.12** — interactive playground + hosted demo + public screenshots ✅
-- **v1.0** — production-ready governed memory runtime
+- **v1.0** — production-ready governed memory runtime ✅
 
-## What remains (v1.0)
+## Beyond v1.0
 
-- Production-ready runtime: stable API + SDK contracts, deployment guide, README
-  polish, the hosted demo link + recorded GIF wired into the hero.
 - Consent *capture* at the UI/SDK edge; cross-tenant retention scheduling.
 - Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's
   auditable compaction).
 - Optional queue/cron backend behind the orchestrator interface; auto-discovered
   scope enumeration.
 - Observability + economics, AI PR review runtime, deployment hardening.
+- Operator step to finish the public launch: host the playground + wire the live
+  demo link and recorded GIF into the hero (see [docs/images/playground/](docs/images/playground/)).
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).
 
@@ -487,6 +504,10 @@ system with release discipline, review gates, and operational safety. Overview:
 
 ## Documentation
 
+- [CHANGELOG.md](CHANGELOG.md) — release notes, v0.1 → v1.0.
+- [docs/api-stability.md](docs/api-stability.md) — stable v1 API + SDK surface, semver + deprecation policy.
+- [docs/production-readiness.md](docs/production-readiness.md) — invariants/planes → where enforced; production-capable vs demo-only.
+- [docs/limitations.md](docs/limitations.md) — the consolidated, authoritative list of what MemoryOps does **not** claim.
 - [docs/architecture.md](docs/architecture.md) — write path, read path, planes, invariants.
 - [docs/loop-engineering.md](docs/loop-engineering.md) — loop definitions, states, gates, evidence.
 - [docs/loop-contracts.md](docs/loop-contracts.md) — LoopDefinition, LoopRun, LoopEvent contracts.
