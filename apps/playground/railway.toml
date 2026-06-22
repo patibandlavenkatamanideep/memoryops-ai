@@ -1,0 +1,16 @@
+# Railway service config for the OPTIONAL MemoryOps AI Playground demo.
+#
+# This is NOT one of the five core services (web/api/worker/Postgres/Redis). It is
+# an optional public demo surface, like the v0.9 results dashboard. It needs no
+# database and no secrets (in-memory store + offline stubs).
+#
+# Build context must be the repository ROOT so services/api is available to the
+# in-process pipeline — set the Railway service "Root Directory" to the repo root
+# and the Dockerfile path to apps/playground/Dockerfile.
+[build]
+builder = "dockerfile"
+dockerfilePath = "apps/playground/Dockerfile"
+
+[deploy]
+startCommand = "streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true"
+restartPolicyType = "on_failure"

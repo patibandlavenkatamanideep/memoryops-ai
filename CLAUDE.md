@@ -71,6 +71,12 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in
   `004_rls_policies.sql` (`FORCE` + tenant policy); verify with `scripts/check_rls_policies.py`. See ADR-006.
 - `apps/web` — Next.js frontend.
+- `apps/results-dashboard` — read-only public Streamlit evidence dashboard (v0.9; demo-only).
+- `apps/playground` — interactive public Streamlit playground (v0.12). Drives the
+  **real** governed pipeline from `services/api` in-process against a fresh
+  **in-memory** store per session (no DB, no secrets, no real data). Entrypoint is
+  `streamlit_app.py` (named to avoid shadowing the `app` package). Demo-only — not
+  the production UI; additive, no `services/api` changes. See `docs/playground.md`.
 - `packages/memoryops-sdk` — typed Python SDK (v0.11) over the governed HTTP API
   (`MemoryOpsClient` injects the tenant/user scope on every call) + integration
   examples (quickstart, FastAPI, RAG, agent memory). Additive client only — the

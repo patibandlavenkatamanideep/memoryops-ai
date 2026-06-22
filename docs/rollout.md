@@ -113,6 +113,20 @@ Additive only — no `services/api` changes. See
 [assistant-sdk.md](assistant-sdk.md),
 [ADR-014](../infra/adr/ADR-014-assistant-sdk.md).
 
+## Phase 9 — Interactive playground + hosted demo ✅ (v0.12)
+An interactive public **Playground** ([`apps/playground/`](../apps/playground))
+that *drives the real governed pipeline in-process* — capture → ask → govern
+(legal hold / consent / delete / run lifecycle workers) → watch the audit trace
+and assistant behavior change live. **Safe to host:** a fresh in-memory store per
+browser session — no database, no auth, no secrets, no network (stub LLM +
+embeddings), no real user data; it calls the same `services/api` governance code
+the product uses (not a reimplementation). Additive only — no `services/api`
+changes. The v0.9 results dashboard stays the read-only **evidence** view; the
+playground is the public **entry point**. Hostable on Streamlit Community Cloud or
+as an optional Railway demo service (not one of the five core services; no Vercel).
+Screenshots/GIF + the hosted link are the operator-run final step. See
+[playground.md](playground.md), [images/playground/](images/playground/).
+
 ## Public roadmap
 
 | Version | Scope | Status |
@@ -122,8 +136,8 @@ Additive only — no `services/api` changes. See
 | v0.9 | Public results dashboard + evidence explorer | ✅ Done |
 | v0.10 | Retention policies + legal hold + consent-aware memory | ✅ Done |
 | v0.11 | Assistant SDK + integration examples | ✅ Done |
-| v0.12 | Hosted demo + public screenshots | ⏳ Next |
-| v1.0 | Production-ready governed memory runtime | ⏳ Planned |
+| v0.12 | Interactive playground + hosted demo + public screenshots | ✅ Done |
+| v1.0 | Production-ready governed memory runtime | ⏳ Next |
 
 ## Production roadmap (beyond hackathon)
 

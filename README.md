@@ -83,6 +83,7 @@ enforced.
 memoryops-ai/
   apps/web/            Next.js frontend (chat, memories, governance, audit, loops, admin, architecture)
   apps/results-dashboard/ Public read-only Streamlit results/evidence dashboard (demo-only; v0.9)
+  apps/playground/     Interactive Streamlit playground over the real pipeline (demo-only, in-memory; v0.12)
   services/api/        FastAPI backend (gateway, extractor, policy broker, write/read path, audit)
   services/worker/     Background jobs (decay, reflection, conflict resolution, compression)
   packages/memoryops-sdk/ Python SDK + integration examples (quickstart, FastAPI, RAG, agent) (v0.11)
@@ -417,6 +418,23 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   [docs/assistant-sdk.md](docs/assistant-sdk.md) and
   [ADR-014](infra/adr/ADR-014-assistant-sdk.md).
 
+## What works as of v0.12 (interactive playground + hosted demo)
+
+- An **interactive public Playground** ([`apps/playground/`](apps/playground))
+  that *drives the real governed pipeline in-process* — capture → ask a question
+  that uses memory → apply a legal hold / withdraw consent / delete / run the
+  lifecycle workers → watch the audit trace and assistant behavior change live.
+- **Safe to host:** a fresh **in-memory** store per browser session — no database,
+  no auth, no secrets, no network (stub LLM + embeddings), no real user data. It
+  drives the same `services/api` governance code the product uses, so behavior is
+  faithful, not a reimplementation.
+- The v0.9 [results dashboard](apps/results-dashboard) remains the read-only
+  **evidence** view; the playground is the public **entry point**.
+- Run it: `cd apps/playground && pip install -r requirements.txt &&
+  streamlit run streamlit_app.py`. Screenshots/GIF + the hosted demo link are the
+  operator-run final step (see [docs/images/playground/](docs/images/playground/)).
+  See [docs/playground.md](docs/playground.md).
+
 ## Roadmap
 
 - **v0.7** — physical deletion compaction + vector purge verification ✅
@@ -424,12 +442,13 @@ MemoryOps integrates it via an adapter and does not vendor its source.
 - **v0.9** — public results dashboard + evidence explorer ✅
 - **v0.10** — retention policies + legal hold + consent-aware memory ✅
 - **v0.11** — assistant SDK + integration examples ✅
-- **v0.12** — hosted demo + public screenshots
+- **v0.12** — interactive playground + hosted demo + public screenshots ✅
 - **v1.0** — production-ready governed memory runtime
 
-## What remains (v0.12+)
+## What remains (v1.0)
 
-- Hosted demo + screenshots (v0.12); production-ready runtime (v1.0).
+- Production-ready runtime: stable API + SDK contracts, deployment guide, README
+  polish, the hosted demo link + recorded GIF wired into the hero.
 - Consent *capture* at the UI/SDK edge; cross-tenant retention scheduling.
 - Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's
   auditable compaction).
@@ -475,6 +494,7 @@ system with release discipline, review gates, and operational safety. Overview:
 - [docs/governance.md](docs/governance.md) — lifecycle, approvals, audit, retention.
 - [docs/rollout.md](docs/rollout.md) — phased delivery and production roadmap.
 - [docs/results-dashboard.md](docs/results-dashboard.md) — public read-only results/evidence dashboard (v0.9; demo-only, not production UI).
+- [docs/playground.md](docs/playground.md) — interactive public playground + hosted demo (v0.12; demo-only, in-memory, not production UI).
 - [docs/assistant-sdk.md](docs/assistant-sdk.md) — Python SDK + integration examples (v0.11).
 - [docs/demo-script.md](docs/demo-script.md) — the 6-step demo.
 - [infra/adr/](infra/adr/) — storage, retrieval, policy broker, observability, deletion ADRs.
