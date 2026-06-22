@@ -9,6 +9,12 @@ MemoryOps AI is a governed memory lifecycle system for AI assistants — not a c
 The lifecycle is: **Capture → Evaluate → Store → Retrieve → Rank → Compose → Update → Forget → Audit**,
 wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 
+> **v1.0 (stable).** The public HTTP API and Python SDK follow a `1.x`
+> additive-compatibility promise — existing endpoints/methods keep their shape,
+> responses only gain fields. A breaking change to that surface needs a MAJOR bump
+> + deprecation window. See `docs/api-stability.md`, `docs/production-readiness.md`,
+> `docs/limitations.md`, and `CHANGELOG.md`.
+
 ## Non-negotiable invariants (enforced in code + tests)
 
 1. Tenant isolation — every memory query filters by `tenant_id` + `user_id`.

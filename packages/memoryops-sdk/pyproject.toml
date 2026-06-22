@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memoryops-sdk"
-version = "0.11.0"
+version = "1.0.0"
 description = "Python SDK for MemoryOps AI — governed memory infrastructure for AI assistants."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "MemoryOps AI" }]
 keywords = ["memoryops", "ai", "memory", "governance", "llm", "agents", "rag"]
+classifiers = ["Development Status :: 5 - Production/Stable"]
 dependencies = ["httpx>=0.24,<1"]
 
 [project.urls]

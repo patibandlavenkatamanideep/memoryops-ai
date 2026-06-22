@@ -127,6 +127,18 @@ as an optional Railway demo service (not one of the five core services; no Verce
 Screenshots/GIF + the hosted link are the operator-run final step. See
 [playground.md](playground.md), [images/playground/](images/playground/).
 
+## Phase 10 — Production-ready governed memory runtime ✅ (v1.0)
+The stable public release. The governed lifecycle, its seven enforced invariants,
+and the security/governance/reliability/observability/evaluation planes are
+implemented, tested, and operable. The public HTTP API and Python SDK are declared
+**stable** under a `1.x` additive-compatibility promise; package versions are
+`1.0.0`. Adds release-readiness docs — a consolidated
+[limitations](limitations.md) page, a [production-readiness](production-readiness.md)
+map (invariant → where enforced; production-capable vs demo-only), an
+[api-stability](api-stability.md) contract, and a top-level
+[CHANGELOG](../CHANGELOG.md). v1.0 is stabilization + documentation: **no behavior
+changes vs v0.12**.
+
 ## Public roadmap
 
 | Version | Scope | Status |
@@ -137,7 +149,7 @@ Screenshots/GIF + the hosted link are the operator-run final step. See
 | v0.10 | Retention policies + legal hold + consent-aware memory | ✅ Done |
 | v0.11 | Assistant SDK + integration examples | ✅ Done |
 | v0.12 | Interactive playground + hosted demo + public screenshots | ✅ Done |
-| v1.0 | Production-ready governed memory runtime | ⏳ Next |
+| v1.0 | Production-ready governed memory runtime | ✅ Done |
 
 ## Production roadmap (beyond hackathon)
 
