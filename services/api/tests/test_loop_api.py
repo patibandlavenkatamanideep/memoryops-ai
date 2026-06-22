@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from app.loops.registry import list_loop_definitions
-from app.loops.types import LoopId
-from app.loops.types import LoopTrace
+from app.loops.types import LoopId, LoopTrace
 from app.schemas.memory import ChatRequest
 
 

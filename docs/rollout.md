@@ -41,8 +41,18 @@ broker stays authoritative. See [governance-ui.md](governance-ui.md),
 ## Phase 4 — Enterprise security & evals 🟡
 RLS-ready schema (enable → enforce), pgvector index, golden + adversarial eval cases, `run_evals.py`.
 
-## Phase 5 — Background intelligence 🟡
-`services/worker` job stubs for decay, reflection/compression, conflict resolution, reinforcement.
+## Phase 5 — Background intelligence ✅ workers landed (v0.6)
+Background memory lifecycle workers (`services/api/app/workers/`) implement the
+*Update → Forget* arc off the chat path: **decay**, **archive**, **deletion
+verification**, **conflict scan**, and proposal-only **reflection** (off by
+default), driven by a tenant-scoped `runner`. Every job is tenant scoped,
+idempotent, retry-safe, audited, and unable to resurrect deleted memory; the
+policy broker stays authoritative. Conflict resolution and reflection remain
+*proposal-only* (review candidates, no auto-overwrite/auto-write). See
+[background-lifecycle-workers.md](background-lifecycle-workers.md),
+[memory-decay-policy.md](memory-decay-policy.md),
+[deletion-verification.md](deletion-verification.md),
+[ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md).
 
 ## Production roadmap (beyond hackathon)
 

@@ -329,6 +329,29 @@ service. Full topology, env matrix, and smoke test:
 | 6 | Temporary chat       | gateway short-circuit; `tests/test_temporary_chat.py`             |
 | 7 | Auditability         | every service action calls `AuditService.record`                  |
 
+## Background lifecycle workers (v0.6)
+
+The *Update → Forget* arc runs **outside** the chat request path in
+`services/api/app/workers/`. A tenant-scoped `runner` executes five jobs against
+one `(tenant_id, user_id)` scope:
+
+- **decay** — lower importance of old / low-confidence active memory (demote, not delete);
+- **archive** — set stale, not-recently-used, non-pinned memory to `archived`;
+- **conflict_scan** — reuse v0.4 advisory conflict detection across the corpus to
+  produce review candidates (no overwrite);
+- **reflection** — proposal-only, off by default (no write/delete);
+- **deletion_verification** — read-only confirmation that deleted memory is
+  unreachable, with pass/fail evidence.
+
+Every job is tenant scoped, idempotent, retry-safe, and audited; none can
+resurrect deleted memory and none bypass the policy broker (it stays
+authoritative — workers demote/flag/propose only). A worker failure is caught and
+recorded (`lifecycle_worker_failed`), never raised into a caller, so it cannot
+block chat. Workers add no HTTP route; they run via
+`python -m app.workers.runner` (hosted by the Railway `worker` service). See
+[ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md) and
+[background-lifecycle-workers.md](background-lifecycle-workers.md).
+
 ## Failure modes considered
 
 - LLM/extractor unavailable → heuristic extractor still produces candidates.

@@ -61,6 +61,21 @@ class Settings(BaseSettings):
     headroom_mode: Literal["library", "proxy", "mcp"] = "library"
     headroom_output_shaper: bool = False
 
+    # Background memory lifecycle workers (v0.6, ADR-010). Workers run outside the
+    # chat path; these are policy thresholds, not request knobs. Defaults are
+    # conservative so a default run touches little. Reflection is proposal-only
+    # and OFF by default (it never writes/deletes memory; see workers/reflection).
+    workers_decay_age_days: int = 90
+    workers_decay_min_confidence: float = 0.3
+    workers_decay_importance_floor: int = 1
+    workers_decay_importance_step: int = 2
+    workers_archive_age_days: int = 180
+    workers_archive_recent_use_days: int = 30
+    workers_conflict_scan_max_memories: int = 200
+    workers_reflection_enabled: bool = False
+    workers_reflection_min_cluster_size: int = 5
+    workers_reflection_max_importance: int = 3
+
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0
     retrieval_timeout_seconds: float = 3.0
@@ -98,4 +113,8 @@ def get_settings() -> Settings:
     if (val := os.getenv("MEMORYOPS_LLM_TIMEOUT_SECONDS")) is not None:
         with contextlib.suppress(ValueError):
             overrides["llm_timeout_seconds"] = float(val)
+    # v0.6 worker knobs (ADR-010). Reflection is the only one with a public,
+    # documented toggle; other thresholds are configured via their field names.
+    if (val := os.getenv("MEMORYOPS_WORKERS_REFLECTION")) is not None:
+        overrides["workers_reflection_enabled"] = val.lower() not in ("0", "false", "no")
     return Settings(**overrides)

@@ -86,6 +86,25 @@ The most dangerous failures for an AI memory system are:
 - Demo identity (`tenant_demo`/`user_demo`) still comes from `apps/web/lib/api.ts`;
   real auth/session and RBAC remain on the hardening roadmap below.
 
+### Background lifecycle workers (v0.6)
+- Workers (`services/api/app/workers/`) run **off the chat path** and are tenant +
+  user scoped: each run operates on a single explicit `(tenant_id, user_id)` via
+  the repository's scoped methods, so a worker cannot reach another tenant's
+  memory (`test_*_worker.py`, `test_lifecycle_worker.py`).
+- Workers **never resurrect or modify deleted memory**: mutating jobs read active
+  rows only and re-filter `status != deleted`; the deletion verification worker is
+  read-only (`test_decay_worker.py`, `test_archive_worker.py`,
+  `test_deletion_verification_worker.py`).
+- **Deletion verification** continuously confirms soft-deleted memory is absent
+  from active retrieval, default listing, and the vector candidate path, recording
+  pass/fail evidence (invariant #2). This verifies **logical** forgetting; physical
+  vector purge / crypto-shred is staged — see
+  [deletion-verification.md](deletion-verification.md).
+- A worker failure can never block chat: exceptions are caught and recorded as
+  `lifecycle_worker_failed`, never raised into a caller (invariant #4).
+- Worker audit metadata is content-free (ids / counts / flags only). Reflection is
+  proposal-only and **disabled by default**.
+
 ## Production hardening roadmap
 
 - Encryption at rest (pgcrypto / disk) + field-level encryption for high-sensitivity content.

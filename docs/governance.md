@@ -106,6 +106,21 @@ writes around it. See [governance-ui.md](governance-ui.md),
 [ADR-009](../infra/adr/ADR-009-memory-control-plane.md), and the
 [human-in-the-loop phase gate](phase-gates/phase-06-human-in-the-loop.md).
 
+## Background lifecycle workers (v0.6)
+
+Memory maintenance after capture is governed too. The background workers
+(`services/api/app/workers/`) run **off the chat path** and emit append-only audit
+evidence for every run and action: `lifecycle_worker_started` / `_completed` /
+`_failed`, plus `memory_decay_applied`, `memory_archive_candidate`,
+`memory_archived_by_worker`, `deletion_verification_passed` / `_failed`,
+`conflict_candidate_detected`, and `reflection_candidate_detected`. Audit metadata
+is content-free (ids, counts, flags only — never raw memory content or user
+messages). Workers **demote, archive, flag, or propose**; they never bypass the
+policy broker to create or promote active memory, and conflict/reflection output
+is a *review candidate*, not an automatic change. See
+[background-lifecycle-workers.md](background-lifecycle-workers.md) and
+[ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md).
+
 ## Retention & feedback
 
 - `memory_feedback` captures `helpful | wrong | outdated | sensitive | not_relevant` and feeds the

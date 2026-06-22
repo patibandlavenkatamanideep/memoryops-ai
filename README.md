@@ -318,10 +318,31 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   [docs/memory-control-plane.md](docs/memory-control-plane.md), and
   [ADR-009](infra/adr/ADR-009-memory-control-plane.md).
 
-## What remains (v0.6+)
+## What works as of v0.6 (background memory lifecycle workers)
 
-- v0.6: deletion compaction + vector-index purge verification; decay / reflection
-  / conflict-resolution workers.
+- Background workers (`services/api/app/workers/`) maintain memory **after**
+  capture, off the chat request path: **decay** (demote aged/low-confidence
+  memory), **archive** (retire stale, non-pinned, not-recently-used memory),
+  **conflict scan** (flag contradictions as review candidates), **deletion
+  verification** (prove soft-deleted memory stays unreachable), and proposal-only
+  **reflection** (off by default).
+- A tenant-scoped `runner` drives them:
+  `python -m app.workers.runner --tenant t1 --user u1 --job all` (returns a
+  structured `WorkerRunReport`; non-zero exit on a failed job or deletion finding).
+- Every job is tenant scoped, idempotent, retry-safe, and audited; none resurrects
+  deleted memory and none bypasses the policy broker. A worker failure never
+  blocks chat.
+- See [docs/background-lifecycle-workers.md](docs/background-lifecycle-workers.md),
+  [docs/memory-decay-policy.md](docs/memory-decay-policy.md),
+  [docs/deletion-verification.md](docs/deletion-verification.md), and
+  [ADR-010](infra/adr/ADR-010-background-memory-lifecycle-workers.md).
+
+## What remains (v0.7+)
+
+- Physical deletion compaction + vector-index purge / crypto-shred worker
+  (v0.6 verifies *logical* forgetting; see
+  [docs/deletion-verification.md](docs/deletion-verification.md)).
+- Governed reflection write path; cross-tenant scope enumeration for fleet scheduling.
 - v0.7+: observability + economics, AI PR review runtime, deployment hardening.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).

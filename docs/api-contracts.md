@@ -112,3 +112,29 @@ Runs the invariant eval harness in-process. Returns
 Loop metadata must be structured and safe: no raw API keys, secrets, passwords,
 or full user messages. Loop events can link to governance audit events through
 `audit_event_id`.
+
+## Background Lifecycle Workers (v0.6)
+
+Workers expose **no HTTP route** — they run outside the chat request path via a
+CLI / callable runner, hosted by the Railway `worker` service:
+
+```bash
+python -m app.workers.runner --tenant <t> --user <u> --job all
+# --job is repeatable: decay | archive | deletion_verification | conflict_scan | reflection | all
+# --dry-run reports candidates without making changes
+```
+
+`run_jobs(...)` returns a `WorkerRunReport` (`to_dict()` JSON-serializable):
+
+- `started_at`, `completed_at`, `ok`
+- `totals`: `{ scanned, changed, skipped, errors, jobs }`
+- `results[]`: one `WorkerJobResult` per job — `job`, `tenant_id`, `user_id`,
+  `started_at`, `completed_at`, `duration_ms`, `status`
+  (`completed | completed_with_findings | skipped | failed`), `scanned_count`,
+  `changed_count`, `skipped_count`, `error_count`, `audit_event_ids[]`, and a
+  content-free `details` object.
+
+The CLI prints the report JSON and exits non-zero when `ok` is `false` (a failed
+job or a deletion-verification finding), so it doubles as a scheduled health
+check. Worker audit metadata is structured and safe: ids, counts, and flags only —
+never raw memory content or full user messages.

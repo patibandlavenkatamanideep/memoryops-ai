@@ -253,6 +253,54 @@ RULES: list[Rule] = [
         "Memory control plane changed without updating governance-ui/memory-control-plane "
         "docs or ADR-009.",
     ),
+    # ── v0.6 Background memory lifecycle workers (ADR-010) ─────────────────────
+    Rule(
+        "Memory Correctness",
+        "worker-tests",
+        r"^services/api/app/workers/",
+        r"^services/api/tests/test_(lifecycle_worker|decay_worker|archive_worker"
+        r"|deletion_verification_worker|conflict_scan_worker|worker_idempotency)\.py$",
+        "Background worker code changed without worker tests (tests/test_*_worker.py "
+        "or test_worker_idempotency.py).",
+    ),
+    Rule(
+        "Security",
+        "deletion-verification-tests",
+        r"^services/api/app/workers/deletion_verification\.py$",
+        r"^services/api/tests/test_deletion_verification_worker\.py$",
+        "Deletion verification worker changed without deletion-verification worker tests.",
+    ),
+    Rule(
+        "Security",
+        "deletion-verification-docs",
+        r"^services/api/app/workers/deletion_verification\.py$",
+        r"^(docs/deletion-verification\.md$|docs/security\.md$)",
+        "Deletion verification changed without updating deletion-verification or security docs.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "decay-archive-docs",
+        r"^services/api/app/workers/(decay|archive)\.py$",
+        r"^(docs/memory-decay-policy\.md$|docs/background-lifecycle-workers\.md$)",
+        "Decay/archive behavior changed without updating decay-policy or lifecycle-worker docs.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "worker-audit-governance-docs",
+        r"^services/api/app/workers/(lifecycle|schemas)\.py$",
+        r"^(docs/background-lifecycle-workers\.md$|docs/governance\.md$"
+        r"|docs/security\.md$|infra/adr/ADR-010-background-memory-lifecycle-workers\.md$)",
+        "Worker audit/event behavior changed without updating lifecycle-worker, governance, "
+        "or security docs / ADR-010.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "worker-runner-evidence",
+        r"^services/api/app/workers/runner\.py$",
+        r"^(docs/phase-gates/phase-12-background-lifecycle-workers\.md$"
+        r"|infra/adr/ADR-010-background-memory-lifecycle-workers\.md$)",
+        "Background worker runner changed without phase-gate or ADR-010 evidence.",
+    ),
 ]
 
 
