@@ -71,6 +71,12 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in
   `004_rls_policies.sql` (`FORCE` + tenant policy); verify with `scripts/check_rls_policies.py`. See ADR-006.
 - `apps/web` — Next.js frontend.
+- `packages/memoryops-sdk` — typed Python SDK (v0.11) over the governed HTTP API
+  (`MemoryOpsClient` injects the tenant/user scope on every call) + integration
+  examples (quickstart, FastAPI, RAG, agent memory). Additive client only — the
+  server stays authoritative for all governance; the SDK adds none. Tested against
+  the real app in-process via an injectable `httpx.Client`. See ADR-014 and
+  `docs/assistant-sdk.md`.
 - `evals` — golden + adversarial cases, `run_evals.py`.
 
 ## Running

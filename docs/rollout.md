@@ -101,6 +101,18 @@ legal hold is a *preservation* control, not crypto-shred. See
 [phase-gates/phase-15-governance.md](phase-gates/phase-15-governance.md),
 [ADR-013](../infra/adr/ADR-013-retention-legal-hold-consent.md).
 
+## Phase 8 — Assistant SDK + integration examples ✅ (v0.11)
+A typed Python SDK ([`packages/memoryops-sdk/`](../packages/memoryops-sdk)) wraps
+the governed HTTP API (chat, memories, retention/legal-hold/consent, audit,
+metrics, loops, health) and injects the tenant/user scope on every call. The
+**server stays authoritative** for all governance — the SDK adds none of its own.
+Ships with runnable examples (quickstart, FastAPI integration, RAG assistant,
+agent memory), typed errors (`LegalHoldError`/`NotFoundError`/`APIError`), and an
+injectable `httpx.Client` so it is tested against the real app in-process.
+Additive only — no `services/api` changes. See
+[assistant-sdk.md](assistant-sdk.md),
+[ADR-014](../infra/adr/ADR-014-assistant-sdk.md).
+
 ## Public roadmap
 
 | Version | Scope | Status |
@@ -109,8 +121,8 @@ legal hold is a *preservation* control, not crypto-shred. See
 | v0.8 | Worker runtime + scheduled lifecycle orchestration | ✅ Done |
 | v0.9 | Public results dashboard + evidence explorer | ✅ Done |
 | v0.10 | Retention policies + legal hold + consent-aware memory | ✅ Done |
-| v0.11 | Assistant SDK + integration examples | ⏳ Next |
-| v0.12 | Hosted demo + public screenshots | ⏳ Planned |
+| v0.11 | Assistant SDK + integration examples | ✅ Done |
+| v0.12 | Hosted demo + public screenshots | ⏳ Next |
 | v1.0 | Production-ready governed memory runtime | ⏳ Planned |
 
 ## Production roadmap (beyond hackathon)

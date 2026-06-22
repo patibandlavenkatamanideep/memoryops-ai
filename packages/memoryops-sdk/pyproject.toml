@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memoryops-sdk"
+version = "0.11.0"
+description = "Python SDK for MemoryOps AI — governed memory infrastructure for AI assistants."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "MemoryOps AI" }]
+keywords = ["memoryops", "ai", "memory", "governance", "llm", "agents", "rag"]
+dependencies = ["httpx>=0.24,<1"]
+
+[project.urls]
+Homepage = "https://github.com/patibandlavenkatamanideep/memoryops-ai"
+Documentation = "https://github.com/patibandlavenkatamanideep/memoryops-ai/blob/main/docs/assistant-sdk.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[tool.setuptools]
+packages = ["memoryops"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
