@@ -31,3 +31,27 @@ and access story in one place; see
 - Retention/legal-hold/export (DSAR), regional residency, crypto-shred worker.
 
 ## Status: ✅ Implemented (retention/residency are roadmap)
+
+## v0.5 Governance UI / Control Plane Evidence
+
+The v0.5 governance UI adds human-in-the-loop memory review and audit surfaces for the MemoryOps control plane.
+
+Evidence added in this milestone:
+
+- `docs/governance-ui.md`
+- `docs/memory-control-plane.md`
+- `docs/phase-gates/phase-06-human-in-the-loop.md`
+- `infra/adr/ADR-009-memory-control-plane.md`
+- `services/api/tests/test_governance_api.py`
+
+Governance requirements covered:
+
+- memory detail visibility
+- memory provenance visibility
+- memory audit timeline visibility
+- memory-specific audit filtering
+- tenant/user scoped memory access
+- deletion and isolation tests
+- UI surfaces for memory governance workflows
+
+This phase remains documentation/governance evidence only. Runtime lifecycle workers, physical vector compaction, and deletion purge verification are deferred to a later lifecycle-worker milestone.

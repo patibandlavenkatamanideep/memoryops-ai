@@ -1,110 +1,59 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, MemoryRecord } from "@/lib/api";
+import MemoryTable from "@/components/memories/MemoryTable";
+import MemoryFilters, {
+  EMPTY_FILTERS,
+  MemoryFilterState,
+} from "@/components/memories/MemoryFilters";
 
 export default function MemoriesPage() {
   const [rows, setRows] = useState<MemoryRecord[]>([]);
+  const [filters, setFilters] = useState<MemoryFilterState>(EMPTY_FILTERS);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  // status/type filter server-side (tenant-scoped); search is client-side.
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await api.memories());
+      setRows(
+        await api.memories({
+          status: filters.status || undefined,
+          memory_type: filters.memory_type || undefined,
+        })
+      );
       setError("");
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }
+  }, [filters.status, filters.memory_type]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
-  async function act(id: string, fn: () => Promise<unknown>) {
-    await fn();
-    await load();
-  }
+  const visible = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((m) => m.content.toLowerCase().includes(q));
+  }, [rows, filters.search]);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Memory dashboard</h1>
-      {error && <p className="text-sm text-rose-400">API error: {error}</p>}
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="p-2">Content</th>
-              <th className="p-2">Type</th>
-              <th className="p-2">Sensitivity</th>
-              <th className="p-2">Imp.</th>
-              <th className="p-2">Conf.</th>
-              <th className="p-2">Status</th>
-              <th className="p-2">Source</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((m) => (
-              <tr key={m.id} className="border-t border-slate-800 align-top">
-                <td className="max-w-xs p-2">{m.content}</td>
-                <td className="p-2">{m.memory_type}</td>
-                <td className="p-2">{m.sensitivity}</td>
-                <td className="p-2">{m.importance}</td>
-                <td className="p-2">{m.confidence.toFixed(2)}</td>
-                <td className="p-2">
-                  <span className="chip">{m.status}</span>
-                </td>
-                <td className="max-w-[10rem] truncate p-2 text-slate-500" title={m.source.excerpt}>
-                  {m.source.kind}
-                </td>
-                <td className="space-x-2 whitespace-nowrap p-2">
-                  {m.status === "pending" && (
-                    <>
-                      <button
-                        className="text-emerald-400 hover:underline"
-                        onClick={() => act(m.id, () => api.patchMemory(m.id, { status: "active" }))}
-                      >
-                        approve
-                      </button>
-                      <button
-                        className="text-rose-400 hover:underline"
-                        onClick={() => act(m.id, () => api.patchMemory(m.id, { status: "rejected" }))}
-                      >
-                        reject
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="text-slate-400 hover:underline"
-                    onClick={() => act(m.id, () => api.patchMemory(m.id, { status: "archived" }))}
-                  >
-                    archive
-                  </button>
-                  <button
-                    className="text-rose-400 hover:underline"
-                    onClick={() => act(m.id, () => api.deleteMemory(m.id))}
-                  >
-                    delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td className="p-2 text-slate-500" colSpan={8}>
-                  No memories yet. Try the chat demo.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div>
+        <h1 className="text-2xl font-bold text-white">Memories</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Governed memory inventory. Soft-deleted memories are never listed here.
+        </p>
       </div>
+      {error && <p className="text-sm text-rose-400">API error: {error}</p>}
+      <MemoryFilters value={filters} onChange={setFilters} />
+      {loading && <p className="text-sm text-slate-400">Loading…</p>}
+      <MemoryTable rows={visible} loading={loading} onChanged={load} />
     </div>
   );
 }

@@ -35,7 +35,7 @@ and audited — under five cross-cutting planes.
 ```mermaid
 flowchart TB
     subgraph Client["apps/web — Next.js"]
-        UI["Chat · Memory Dashboard · Admin · Architecture"]
+        UI["Chat · Memories · Governance · Audit · Loops · Admin · Architecture"]
     end
 
     subgraph API["services/api — FastAPI"]
@@ -205,6 +205,19 @@ the repository and exposed at `/api/loops`.
 
 Loop events are separate from audit logs. Loop events answer where a workflow is
 in its decision cycle; audit logs answer who did what, when, and why.
+
+## Memory control plane (v0.5)
+
+The browser-facing governance control plane sits **on top of** the existing
+read/write/policy/audit paths — it adds no new lifecycle behavior, only operable
+views and audited actions. Pages: `/memories`, `/memories/[id]`, `/governance`,
+`/audit`. Backend additions are read-only routes (`GET /api/memories/{id}`,
+`/{id}/provenance`, `/{id}/audit`) plus a `list_audit(memory_id=…)` filter; the
+existing PATCH/DELETE handle approve/reject/edit/archive/restore/delete. Every UI
+action maps 1:1 to an audited backend action and the policy broker stays
+authoritative. See [memory-control-plane.md](memory-control-plane.md),
+[governance-ui.md](governance-ui.md), and
+[ADR-009](../infra/adr/ADR-009-memory-control-plane.md).
 
 ## Write path (Phase 1 — implemented)
 

@@ -20,3 +20,31 @@ def repo() -> InMemoryRepository:
 @pytest.fixture
 def gateway(repo: InMemoryRepository) -> Gateway:
     return Gateway(repo)
+
+
+@pytest.fixture
+def api_client():
+    """FastAPI TestClient backed by a fresh in-memory repo singleton.
+
+    The route handlers, gateway, and audit service all resolve the same
+    ``get_repository()`` singleton, so we clear the lru_caches to isolate
+    state per test and hand back the live repo for seeding/assertions.
+    """
+    from fastapi.testclient import TestClient
+
+    from app import deps
+    from app.db import factory
+
+    factory.get_repository.cache_clear()
+    deps.gateway.cache_clear()
+    deps.audit_service.cache_clear()
+
+    from app.main import app
+
+    repo = factory.get_repository()
+    with TestClient(app) as client:
+        yield client, repo
+
+    factory.get_repository.cache_clear()
+    deps.gateway.cache_clear()
+    deps.audit_service.cache_clear()

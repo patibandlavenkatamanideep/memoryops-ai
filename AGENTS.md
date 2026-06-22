@@ -40,7 +40,14 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   retrieval goes through `Repository.search_candidates` (pgvector on Postgres, cosine in memory).
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in
   `004_rls_policies.sql` (`FORCE` + tenant policy); verify with `scripts/check_rls_policies.py`. See ADR-006.
-- `apps/web` — Next.js frontend.
+- `apps/web` — Next.js frontend. v0.5 adds the **memory control plane**:
+  `/memories`, `/memories/[id]`, `/governance`, `/audit`, with reusable components
+  under `components/{memories,governance,audit}`. It is a read + audited-action
+  surface only — every action maps 1:1 to an audited backend route and never
+  writes around the policy broker. Backend additions are read-only
+  (`GET /api/memories/{id}`, `/{id}/provenance`, `/{id}/audit`) plus a `memory_id`
+  filter on `list_audit`/`/api/audit`. See ADR-009,
+  `docs/governance-ui.md`, `docs/memory-control-plane.md`.
 - `evals` — golden + adversarial cases, `run_evals.py`.
 
 ## Running

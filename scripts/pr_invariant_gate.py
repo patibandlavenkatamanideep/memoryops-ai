@@ -226,6 +226,33 @@ RULES: list[Rule] = [
         r"|infra/adr/ADR-008-provider-llm-adapters\.md$)",
         "LLM layer changed without updating provider/intelligence docs or ADR-008.",
     ),
+    # ── v0.5 Governance UI + Memory Control Plane (ADR-009) ────────────────────
+    Rule(
+        "Memory Correctness",
+        "governance-api-tests",
+        r"^services/api/app/routes/memories\.py$",
+        r"^services/api/tests/test_governance_api\.py$",
+        "Memory governance API changed without governance API tests "
+        "(tests/test_governance_api.py).",
+    ),
+    Rule(
+        "Memory Correctness",
+        "governance-ui-tests-or-docs",
+        r"^apps/web/app/(memories|governance|audit)/",
+        r"^(services/api/tests/test_governance_api\.py$"
+        r"|docs/governance-ui\.md$|docs/memory-control-plane\.md$)",
+        "Frontend governance page changed without a control-plane test or UI/control-plane "
+        "doc update.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "control-plane-adr",
+        r"^apps/web/components/(memories|governance|audit)/|^services/api/app/routes/memories\.py$",
+        r"^(docs/governance-ui\.md$|docs/memory-control-plane\.md$"
+        r"|infra/adr/ADR-009-memory-control-plane\.md$)",
+        "Memory control plane changed without updating governance-ui/memory-control-plane "
+        "docs or ADR-009.",
+    ),
 ]
 
 

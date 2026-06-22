@@ -92,6 +92,20 @@ structured evidence and links to audit events where a governance record is
 written. This keeps operational loop traces separate from append-only audit
 records while making the state transition visible.
 
+## Governance control plane (v0.5)
+
+The governance surface is now operable from the browser. `/governance` runs the
+human-in-the-loop approval queue (approve → active, reject → rejected) and shows
+the policy broker's recorded decisions (SAVE / PENDING / BLOCKED / DROPPED /
+UPDATED / MERGED) with their rationale. `/memories` and `/memories/[id]` expose
+the full inventory, per-memory provenance, and the per-memory audit timeline;
+`/audit` shows the tenant-wide append-only history. Every action maps 1:1 to an
+audited backend route and the policy broker stays authoritative — the UI never
+writes around it. See [governance-ui.md](governance-ui.md),
+[memory-control-plane.md](memory-control-plane.md),
+[ADR-009](../infra/adr/ADR-009-memory-control-plane.md), and the
+[human-in-the-loop phase gate](phase-gates/phase-06-human-in-the-loop.md).
+
 ## Retention & feedback
 
 - `memory_feedback` captures `helpful | wrong | outdated | sensitive | not_relevant` and feeds the

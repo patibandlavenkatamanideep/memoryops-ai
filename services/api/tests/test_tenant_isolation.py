@@ -50,3 +50,19 @@ def test_loop_runs_are_tenant_and_user_scoped(gateway, repo):
     assert repo.list_loop_runs(tenant_id="tenant_acme", user_id="user_acme") != []
     assert repo.list_loop_runs(tenant_id="tenant_demo") == []
     assert repo.list_loop_runs(tenant_id="tenant_acme", user_id="other_user") == []
+
+
+def test_audit_listing_is_tenant_and_memory_scoped(gateway, repo):
+    # v0.5: the control plane's per-memory audit filter must stay tenant-scoped
+    # and must not surface another memory's events.
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    mem_id = repo.list_memories("tenant_acme", "user_acme")[0].id
+
+    # Cross-tenant audit read sees nothing.
+    assert repo.list_audit("tenant_demo", "user_demo") == []
+    # memory_id filter is scoped to that memory's events only.
+    scoped = repo.list_audit("tenant_acme", "user_acme", memory_id=mem_id)
+    assert scoped
+    assert all(e.memory_id == mem_id for e in scoped)
+    # A non-existent memory id yields no events.
+    assert repo.list_audit("tenant_acme", "user_acme", memory_id="missing") == []
