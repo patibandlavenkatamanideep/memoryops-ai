@@ -85,6 +85,7 @@ memoryops-ai/
   apps/results-dashboard/ Public read-only Streamlit results/evidence dashboard (demo-only; v0.9)
   services/api/        FastAPI backend (gateway, extractor, policy broker, write/read path, audit)
   services/worker/     Background jobs (decay, reflection, conflict resolution, compression)
+  packages/memoryops-sdk/ Python SDK + integration examples (quickstart, FastAPI, RAG, agent) (v0.11)
   packages/shared/     Shared types
   infra/db/            Postgres + pgvector migrations and seed
   infra/adr/           Architecture Decision Records
@@ -401,19 +402,34 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   [docs/retention-policies.md](docs/retention-policies.md) and
   [ADR-013](infra/adr/ADR-013-retention-legal-hold-consent.md).
 
+## What works as of v0.11 (assistant SDK + integration examples)
+
+- A typed **Python SDK** ([`packages/memoryops-sdk/`](packages/memoryops-sdk))
+  wraps the governed HTTP API (chat, memories, retention/legal-hold/consent,
+  audit, metrics, loops, health) and injects the tenant/user scope on every call.
+  The **server stays authoritative** for all governance — the SDK adds none of
+  its own.
+- Runnable **integration examples**: quickstart, a FastAPI assistant endpoint, a
+  RAG assistant (governed user memory + your RAG docs), and an agent-memory tool.
+- Typed errors (`LegalHoldError`, `NotFoundError`, `APIError`) and an injectable
+  `httpx.Client` for in-process testing (the SDK is tested against the real app).
+- `pip install -e packages/memoryops-sdk`. See
+  [docs/assistant-sdk.md](docs/assistant-sdk.md) and
+  [ADR-014](infra/adr/ADR-014-assistant-sdk.md).
+
 ## Roadmap
 
 - **v0.7** — physical deletion compaction + vector purge verification ✅
 - **v0.8** — worker runtime + scheduled lifecycle orchestration ✅
 - **v0.9** — public results dashboard + evidence explorer ✅
 - **v0.10** — retention policies + legal hold + consent-aware memory ✅
-- **v0.11** — assistant SDK + integration examples
+- **v0.11** — assistant SDK + integration examples ✅
 - **v0.12** — hosted demo + public screenshots
 - **v1.0** — production-ready governed memory runtime
 
-## What remains (v0.11+)
+## What remains (v0.12+)
 
-- Assistant SDK + integration examples (v0.11); hosted demo + screenshots (v0.12).
+- Hosted demo + screenshots (v0.12); production-ready runtime (v1.0).
 - Consent *capture* at the UI/SDK edge; cross-tenant retention scheduling.
 - Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's
   auditable compaction).
@@ -459,5 +475,6 @@ system with release discipline, review gates, and operational safety. Overview:
 - [docs/governance.md](docs/governance.md) — lifecycle, approvals, audit, retention.
 - [docs/rollout.md](docs/rollout.md) — phased delivery and production roadmap.
 - [docs/results-dashboard.md](docs/results-dashboard.md) — public read-only results/evidence dashboard (v0.9; demo-only, not production UI).
+- [docs/assistant-sdk.md](docs/assistant-sdk.md) — Python SDK + integration examples (v0.11).
 - [docs/demo-script.md](docs/demo-script.md) — the 6-step demo.
 - [infra/adr/](infra/adr/) — storage, retrieval, policy broker, observability, deletion ADRs.
