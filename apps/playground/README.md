@@ -43,10 +43,19 @@ It installs `apps/playground/requirements.txt` and the app adds `services/api` t
 Build from the **repository root** (the image needs `services/api`):
 ```bash
 docker build -f apps/playground/Dockerfile -t memoryops-playground .
-docker run -p 8501:8501 memoryops-playground
+docker run -p 8501:8501 -e PORT=8501 memoryops-playground
 ```
-`apps/playground/railway.toml` describes an *optional* Railway demo service (not
-one of the five core services). See [docs/playground.md](../../docs/playground.md).
+On Railway, deploy it as an *optional* demo service (not one of the five core
+services). Because the Dockerfile copies `services/api`, the build context **must
+be the repo root**, so configure the service as:
+
+- **Root Directory:** `/` (repo root)
+- **Config File (config-as-code):** `railway/playground.railway.json`
+
+That config sets `builder = DOCKERFILE`, `dockerfilePath = apps/playground/Dockerfile`,
+and the Streamlit start command on `$PORT`. **Do not** set the Root Directory to
+`apps/playground` — the `COPY services/api` step would fail and Railway would fall
+back to its Railpack auto-detector. See [docs/playground.md](../../docs/playground.md).
 
 ## How it stays safe
 
@@ -63,7 +72,10 @@ one of the five core services). See [docs/playground.md](../../docs/playground.m
 apps/playground/
   streamlit_app.py     # entrypoint (named to avoid colliding with the `app` package)
   requirements.txt     # -r services/api/requirements.txt + streamlit
-  Dockerfile           # optional; build from repo root
-  railway.toml         # optional Railway demo service
+  Dockerfile           # optional; build from repo ROOT (copies services/api)
   README.md
+railway/
+  playground.railway.json   # Railway config: DOCKERFILE builder + start command
 ```
+The Railway service config lives at repo level (`railway/playground.railway.json`),
+not in this folder, because the Docker build context must be the repository root.

@@ -87,6 +87,26 @@ Provision and deploy in this order so dependencies are ready:
 After all five are up, run the smoke test
 ([railway-smoke-test.md](railway-smoke-test.md)).
 
+## Optional: Playground demo service (v0.12)
+
+The public [Playground](../playground.md) (`apps/playground`) can be deployed as an
+**optional** demo service — it is **not** one of the five core services. It needs
+**no database and no secrets** (in-memory store + offline stubs), so it is safe to
+host. Its Dockerfile copies `services/api`, so the Docker build context must be the
+**repository root**:
+
+- **Root Directory:** `/` (repo root) — **not** `apps/playground`.
+- **Config File (config-as-code):** `railway/playground.railway.json` — this is what
+  forces the **Dockerfile** builder; without it Railway falls back to Railpack at the
+  repo root and the build fails ("Railpack could not determine how to build" /
+  missing `start.sh`).
+- **Builder / Dockerfile:** `DOCKERFILE`, `dockerfilePath: apps/playground/Dockerfile`
+  (set in the config file).
+- **Start command:** owned by the config file —
+  `streamlit run streamlit_app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true`
+  (runs from the image `WORKDIR /app/apps/playground`).
+- **Health check:** `/_stcore/health` (Streamlit).
+
 ## Health checks
 
 - `memoryops-api`: Railway hits `healthcheckPath=/healthz` on the assigned `$PORT`.
