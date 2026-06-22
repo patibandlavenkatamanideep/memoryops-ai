@@ -337,13 +337,39 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   [docs/deletion-verification.md](docs/deletion-verification.md), and
   [ADR-010](infra/adr/ADR-010-background-memory-lifecycle-workers.md).
 
-## What remains (v0.7+)
+## What works as of v0.7 (deletion compaction + vector purge verification)
 
-- Physical deletion compaction + vector-index purge / crypto-shred worker
-  (v0.6 verifies *logical* forgetting; see
-  [docs/deletion-verification.md](docs/deletion-verification.md)).
+- A sixth lifecycle job — **deletion compaction** — clears a soft-deleted memory's
+  content, normalized content, embedding/vector material, and provenance excerpt
+  (after a retention window), while **preserving the governance tombstone** (id,
+  tenant/user, `status='deleted'`, `deleted_at`, `source.kind`) and the full audit
+  trail. Run it with
+  `python -m app.workers.runner --tenant t1 --user u1 --job deletion_compaction`.
+- The purge is **verified fail-closed**: a still-reachable id, intact material, a
+  missing tombstone, or a verification-path error all record evidence and flag the
+  run — never a silent pass.
+- Honest scope: this is **auditable content/vector compaction + retrieval-exclusion
+  verification**. It is **not** crypto-shred and does **not** claim physical
+  disk/page erasure or pgvector reindex orchestration.
+- See [docs/deletion-compaction.md](docs/deletion-compaction.md),
+  [docs/vector-purge-verification.md](docs/vector-purge-verification.md), and
+  [ADR-011](infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
+
+## Roadmap
+
+- **v0.7** — physical deletion compaction + vector purge verification ✅
+- **v0.8** — Railway worker runtime + scheduled lifecycle orchestration
+- **v0.9** — retention policies + legal hold + consent-aware memory
+- **v0.10** — assistant SDK + example apps
+- **v1.0** — production-ready governed memory runtime
+
+## What remains (v0.8+)
+
+- Scheduled worker runtime with locks/leases, retries, and run history (v0.8).
+- Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's
+  auditable compaction).
 - Governed reflection write path; cross-tenant scope enumeration for fleet scheduling.
-- v0.7+: observability + economics, AI PR review runtime, deployment hardening.
+- Observability + economics, AI PR review runtime, deployment hardening.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).
 

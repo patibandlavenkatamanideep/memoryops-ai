@@ -40,12 +40,17 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   structured extraction + conflict detection. `MEMORYOPS_LLM_PROVIDER=stub|openai|anthropic|gemini`
   (default `stub`). LLM output is **advisory**: the policy broker stays authoritative
   and is never bypassed. Tests need no API keys. See ADR-008.
-- `services/api/app/workers` — background memory lifecycle workers (v0.6). Off the
-  chat request path. Five jobs: decay, archive, deletion_verification,
-  conflict_scan, reflection (off by default), driven by `runner.py`
-  (`python -m app.workers.runner --tenant T --user U --job all`). Tenant scoped,
-  idempotent, retry-safe, audited; never resurrect deleted memory; policy broker
-  stays authoritative. See ADR-010 and `docs/background-lifecycle-workers.md`.
+- `services/api/app/workers` — background memory lifecycle workers (v0.6–v0.7). Off
+  the chat request path. Six jobs: decay, archive, deletion_compaction,
+  deletion_verification, conflict_scan, reflection (off by default), driven by
+  `runner.py` (`python -m app.workers.runner --tenant T --user U --job all`).
+  Tenant scoped, idempotent, retry-safe, audited; never resurrect deleted memory;
+  policy broker stays authoritative. `deletion_compaction` (v0.7) clears
+  soft-deleted memory's content + vector material after a retention window,
+  preserves the governance tombstone, and verifies the purge fail-closed (not
+  crypto-shred / no physical disk reclamation claim). See ADR-010, ADR-011,
+  `docs/background-lifecycle-workers.md`, `docs/deletion-compaction.md`,
+  `docs/vector-purge-verification.md`.
 - `services/api/app/db` — repository abstraction. `MEMORYOPS_STORAGE=memory|postgres`. Vector
   retrieval goes through `Repository.search_candidates` (pgvector on Postgres, cosine in memory).
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in

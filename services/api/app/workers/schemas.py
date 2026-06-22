@@ -18,20 +18,35 @@ from enum import Enum
 class WorkerJob(str, Enum):
     decay = "decay"
     archive = "archive"
+    deletion_compaction = "deletion_compaction"
     deletion_verification = "deletion_verification"
     conflict_scan = "conflict_scan"
     reflection = "reflection"
 
 
 # Jobs the runner executes for the "all" selector, in a deliberate order:
-# read-only verification last so it observes the state the mutating jobs left.
+# mutating jobs first, then compaction of already-deleted memory, and read-only
+# verification last so it observes the state the mutating + compaction jobs left.
 DEFAULT_JOB_ORDER: tuple[WorkerJob, ...] = (
     WorkerJob.decay,
     WorkerJob.archive,
     WorkerJob.conflict_scan,
     WorkerJob.reflection,
+    WorkerJob.deletion_compaction,
     WorkerJob.deletion_verification,
 )
+
+
+# ── Vector / content purge verification outcomes (v0.7) ────────────────────────
+# Honest result space. ``not_supported`` is reserved for a backend that genuinely
+# cannot clear vector material; both shipped backends DO clear it, so a real
+# deleted memory that is still reachable or whose material is intact is a ``fail``
+# (fail-closed), never a silent pass.
+class PurgeVerification(str, Enum):
+    passed = "pass"
+    failed = "fail"
+    skipped = "skipped"
+    not_supported = "not_supported"
 
 
 # ── Run status ────────────────────────────────────────────────────────────────
@@ -57,6 +72,17 @@ DELETION_VERIFICATION_PASSED = "deletion_verification_passed"
 DELETION_VERIFICATION_FAILED = "deletion_verification_failed"
 CONFLICT_CANDIDATE_DETECTED = "conflict_candidate_detected"
 REFLECTION_CANDIDATE_DETECTED = "reflection_candidate_detected"
+# v0.7 — physical deletion compaction + vector purge verification (ADR-011).
+# These describe *what was cleared/verified*, never the cleared content itself.
+DELETION_COMPACTION_STARTED = "deletion_compaction_started"
+DELETION_COMPACTION_COMPLETED = "deletion_compaction_completed"
+DELETION_COMPACTION_FAILED = "deletion_compaction_failed"
+DELETION_COMPACTION_SKIPPED = "deletion_compaction_skipped"
+MEMORY_CONTENT_COMPACTED = "memory_content_compacted"
+MEMORY_VECTOR_PURGE_ATTEMPTED = "memory_vector_purge_attempted"
+MEMORY_VECTOR_PURGE_VERIFIED = "memory_vector_purge_verified"
+MEMORY_VECTOR_PURGE_FAILED = "memory_vector_purge_failed"
+MEMORY_PURGE_TOMBSTONE_PRESERVED = "memory_purge_tombstone_preserved"
 
 WORKER_AUDIT_ACTIONS: frozenset[str] = frozenset(
     {
@@ -70,6 +96,15 @@ WORKER_AUDIT_ACTIONS: frozenset[str] = frozenset(
         DELETION_VERIFICATION_FAILED,
         CONFLICT_CANDIDATE_DETECTED,
         REFLECTION_CANDIDATE_DETECTED,
+        DELETION_COMPACTION_STARTED,
+        DELETION_COMPACTION_COMPLETED,
+        DELETION_COMPACTION_FAILED,
+        DELETION_COMPACTION_SKIPPED,
+        MEMORY_CONTENT_COMPACTED,
+        MEMORY_VECTOR_PURGE_ATTEMPTED,
+        MEMORY_VECTOR_PURGE_VERIFIED,
+        MEMORY_VECTOR_PURGE_FAILED,
+        MEMORY_PURGE_TOMBSTONE_PRESERVED,
     }
 )
 

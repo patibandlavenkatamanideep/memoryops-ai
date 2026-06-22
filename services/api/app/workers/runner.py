@@ -10,6 +10,7 @@ scope here — see docs/background-lifecycle-workers.md.
 Usage (local):
     python -m app.workers.runner --tenant t1 --user u1 --job all
     python -m app.workers.runner --tenant t1 --user u1 --job decay --job archive
+    python -m app.workers.runner --tenant t1 --user u1 --job deletion_compaction
     python -m app.workers.runner --tenant t1 --user u1 --job deletion_verification --dry-run
 """
 
@@ -25,6 +26,7 @@ from ..services.audit import AuditService
 from .archive import ArchiveWorker
 from .conflict_scan import ConflictScanWorker
 from .decay import DecayWorker
+from .deletion_compaction import DeletionCompactionWorker
 from .deletion_verification import DeletionVerificationWorker
 from .lifecycle import LifecycleWorker, WorkerContext
 from .reflection import ReflectionWorker
@@ -34,6 +36,7 @@ from .schemas import DEFAULT_JOB_ORDER, WorkerJob, WorkerRunReport
 _WORKERS: dict[WorkerJob, type[LifecycleWorker]] = {
     WorkerJob.decay: DecayWorker,
     WorkerJob.archive: ArchiveWorker,
+    WorkerJob.deletion_compaction: DeletionCompactionWorker,
     WorkerJob.deletion_verification: DeletionVerificationWorker,
     WorkerJob.conflict_scan: ConflictScanWorker,
     WorkerJob.reflection: ReflectionWorker,

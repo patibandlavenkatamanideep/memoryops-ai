@@ -59,6 +59,32 @@ def test_control_plane_detail_marks_deleted_never_active(gateway, repo):
     assert mem.id not in {m.id for m in repo.list_memories("t1", "u1")}
 
 
+def test_compacted_deleted_memory_stays_unreachable(gateway, repo):
+    # v0.7: after the repository compacts a soft-deleted memory (clears content +
+    # vector material), the deletion guarantee must still hold and the tombstone
+    # must remain (status stays deleted, never resurrected).
+    _chat(gateway, "Remember that I prefer dark mode dashboards.")
+    mem = repo.list_memories("t1", "u1")[0]
+    repo.soft_delete("t1", "u1", mem.id)
+
+    compacted = repo.compact_deleted_memory("t1", "u1", mem.id, reason="test")
+    assert compacted is not None
+    assert compacted.status == Status.deleted  # tombstone, never reactivated
+    assert compacted.content == "" and compacted.embedding == []
+
+    assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
+    assert mem.id not in {m.id for m in repo.list_memories("t1", "u1")}
+    assert all(m.id != mem.id for m, _ in repo.search_candidates("t1", "u1", []))
+
+
+def test_compaction_rejects_active_memory(gateway, repo):
+    # Active memory is never eligible for compaction (only deleted rows are).
+    _chat(gateway, "Remember that I prefer dark mode dashboards.")
+    mem = repo.list_memories("t1", "u1")[0]
+    assert repo.compact_deleted_memory("t1", "u1", mem.id, reason="x") is None
+    assert repo.get_memory("t1", "u1", mem.id).content != ""
+
+
 def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # v0.3.1: loop runs/events are operational evidence stored alongside the
     # write path. They must never re-expose a soft-deleted memory in retrieval.

@@ -121,6 +121,22 @@ is a *review candidate*, not an automatic change. See
 [background-lifecycle-workers.md](background-lifecycle-workers.md) and
 [ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md).
 
+## Deletion compaction (v0.7)
+
+Forgetting is governed end to end. After logical deletion is verified, the
+**deletion compaction worker** clears a soft-deleted memory's content + vector
+material and records the purge as audit evidence:
+`deletion_compaction_started/completed/failed/skipped`, `memory_content_compacted`,
+`memory_vector_purge_attempted/verified/failed`, and
+`memory_purge_tombstone_preserved`. The governance **tombstone is preserved** —
+the row stays as a content-free record of *that*, *when*, and *why* a memory was
+deleted, with its audit trail intact — so compaction never destroys governance
+evidence. Verification is fail-closed. Honest scope: this is not crypto-shred or
+guaranteed physical erasure. See
+[deletion-compaction.md](deletion-compaction.md),
+[vector-purge-verification.md](vector-purge-verification.md), and
+[ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
+
 ## Retention & feedback
 
 - `memory_feedback` captures `helpful | wrong | outdated | sensitive | not_relevant` and feeds the

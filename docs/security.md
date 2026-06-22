@@ -97,13 +97,35 @@ The most dangerous failures for an AI memory system are:
   `test_deletion_verification_worker.py`).
 - **Deletion verification** continuously confirms soft-deleted memory is absent
   from active retrieval, default listing, and the vector candidate path, recording
-  pass/fail evidence (invariant #2). This verifies **logical** forgetting; physical
-  vector purge / crypto-shred is staged — see
+  pass/fail evidence (invariant #2). This verifies **logical** forgetting — see
   [deletion-verification.md](deletion-verification.md).
 - A worker failure can never block chat: exceptions are caught and recorded as
   `lifecycle_worker_failed`, never raised into a caller (invariant #4).
 - Worker audit metadata is content-free (ids / counts / flags only). Reflection is
   proposal-only and **disabled by default**.
+
+### Deletion compaction + vector purge verification (v0.7)
+- The **deletion compaction worker** clears a soft-deleted memory's `content`,
+  normalized content, embedding/vector material, and provenance excerpt after a
+  retention window, while preserving the governance tombstone (id, tenant/user,
+  `status='deleted'`, `deleted_at`, `source.kind`) and the full audit trail
+  (`test_deletion_compaction_worker.py`, `test_deletion.py`).
+- Only `status='deleted'` rows are ever compacted; active/archived memory is never
+  touched and deleted memory is never resurrected/reactivated (invariants #1, #2).
+- The purge is **verified fail-closed**: a still-reachable id, intact material, a
+  missing tombstone, or a verification-path error all record
+  `memory_vector_purge_failed` and flag the run — never a silent pass
+  (`test_vector_purge_verification.py`).
+- Every step is audited content-free: `deletion_compaction_started/completed/
+  failed/skipped`, `memory_content_compacted`, `memory_vector_purge_attempted/
+  verified/failed`, `memory_purge_tombstone_preserved`.
+- **Honest boundary.** v0.7 is auditable content/vector compaction +
+  retrieval-exclusion verification at the application + repository level. It is
+  **not** crypto-shred, does **not** guarantee physical disk/database-page byte
+  erasure, and does **not** orchestrate pgvector reindex/`VACUUM`. See
+  [deletion-compaction.md](deletion-compaction.md),
+  [vector-purge-verification.md](vector-purge-verification.md), and
+  [ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
 
 ## Production hardening roadmap
 

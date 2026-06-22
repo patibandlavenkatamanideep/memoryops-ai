@@ -52,6 +52,22 @@ def test_loop_runs_are_tenant_and_user_scoped(gateway, repo):
     assert repo.list_loop_runs(tenant_id="tenant_acme", user_id="other_user") == []
 
 
+def test_compaction_listing_is_tenant_scoped(gateway, repo):
+    # v0.7: the compaction worker's source query (list_deleted_for_compaction)
+    # and the compaction mutation must stay within the (tenant, user) scope.
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    mem = repo.list_memories("tenant_acme", "user_acme")[0]
+    repo.soft_delete("tenant_acme", "user_acme", mem.id)
+
+    # Another tenant sees no deleted-for-compaction rows and cannot compact it.
+    assert repo.list_deleted_for_compaction("tenant_demo", "user_demo") == []
+    assert repo.compact_deleted_memory("tenant_demo", "user_demo", mem.id, reason="x") is None
+    # Wrong user in the same tenant also cannot reach it.
+    assert repo.compact_deleted_memory("tenant_acme", "other_user", mem.id, reason="x") is None
+    # The correct scope sees exactly its one deleted row.
+    assert [m.id for m in repo.list_deleted_for_compaction("tenant_acme", "user_acme")] == [mem.id]
+
+
 def test_audit_listing_is_tenant_and_memory_scoped(gateway, repo):
     # v0.5: the control plane's per-memory audit filter must stay tenant-scoped
     # and must not surface another memory's events.

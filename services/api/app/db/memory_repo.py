@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from ..loops.metrics import summarize_loop_runs
 from ..loops.types import LoopEvent, LoopRun
-from .entities import StoredAudit, StoredMemory, StoredSettings
+from .entities import StoredAudit, StoredMemory, StoredSettings, apply_compaction, is_compacted
 from .repository import Repository
 
 _ACTIVE = "active"
@@ -82,6 +82,31 @@ class InMemoryRepository(Repository):
         m.status = Status.deleted
         m.deleted_at = datetime.now(UTC)
         m.updated_at = m.deleted_at
+        return m
+
+    def list_deleted_for_compaction(
+        self, tenant_id: str, user_id: str, *, include_compacted: bool = False
+    ) -> list[StoredMemory]:
+        rows = [m for m in self._scoped(tenant_id, user_id) if m.status.value == _DELETED]
+        if not include_compacted:
+            rows = [m for m in rows if not is_compacted(m)]
+        return sorted(rows, key=lambda m: m.deleted_at or m.created_at, reverse=True)
+
+    def compact_deleted_memory(
+        self,
+        tenant_id: str,
+        user_id: str,
+        memory_id: str,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredMemory | None:
+        m = self.get_memory(tenant_id, user_id, memory_id)
+        # Only deleted rows are ever compacted (never resurrect, never touch active).
+        if not m or m.status.value != _DELETED:
+            return None
+        apply_compaction(m, reason=reason, now=now or datetime.now(UTC))
+        self._memories[m.id] = m
         return m
 
     def find_similar_active(

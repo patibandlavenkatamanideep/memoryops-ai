@@ -25,7 +25,7 @@ from ..models.sqlalchemy_models import (
     SettingsORM,
 )
 from ..schemas.memory import MemoryType, Sensitivity, Source, Status
-from .entities import StoredAudit, StoredMemory, StoredSettings
+from .entities import StoredAudit, StoredMemory, StoredSettings, apply_compaction, is_compacted
 from .repository import Repository
 
 _DELETED = "deleted"
@@ -202,6 +202,55 @@ class PostgresRepository(Repository):
             now = datetime.now(UTC)
             row.deleted_at = now
             row.updated_at = now
+            s.commit()
+            return _to_stored(row)
+
+    def list_deleted_for_compaction(
+        self, tenant_id: str, user_id: str, *, include_compacted: bool = False
+    ) -> list[StoredMemory]:
+        with self._scoped(tenant_id, user_id) as s:
+            stmt = (
+                select(MemoryRecordORM)
+                .where(
+                    MemoryRecordORM.tenant_id == tenant_id,
+                    MemoryRecordORM.user_id == user_id,
+                    MemoryRecordORM.status == _DELETED,
+                )
+                .order_by(MemoryRecordORM.deleted_at.desc())
+            )
+            rows = [_to_stored(r) for r in s.scalars(stmt)]
+        if not include_compacted:
+            rows = [m for m in rows if not is_compacted(m)]
+        return rows
+
+    def compact_deleted_memory(
+        self,
+        tenant_id: str,
+        user_id: str,
+        memory_id: str,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredMemory | None:
+        with self._scoped(tenant_id, user_id) as s:
+            row = s.get(MemoryRecordORM, memory_id)
+            if (
+                not row
+                or row.tenant_id != tenant_id
+                or row.user_id != user_id
+                or row.status != _DELETED
+            ):
+                return None
+            stored = _to_stored(row)
+            apply_compaction(stored, reason=reason, now=now or datetime.now(UTC))
+            # Clear retrievable content + vector material; tombstone columns
+            # (id, tenant_id, user_id, status, deleted_at, created_at) untouched.
+            row.content = stored.content
+            row.normalized_content = stored.normalized_content
+            row.embedding = None  # vector column → NULL (material removed)
+            row.source = stored.source.model_dump()
+            row.extra_metadata = stored.metadata
+            row.updated_at = stored.updated_at
             s.commit()
             return _to_stored(row)
 

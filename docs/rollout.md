@@ -54,6 +54,28 @@ policy broker stays authoritative. Conflict resolution and reflection remain
 [deletion-verification.md](deletion-verification.md),
 [ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md).
 
+## Phase 5 (cont.) — Deletion compaction + vector purge ✅ (v0.7)
+A sixth lifecycle job, **deletion compaction**, clears soft-deleted memory's
+content + vector material after a retention window, preserves the governance
+tombstone + audit trail, and **verifies** the purge fail-closed. Additive
+repository methods (`list_deleted_for_compaction`, `compact_deleted_memory`) keep
+it isolated. Honest scope: auditable content/vector compaction + retrieval-exclusion
+verification — **not** crypto-shred or guaranteed physical disk/index reclamation.
+See [deletion-compaction.md](deletion-compaction.md),
+[vector-purge-verification.md](vector-purge-verification.md),
+[phase-gates/phase-13-deletion-compaction-vector-purge.md](phase-gates/phase-13-deletion-compaction-vector-purge.md),
+[ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
+
+## Public roadmap
+
+| Version | Scope | Status |
+|---------|-------|--------|
+| v0.7 | Physical deletion compaction + vector purge verification | ✅ Done |
+| v0.8 | Railway worker runtime + scheduled lifecycle orchestration | ⏳ Next |
+| v0.9 | Retention policies + legal hold + consent-aware memory | ⏳ Planned |
+| v0.10 | Assistant SDK + example apps | ⏳ Planned |
+| v1.0 | Production-ready governed memory runtime | ⏳ Planned |
+
 ## Production roadmap (beyond hackathon)
 
 - Swap heuristic LLM/embeddings for provider adapters (OpenAI/Anthropic/Gemini).

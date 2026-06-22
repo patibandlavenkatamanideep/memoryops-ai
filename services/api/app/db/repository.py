@@ -8,6 +8,7 @@ isolation and deletion guarantees are enforced for all callers.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from ..loops.types import LoopEvent, LoopRun
 from .entities import StoredAudit, StoredMemory, StoredSettings
@@ -37,6 +38,37 @@ class Repository(ABC):
 
     @abstractmethod
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None: ...
+
+    # ── deletion compaction (v0.7, ADR-011) ───────────────────────────────────
+    @abstractmethod
+    def list_deleted_for_compaction(
+        self, tenant_id: str, user_id: str, *, include_compacted: bool = False
+    ) -> list[StoredMemory]:
+        """Soft-deleted rows in scope, for the compaction worker only.
+
+        Returns ``status='deleted'`` rows (the only rows ever eligible for
+        compaction). Already-compacted rows are excluded unless
+        ``include_compacted`` is set, which keeps the worker idempotent.
+        """
+        ...
+
+    @abstractmethod
+    def compact_deleted_memory(
+        self,
+        tenant_id: str,
+        user_id: str,
+        memory_id: str,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> StoredMemory | None:
+        """Clear a soft-deleted memory's content + vector material in place.
+
+        No-op-returns-``None`` for a missing row or any row whose status is not
+        ``deleted`` (active/archived memory is never compacted, deleted memory is
+        never resurrected). Preserves the governance tombstone + audit trail.
+        """
+        ...
 
     @abstractmethod
     def find_similar_active(

@@ -40,23 +40,26 @@ Audit metadata is content-free: memory ids, surface names, and counts only.
 |--|--|--|
 | Mechanism | `status='deleted'` soft delete; repository excludes from all reads | Remove the row and its vector from storage / the ANN index |
 | Guarantee | Never retrieved (invariant #2) | Bytes no longer present |
-| Verified by | **this worker** | a future compaction / crypto-shred worker |
-| Reversible | Yes (forensics/audit can still see it) | No (by design) |
+| Verified by | **this worker** | the [deletion compaction worker](deletion-compaction.md) (v0.7) |
+| Reversible | Yes (forensics/audit can still see it) | No — payload cleared (tombstone kept) |
 
-v0.6 verifies **logical** forgetting. It deliberately does **not** perform
-destructive row/index surgery: ANN index compaction and cryptographic erasure are
-operationally risky and are staged for a later milestone.
+v0.6 verifies **logical** forgetting. v0.7 adds **content/vector compaction** on
+top of it (see below). Neither claims cryptographic erasure or physical disk/page
+byte reclamation — those remain staged.
 
-## Future: vector compaction / crypto-shred worker
+## v0.7: deletion compaction + vector purge verification
 
-A later milestone will add a worker that, after logical deletion has been verified
-stable for a retention window, physically purges deleted rows and compacts the
-pgvector index — or, for the strongest guarantee, crypto-shreds per-tenant
-encryption keys so deleted ciphertext is unrecoverable. That worker will:
+The [deletion compaction worker](deletion-compaction.md) now clears a soft-deleted
+memory's content + vector material (after a retention window), preserves the
+governance tombstone + audit trail, and **verifies** the purge fail-closed (see
+[vector-purge-verification.md](vector-purge-verification.md)). It:
 
-- run only on rows already confirmed logically deleted and out of retention;
-- be tenant scoped, idempotent, and fully audited (`memory_purged`, `index_compacted`);
-- never run on the chat path.
+- runs only on rows already `status='deleted'` and past retention;
+- is tenant scoped, idempotent, and fully audited (`memory_content_compacted`,
+  `memory_vector_purge_verified`, `memory_purge_tombstone_preserved`, …);
+- never resurrects deleted memory and never runs on the chat path.
 
-Until then, deletion verification is the auditable bridge: deleted memory is
-provably unreachable, with evidence on every run.
+Logical verification (this worker) + compaction verification (v0.7) together are
+the auditable bridge: deleted memory is provably unreachable **and** its payload is
+provably cleared, with evidence on every run. Crypto-shred and physical
+disk/index reclamation remain future work (ADR-011).

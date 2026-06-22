@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     workers_reflection_enabled: bool = False
     workers_reflection_min_cluster_size: int = 5
     workers_reflection_max_importance: int = 3
+    # Deletion compaction (v0.7, ADR-011). Only already soft-deleted memory is
+    # eligible, and only after it has been deleted for at least this many days
+    # (a retention/grace window before retrievable content + vector material are
+    # cleared). Default 0 = eligible as soon as it is deleted. Compaction never
+    # touches active/archived rows and never resurrects deleted memory.
+    workers_compaction_min_age_days: int = 0
 
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0

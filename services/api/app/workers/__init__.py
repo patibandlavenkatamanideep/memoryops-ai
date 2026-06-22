@@ -19,24 +19,30 @@ from __future__ import annotations
 from .archive import ArchiveWorker
 from .conflict_scan import ConflictScanWorker
 from .decay import DecayWorker
+from .deletion_compaction import DeletionCompactionWorker
 from .deletion_verification import DeletionVerificationWorker
 from .lifecycle import LifecycleWorker, WorkerContext
-from .metrics import summarize_worker_results
+from .metrics import summarize_compaction_results, summarize_worker_results
 from .reflection import ReflectionWorker
 from .runner import run_jobs
 from .schemas import (
+    PurgeVerification,
     WorkerJob,
     WorkerJobResult,
     WorkerRunReport,
     WorkerRunStatus,
 )
+from .vector_purge import PurgeCheck, verify_purged
 
 __all__ = [
     "ArchiveWorker",
     "ConflictScanWorker",
     "DecayWorker",
+    "DeletionCompactionWorker",
     "DeletionVerificationWorker",
     "LifecycleWorker",
+    "PurgeCheck",
+    "PurgeVerification",
     "ReflectionWorker",
     "WorkerContext",
     "WorkerJob",
@@ -44,5 +50,7 @@ __all__ = [
     "WorkerRunReport",
     "WorkerRunStatus",
     "run_jobs",
+    "summarize_compaction_results",
     "summarize_worker_results",
+    "verify_purged",
 ]

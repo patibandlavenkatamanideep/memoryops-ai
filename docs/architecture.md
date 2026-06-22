@@ -340,6 +340,9 @@ one `(tenant_id, user_id)` scope:
 - **conflict_scan** — reuse v0.4 advisory conflict detection across the corpus to
   produce review candidates (no overwrite);
 - **reflection** — proposal-only, off by default (no write/delete);
+- **deletion_compaction** (v0.7) — clear a soft-deleted memory's content + vector
+  material after a retention window, preserve the governance tombstone, and verify
+  the purge fail-closed;
 - **deletion_verification** — read-only confirmation that deleted memory is
   unreachable, with pass/fail evidence.
 
@@ -349,8 +352,10 @@ authoritative — workers demote/flag/propose only). A worker failure is caught 
 recorded (`lifecycle_worker_failed`), never raised into a caller, so it cannot
 block chat. Workers add no HTTP route; they run via
 `python -m app.workers.runner` (hosted by the Railway `worker` service). See
-[ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md) and
-[background-lifecycle-workers.md](background-lifecycle-workers.md).
+[ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md),
+[ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md),
+[background-lifecycle-workers.md](background-lifecycle-workers.md), and
+[deletion-compaction.md](deletion-compaction.md).
 
 ## Failure modes considered
 

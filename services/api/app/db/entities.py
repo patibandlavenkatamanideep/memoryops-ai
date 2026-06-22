@@ -63,6 +63,51 @@ class StoredMemory:
         )
 
 
+# ── Deletion compaction (v0.7, ADR-011) ──────────────────────────────────────
+# Where the content-free compaction tombstone lives on a memory's metadata.
+COMPACTION_META_KEY = "compaction"
+
+
+def is_compacted(memory: StoredMemory) -> bool:
+    """True once a deleted memory's content + vector material have been cleared."""
+    meta = memory.metadata.get(COMPACTION_META_KEY)
+    return bool(isinstance(meta, dict) and meta.get("compacted"))
+
+
+def apply_compaction(
+    memory: StoredMemory,
+    *,
+    reason: str,
+    now: datetime,
+    vector_supported: bool = True,
+) -> None:
+    """Compact a *soft-deleted* memory in place (callers must check status first).
+
+    Clears the retrievable/sensitive payload — content, normalized content, the
+    embedding/vector material, and the provenance excerpt — while preserving the
+    governance tombstone: id, tenant/user, status (``deleted``), ``deleted_at``,
+    ``created_at``, and ``source.kind``. The audit trail lives separately and is
+    never touched. Idempotent: re-running clears already-clear fields and rewrites
+    the same marker. See ADR-011.
+    """
+    memory.content = ""
+    memory.normalized_content = ""
+    memory.embedding = []
+    # source.excerpt carries a content excerpt → cleared; kind preserved so
+    # provenance (invariant #3) survives compaction.
+    memory.source = Source(kind=memory.source.kind)
+    memory.metadata = dict(memory.metadata)
+    memory.metadata[COMPACTION_META_KEY] = {
+        "compacted": True,
+        "compacted_at": now.isoformat(),
+        "reason": reason,
+        "content_compacted": True,
+        "vector_purged": vector_supported,
+        "purge_status": "purged" if vector_supported else "not_supported",
+    }
+    memory.updated_at = now
+
+
 @dataclass
 class StoredAudit:
     tenant_id: str

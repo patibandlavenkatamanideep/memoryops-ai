@@ -24,10 +24,15 @@ close that gap without weakening any invariant.
 | `archive` | Set stale, not-recently-used, non-pinned memory to `archived` | yes (status) | on |
 | `conflict_scan` | Flag contradicting memories as review candidates (advisory) | no | on |
 | `reflection` | Propose consolidation of low-importance clusters | no | **off** |
+| `deletion_compaction` | Clear soft-deleted memory's content + vector material; preserve tombstone; verify purge | yes (clears deleted payload) | on |
 | `deletion_verification` | Confirm deleted memory is unreachable; record evidence | no | on |
 
 `all` runs them in a deliberate order: mutating jobs first, then `reflection`,
-then read-only `deletion_verification` last so it observes the final state.
+then `deletion_compaction` (which clears already-deleted payload), then read-only
+`deletion_verification` last so it observes the final state. `deletion_compaction`
+only ever touches `status='deleted'` rows and preserves the governance tombstone —
+see [deletion-compaction.md](deletion-compaction.md) and
+[vector-purge-verification.md](vector-purge-verification.md) (v0.7, ADR-011).
 
 ## Operating principles (enforced in code + tests)
 
@@ -98,6 +103,7 @@ Thresholds are `Settings.workers_*` (see `app/core/config.py`):
 | `workers_reflection_enabled` | `false` | enable reflection proposals |
 | `workers_reflection_min_cluster_size` | 5 | min cluster to propose consolidation |
 | `workers_reflection_max_importance` | 3 | only cluster memory at/below this importance |
+| `workers_compaction_min_age_days` | 0 | min days since `deleted_at` before a deleted memory is compaction-eligible |
 
 `MEMORYOPS_WORKERS_REFLECTION=1` is the public toggle for reflection.
 
@@ -117,6 +123,8 @@ introduced by v0.6.
   deferred.
 - Cross-tenant scope enumeration is the orchestrator's responsibility; there is
   no repository method that lists all scopes yet.
-- Deletion verification covers **logical** forgetting only; physical vector
-  compaction / crypto-shred is staged — see
-  [deletion-verification.md](deletion-verification.md).
+- Deletion compaction (v0.7) clears deleted memory's content + vector material and
+  verifies the purge, but it is **not** crypto-shred and does **not** claim
+  physical disk/page erasure or pgvector index reclamation — see
+  [deletion-compaction.md](deletion-compaction.md) and
+  [vector-purge-verification.md](vector-purge-verification.md).

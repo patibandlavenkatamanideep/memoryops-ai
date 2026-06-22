@@ -259,7 +259,8 @@ RULES: list[Rule] = [
         "worker-tests",
         r"^services/api/app/workers/",
         r"^services/api/tests/test_(lifecycle_worker|decay_worker|archive_worker"
-        r"|deletion_verification_worker|conflict_scan_worker|worker_idempotency)\.py$",
+        r"|deletion_verification_worker|deletion_compaction_worker|conflict_scan_worker"
+        r"|worker_idempotency)\.py$",
         "Background worker code changed without worker tests (tests/test_*_worker.py "
         "or test_worker_idempotency.py).",
     ),
@@ -298,8 +299,61 @@ RULES: list[Rule] = [
         "worker-runner-evidence",
         r"^services/api/app/workers/runner\.py$",
         r"^(docs/phase-gates/phase-12-background-lifecycle-workers\.md$"
-        r"|infra/adr/ADR-010-background-memory-lifecycle-workers\.md$)",
-        "Background worker runner changed without phase-gate or ADR-010 evidence.",
+        r"|infra/adr/ADR-010-background-memory-lifecycle-workers\.md$"
+        r"|docs/phase-gates/phase-13-deletion-compaction-vector-purge\.md$"
+        r"|infra/adr/ADR-011-physical-deletion-compaction-vector-purge\.md$)",
+        "Background worker runner changed without phase-gate or ADR evidence.",
+    ),
+    # ── v0.7 Physical deletion compaction + vector purge verification (ADR-011) ─
+    Rule(
+        "Security",
+        "deletion-compaction-tests",
+        r"^services/api/app/workers/deletion_compaction\.py$",
+        r"^services/api/tests/test_deletion_compaction_worker\.py$",
+        "Deletion compaction worker changed without deletion-compaction worker tests.",
+    ),
+    Rule(
+        "Security",
+        "vector-purge-verification-tests",
+        r"^services/api/app/workers/vector_purge\.py$",
+        r"^services/api/tests/test_vector_purge_verification\.py$",
+        "Vector purge verification changed without vector-purge verification tests.",
+    ),
+    Rule(
+        "Security",
+        "compaction-repo-security-docs",
+        r"^services/api/app/db/(repository|memory_repo|postgres_repo|entities)\.py$",
+        r"^(docs/security\.md$|docs/governance\.md$|SECURITY\.md$)",
+        "Repository deletion/compaction methods changed without updating security or "
+        "governance docs.",
+    ),
+    Rule(
+        "Security",
+        "deletion-compaction-security-docs",
+        r"^services/api/app/workers/deletion_compaction\.py$|^services/api/app/workers/vector_purge\.py$",
+        r"^(docs/deletion-compaction\.md$|docs/vector-purge-verification\.md$"
+        r"|docs/security\.md$|docs/deletion-verification\.md$)",
+        "Deletion compaction / vector purge changed without updating deletion/security docs.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "deletion-compaction-adr",
+        r"^services/api/app/workers/deletion_compaction\.py$|^services/api/app/workers/vector_purge\.py$",
+        r"^(infra/adr/ADR-011-physical-deletion-compaction-vector-purge\.md$"
+        r"|docs/phase-gates/phase-13-deletion-compaction-vector-purge\.md$)",
+        "Physical deletion compaction semantics changed without ADR-011 or phase-13 gate "
+        "evidence.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "compaction-audit-governance-docs",
+        r"^services/api/app/workers/schemas\.py$",
+        r"^(docs/background-lifecycle-workers\.md$|docs/governance\.md$"
+        r"|docs/deletion-compaction\.md$|docs/security\.md$"
+        r"|infra/adr/ADR-010-background-memory-lifecycle-workers\.md$"
+        r"|infra/adr/ADR-011-physical-deletion-compaction-vector-purge\.md$)",
+        "Worker audit/event schema changed without updating lifecycle/governance/security "
+        "or deletion-compaction docs / an ADR.",
     ),
 ]
 
