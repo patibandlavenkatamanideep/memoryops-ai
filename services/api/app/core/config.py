@@ -82,6 +82,21 @@ class Settings(BaseSettings):
     # touches active/archived rows and never resurrects deleted memory.
     workers_compaction_min_age_days: int = 0
 
+    # Worker runtime / scheduled lifecycle orchestration (v0.8, ADR-012). The
+    # orchestrator runs lifecycle jobs on a schedule for explicit scopes, with a
+    # lease (lock) to prevent duplicate concurrent runs, a retry/backoff policy,
+    # persisted run history, and dead-letter records for exhausted retries.
+    worker_interval_seconds: int = 60
+    worker_lease_ttl_seconds: int = 300
+    worker_max_attempts: int = 3
+    worker_backoff_base_seconds: float = 1.0
+    worker_backoff_factor: float = 2.0
+    worker_backoff_max_seconds: float = 30.0
+    # Explicit scopes the scheduler runs, "tenant:user" comma-separated. Scope
+    # enumeration stays explicit (no unbounded cross-tenant scan) — see ADR-010/012.
+    worker_scopes: str = "tenant_demo:user_demo"
+    worker_run_history_limit: int = 500
+
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0
     retrieval_timeout_seconds: float = 3.0
@@ -123,4 +138,10 @@ def get_settings() -> Settings:
     # documented toggle; other thresholds are configured via their field names.
     if (val := os.getenv("MEMORYOPS_WORKERS_REFLECTION")) is not None:
         overrides["workers_reflection_enabled"] = val.lower() not in ("0", "false", "no")
+    # v0.8 worker runtime knobs (ADR-012). Operator-facing public toggles.
+    if (val := os.getenv("MEMORYOPS_WORKER_INTERVAL_SECONDS")) is not None:
+        with contextlib.suppress(ValueError):
+            overrides["worker_interval_seconds"] = int(val)
+    if (val := os.getenv("MEMORYOPS_WORKER_SCOPES")) is not None:
+        overrides["worker_scopes"] = val
     return Settings(**overrides)

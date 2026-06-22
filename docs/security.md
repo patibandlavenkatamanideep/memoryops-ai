@@ -127,6 +127,24 @@ The most dangerous failures for an AI memory system are:
   [vector-purge-verification.md](vector-purge-verification.md), and
   [ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
 
+### Worker runtime (v0.8)
+- The scheduled worker runtime persists two new operational artifacts —
+  **leases** (`worker_leases`) and **run history** (`worker_runs`, migration
+  `006`). Both are **content-free**: run records carry ids, counts, status,
+  attempts, and owner only — never memory content (`test_deletion.py::
+  test_worker_runtime_preserves_deletion_guarantee`).
+- Run history is **tenant scoped** at the repository (`list_worker_runs`
+  filters by `tenant_id`/`user_id`; `test_tenant_isolation.py::
+  test_worker_runs_are_tenant_scoped`). Lease keys are scope identifiers
+  (`"tenant:user"`), not data.
+- A **lease prevents duplicate concurrent runs** of a scope across replicas and
+  **expires**, so a crashed worker never deadlocks a scope. Exhausted retries are
+  **dead-lettered** (never silently lost) and surfaced at `GET /healthz/workers`.
+- The runtime stays **off the chat path** and never resurrects deleted memory —
+  running it over a scope preserves the deletion guarantee. See
+  [worker-runtime.md](worker-runtime.md) and
+  [ADR-012](../infra/adr/ADR-012-worker-runtime-orchestration.md).
+
 ## Production hardening roadmap
 
 - Encryption at rest (pgcrypto / disk) + field-level encryption for high-sensitivity content.

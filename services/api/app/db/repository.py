@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from ..loops.types import LoopEvent, LoopRun
-from .entities import StoredAudit, StoredMemory, StoredSettings
+from .entities import StoredAudit, StoredMemory, StoredSettings, WorkerLease, WorkerRunRecord
 
 
 class Repository(ABC):
@@ -110,6 +110,47 @@ class Repository(ABC):
         memory_id: str | None = None,
         limit: int = 200,
     ) -> list[StoredAudit]: ...
+
+    # ── worker runtime (v0.8, ADR-012) ────────────────────────────────────────
+    @abstractmethod
+    def try_acquire_lease(
+        self, key: str, owner: str, *, now: datetime, expires_at: datetime
+    ) -> bool:
+        """Atomically acquire the lease ``key`` for ``owner``.
+
+        Returns ``True`` if acquired (no live lease existed, or the prior one was
+        expired and is reclaimed). Returns ``False`` if another owner holds a
+        non-expired lease — this is how duplicate concurrent runs are prevented.
+        """
+        ...
+
+    @abstractmethod
+    def renew_lease(self, key: str, owner: str, *, expires_at: datetime) -> bool:
+        """Extend the lease expiry; only the current owner can renew."""
+        ...
+
+    @abstractmethod
+    def release_lease(self, key: str, owner: str) -> None:
+        """Release the lease; a no-op if held by a different owner (or absent)."""
+        ...
+
+    @abstractmethod
+    def get_lease(self, key: str) -> WorkerLease | None: ...
+
+    @abstractmethod
+    def add_worker_run(self, record: WorkerRunRecord) -> WorkerRunRecord:
+        """Append a worker run record to history (append-only operational log)."""
+        ...
+
+    @abstractmethod
+    def list_worker_runs(
+        self,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[WorkerRunRecord]: ...
 
     # ── settings ─────────────────────────────────────────────────────────────
     @abstractmethod

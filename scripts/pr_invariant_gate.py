@@ -260,9 +260,10 @@ RULES: list[Rule] = [
         r"^services/api/app/workers/",
         r"^services/api/tests/test_(lifecycle_worker|decay_worker|archive_worker"
         r"|deletion_verification_worker|deletion_compaction_worker|conflict_scan_worker"
-        r"|worker_idempotency)\.py$",
+        r"|worker_idempotency|worker_orchestrator|worker_locks|worker_retry"
+        r"|worker_health)\.py$",
         "Background worker code changed without worker tests (tests/test_*_worker.py "
-        "or test_worker_idempotency.py).",
+        "or test_worker_*.py).",
     ),
     Rule(
         "Security",
@@ -354,6 +355,51 @@ RULES: list[Rule] = [
         r"|infra/adr/ADR-011-physical-deletion-compaction-vector-purge\.md$)",
         "Worker audit/event schema changed without updating lifecycle/governance/security "
         "or deletion-compaction docs / an ADR.",
+    ),
+    # ── v0.8 Worker runtime + scheduled lifecycle orchestration (ADR-012) ───────
+    Rule(
+        "Reliability",
+        "worker-runtime-tests",
+        r"^services/api/app/workers/(orchestrator|scheduler|locks|retry)\.py$",
+        r"^services/api/tests/test_worker_(orchestrator|locks|retry|health)\.py$",
+        "Worker runtime (orchestrator/scheduler/locks/retry) changed without runtime tests "
+        "(test_worker_orchestrator/locks/retry/health).",
+    ),
+    Rule(
+        "Reliability",
+        "worker-lease-isolation-tests",
+        r"^services/api/app/workers/(orchestrator|locks)\.py$",
+        r"^services/api/tests/test_worker_locks\.py$",
+        "Lease / duplicate-run prevention changed without lock tests (test_worker_locks).",
+    ),
+    Rule(
+        "Reliability",
+        "worker-runtime-persistence-tests",
+        r"^services/api/app/db/(repository|memory_repo|postgres_repo|entities)\.py$",
+        r"^services/api/tests/test_worker_(orchestrator|locks|health)\.py$"
+        r"|^services/api/tests/test_tenant_isolation\.py$",
+        "Worker lease / run-history persistence changed without runtime or tenant-isolation "
+        "tests.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "worker-runtime-docs",
+        r"^services/api/app/workers/(orchestrator|scheduler|locks|retry)\.py$|^services/worker/",
+        r"^(docs/worker-runtime\.md$|docs/background-lifecycle-workers\.md$"
+        r"|docs/deployment/railway\.md$"
+        r"|infra/adr/ADR-012-worker-runtime-orchestration\.md$"
+        r"|docs/phase-gates/phase-14-worker-runtime-orchestration\.md$)",
+        "Worker runtime / worker process changed without updating worker-runtime, "
+        "lifecycle-worker, or deployment docs / ADR-012 / phase-14 gate.",
+    ),
+    Rule(
+        "Docs/ADR",
+        "worker-runtime-adr",
+        r"^services/api/app/workers/(orchestrator|scheduler)\.py$",
+        r"^(infra/adr/ADR-012-worker-runtime-orchestration\.md$"
+        r"|docs/phase-gates/phase-14-worker-runtime-orchestration\.md$)",
+        "Worker orchestration/scheduling semantics changed without ADR-012 or phase-14 "
+        "gate evidence.",
     ),
 ]
 

@@ -23,9 +23,19 @@ from ..models.sqlalchemy_models import (
     LoopRunORM,
     MemoryRecordORM,
     SettingsORM,
+    WorkerLeaseORM,
+    WorkerRunORM,
 )
 from ..schemas.memory import MemoryType, Sensitivity, Source, Status
-from .entities import StoredAudit, StoredMemory, StoredSettings, apply_compaction, is_compacted
+from .entities import (
+    StoredAudit,
+    StoredMemory,
+    StoredSettings,
+    WorkerLease,
+    WorkerRunRecord,
+    apply_compaction,
+    is_compacted,
+)
 from .repository import Repository
 
 _DELETED = "deleted"
@@ -345,6 +355,123 @@ class PostgresRepository(Repository):
                     trace_id=r.trace_id,
                     metadata=r.extra_metadata or {},
                     created_at=r.created_at,
+                )
+                for r in s.scalars(stmt)
+            ]
+
+    # ── worker runtime (v0.8) ──────────────────────────────────────────────────
+    def try_acquire_lease(
+        self, key: str, owner: str, *, now: datetime, expires_at: datetime
+    ) -> bool:
+        # Atomic acquire: insert, or take over only if the prior lease expired or
+        # is ours. RETURNING owner tells us whether we now hold it.
+        sql = text(
+            """
+            INSERT INTO worker_leases (key, owner, acquired_at, expires_at)
+            VALUES (:key, :owner, :now, :exp)
+            ON CONFLICT (key) DO UPDATE
+              SET owner = excluded.owner,
+                  acquired_at = excluded.acquired_at,
+                  expires_at = excluded.expires_at
+              WHERE worker_leases.expires_at <= :now OR worker_leases.owner = :owner
+            RETURNING owner
+            """
+        )
+        with self._Session() as s:
+            row = s.execute(
+                sql, {"key": key, "owner": owner, "now": now, "exp": expires_at}
+            ).first()
+            s.commit()
+            return bool(row and row[0] == owner)
+
+    def renew_lease(self, key: str, owner: str, *, expires_at: datetime) -> bool:
+        with self._Session() as s:
+            row = s.get(WorkerLeaseORM, key)
+            if not row or row.owner != owner:
+                return False
+            row.expires_at = expires_at
+            s.commit()
+            return True
+
+    def release_lease(self, key: str, owner: str) -> None:
+        with self._Session() as s:
+            row = s.get(WorkerLeaseORM, key)
+            if row and row.owner == owner:
+                s.delete(row)
+                s.commit()
+
+    def get_lease(self, key: str) -> WorkerLease | None:
+        with self._Session() as s:
+            row = s.get(WorkerLeaseORM, key)
+            if not row:
+                return None
+            return WorkerLease(
+                key=row.key,
+                owner=row.owner,
+                acquired_at=row.acquired_at,
+                expires_at=row.expires_at,
+            )
+
+    def add_worker_run(self, record: WorkerRunRecord) -> WorkerRunRecord:
+        with self._Session() as s:
+            s.add(
+                WorkerRunORM(
+                    id=record.id,
+                    tenant_id=record.tenant_id,
+                    user_id=record.user_id,
+                    status=record.status,
+                    jobs=list(record.jobs),
+                    attempts=record.attempts,
+                    scanned_count=record.scanned_count,
+                    changed_count=record.changed_count,
+                    skipped_count=record.skipped_count,
+                    error_count=record.error_count,
+                    owner=record.owner,
+                    trace_id=record.trace_id,
+                    error=record.error,
+                    extra_metadata=record.details,
+                    started_at=record.started_at,
+                    completed_at=record.completed_at,
+                )
+            )
+            s.commit()
+            return record
+
+    def list_worker_runs(
+        self,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[WorkerRunRecord]:
+        with self._Session() as s:
+            stmt = select(WorkerRunORM)
+            if tenant_id:
+                stmt = stmt.where(WorkerRunORM.tenant_id == tenant_id)
+            if user_id:
+                stmt = stmt.where(WorkerRunORM.user_id == user_id)
+            if status:
+                stmt = stmt.where(WorkerRunORM.status == status)
+            stmt = stmt.order_by(WorkerRunORM.started_at.desc()).limit(limit)
+            return [
+                WorkerRunRecord(
+                    id=r.id,
+                    tenant_id=r.tenant_id,
+                    user_id=r.user_id,
+                    status=r.status,
+                    jobs=list(r.jobs or []),
+                    attempts=r.attempts,
+                    scanned_count=r.scanned_count,
+                    changed_count=r.changed_count,
+                    skipped_count=r.skipped_count,
+                    error_count=r.error_count,
+                    owner=r.owner,
+                    trace_id=r.trace_id,
+                    error=r.error,
+                    details=r.extra_metadata or {},
+                    started_at=r.started_at,
+                    completed_at=r.completed_at,
                 )
                 for r in s.scalars(stmt)
             ]

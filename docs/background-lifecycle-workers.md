@@ -107,15 +107,24 @@ Thresholds are `Settings.workers_*` (see `app/core/config.py`):
 
 `MEMORYOPS_WORKERS_REFLECTION=1` is the public toggle for reflection.
 
+## Scheduled runtime (v0.8)
+
+As of v0.8 these jobs are driven by an operable **worker runtime** — leased so
+duplicate concurrent runs are prevented, retried with backoff, and recorded as
+run history / dead-letter evidence, with a `GET /healthz/workers` health view.
+`run_jobs(...)` is still the single-scope unit of work; the runtime adds
+scheduling, locking, retries, and durable history around it. See
+[worker-runtime.md](worker-runtime.md) and
+[ADR-012](../infra/adr/ADR-012-worker-runtime-orchestration.md).
+
 ## How this fits the Railway worker service
 
 Deployment is Railway-only (one project, five services: web/api/worker + Postgres
 + Redis — see [deployment/railway.md](deployment/railway.md)). The `worker`
-service is the natural host for a scheduled loop that, for each active tenant/user
-scope, calls `run_jobs(...)`. **Scope enumeration and scheduling live in the
-orchestrator**, not in the workers — workers are deliberately single-scope so
-tenant isolation is structural. No new infrastructure or live deployment is
-introduced by v0.6.
+service runs the v0.8 scheduler (`services/worker/main.py`), which calls the
+orchestrator once per interval for each configured `"tenant:user"` scope.
+**Scope enumeration stays explicit** (`worker_scopes`), and workers are
+deliberately single-scope so tenant isolation is structural.
 
 ## Limitations / future work
 

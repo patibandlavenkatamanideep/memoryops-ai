@@ -355,20 +355,36 @@ MemoryOps integrates it via an adapter and does not vendor its source.
   [docs/vector-purge-verification.md](docs/vector-purge-verification.md), and
   [ADR-011](infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
 
+## What works as of v0.8 (worker runtime + scheduled orchestration)
+
+- The lifecycle jobs are now **operable**, not just callable: a **lease/lock**
+  prevents duplicate concurrent runs of a scope, a **retry/backoff** policy
+  absorbs transient faults, exhausted retries become **dead-letter** records, and
+  every run is persisted as content-free **run history**.
+- A thin **scheduler** drives the orchestrator over explicit `"tenant:user"`
+  scopes; `services/worker/main.py` now runs the real lifecycle workers.
+- **Worker health is visible** at `GET /healthz/workers` (recent runs, dead-letter
+  / failure counts, last run per scope). New migration `006_worker_runtime.sql`.
+- Leases expire, so a crashed worker never deadlocks a scope; multiple replicas
+  are safe (the lease arbitrates). No queue/broker added.
+- See [docs/worker-runtime.md](docs/worker-runtime.md) and
+  [ADR-012](infra/adr/ADR-012-worker-runtime-orchestration.md).
+
 ## Roadmap
 
 - **v0.7** — physical deletion compaction + vector purge verification ✅
-- **v0.8** — Railway worker runtime + scheduled lifecycle orchestration
+- **v0.8** — worker runtime + scheduled lifecycle orchestration ✅
 - **v0.9** — retention policies + legal hold + consent-aware memory
 - **v0.10** — assistant SDK + example apps
 - **v1.0** — production-ready governed memory runtime
 
-## What remains (v0.8+)
+## What remains (v0.9+)
 
-- Scheduled worker runtime with locks/leases, retries, and run history (v0.8).
+- Retention windows, legal hold, consent-aware capture (v0.9).
 - Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's
   auditable compaction).
-- Governed reflection write path; cross-tenant scope enumeration for fleet scheduling.
+- Optional queue/cron backend behind the orchestrator interface; auto-discovered
+  scope enumeration.
 - Observability + economics, AI PR review runtime, deployment hardening.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).

@@ -66,13 +66,24 @@ See [deletion-compaction.md](deletion-compaction.md),
 [phase-gates/phase-13-deletion-compaction-vector-purge.md](phase-gates/phase-13-deletion-compaction-vector-purge.md),
 [ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md).
 
+## Phase 5 (cont.) — Worker runtime + scheduled orchestration ✅ (v0.8)
+The lifecycle jobs become operable: a lease/lock prevents duplicate concurrent
+runs, a retry/backoff policy absorbs transient faults, exhausted retries
+dead-letter, run history is persisted, and `GET /healthz/workers` exposes health.
+A thin scheduler drives the orchestrator over explicit `"tenant:user"` scopes;
+`services/worker/main.py` now runs the real lifecycle workers (superseding the
+legacy `jobs.py`). New migration `006_worker_runtime.sql`. See
+[worker-runtime.md](worker-runtime.md),
+[phase-gates/phase-14-worker-runtime-orchestration.md](phase-gates/phase-14-worker-runtime-orchestration.md),
+[ADR-012](../infra/adr/ADR-012-worker-runtime-orchestration.md).
+
 ## Public roadmap
 
 | Version | Scope | Status |
 |---------|-------|--------|
 | v0.7 | Physical deletion compaction + vector purge verification | ✅ Done |
-| v0.8 | Railway worker runtime + scheduled lifecycle orchestration | ⏳ Next |
-| v0.9 | Retention policies + legal hold + consent-aware memory | ⏳ Planned |
+| v0.8 | Worker runtime + scheduled lifecycle orchestration | ✅ Done |
+| v0.9 | Retention policies + legal hold + consent-aware memory | ⏳ Next |
 | v0.10 | Assistant SDK + example apps | ⏳ Planned |
 | v1.0 | Production-ready governed memory runtime | ⏳ Planned |
 

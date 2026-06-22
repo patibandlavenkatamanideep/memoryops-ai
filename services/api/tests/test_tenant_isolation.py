@@ -68,6 +68,19 @@ def test_compaction_listing_is_tenant_scoped(gateway, repo):
     assert [m.id for m in repo.list_deleted_for_compaction("tenant_acme", "user_acme")] == [mem.id]
 
 
+def test_worker_runs_are_tenant_scoped(repo):
+    # v0.8: worker run history is operational evidence tagged by tenant/user and
+    # must filter to a single scope (no cross-tenant leakage of run records).
+    from app.db.entities import WorkerRunRecord
+
+    repo.add_worker_run(WorkerRunRecord(tenant_id="tenant_acme", user_id="u1", status="completed"))
+    repo.add_worker_run(WorkerRunRecord(tenant_id="tenant_demo", user_id="u1", status="completed"))
+
+    acme = repo.list_worker_runs(tenant_id="tenant_acme")
+    assert [r.tenant_id for r in acme] == ["tenant_acme"]
+    assert repo.list_worker_runs(tenant_id="tenant_demo", user_id="other") == []
+
+
 def test_audit_listing_is_tenant_and_memory_scoped(gateway, repo):
     # v0.5: the control plane's per-memory audit filter must stay tenant-scoped
     # and must not surface another memory's events.

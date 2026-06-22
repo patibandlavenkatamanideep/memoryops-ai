@@ -121,6 +121,49 @@ class StoredAudit:
     created_at: datetime = field(default_factory=_now)
 
 
+# ── Worker runtime (v0.8, ADR-012) ───────────────────────────────────────────
+@dataclass
+class WorkerLease:
+    """A mutual-exclusion lease that prevents duplicate concurrent worker runs.
+
+    ``key`` identifies the scope being processed (e.g. ``"tenant:user"``). A lease
+    is held by one ``owner`` until ``expires_at``; an expired lease is reclaimable
+    so a crashed worker never deadlocks the scope.
+    """
+
+    key: str
+    owner: str
+    acquired_at: datetime
+    expires_at: datetime
+
+
+@dataclass
+class WorkerRunRecord:
+    """Persisted history of one orchestrated worker run for a single scope.
+
+    Content-free operational evidence (ids/counts/status only). A run that
+    exhausts its retries is recorded with ``status='dead_letter'``; a run skipped
+    because another worker holds the lease is ``status='locked_skip'``.
+    """
+
+    tenant_id: str
+    user_id: str
+    status: str
+    jobs: list[str] = field(default_factory=list)
+    attempts: int = 0
+    scanned_count: int = 0
+    changed_count: int = 0
+    skipped_count: int = 0
+    error_count: int = 0
+    owner: str = ""
+    trace_id: str | None = None
+    error: str | None = None
+    details: dict = field(default_factory=dict)
+    id: str = field(default_factory=new_id)
+    started_at: datetime = field(default_factory=_now)
+    completed_at: datetime | None = None
+
+
 @dataclass
 class StoredSettings:
     tenant_id: str

@@ -47,6 +47,11 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   service (scope enumeration is the orchestrator's job). See ADR-010, ADR-011,
   `docs/background-lifecycle-workers.md`, `docs/deletion-compaction.md`,
   `docs/vector-purge-verification.md`, `docs/deletion-verification.md`.
+  v0.8 worker runtime (`orchestrator.py`/`scheduler.py`/`locks.py`/`retry.py`):
+  the `worker` service runs the scheduler over explicit `MEMORYOPS_WORKER_SCOPES`,
+  leased (duplicate runs prevented), retried with backoff, dead-lettered on
+  exhausted retries, with persisted run history (`worker_runs`, migration 006) and
+  worker health at `GET /healthz/workers`. See ADR-012, `docs/worker-runtime.md`.
 - `services/api/app/db` — repository abstraction. `MEMORYOPS_STORAGE=memory|postgres`. Vector
   retrieval goes through `Repository.search_candidates` (pgvector on Postgres, cosine in memory).
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in

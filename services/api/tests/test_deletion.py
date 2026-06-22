@@ -85,6 +85,29 @@ def test_compaction_rejects_active_memory(gateway, repo):
     assert repo.get_memory("t1", "u1", mem.id).content != ""
 
 
+def test_worker_runtime_preserves_deletion_guarantee(gateway, repo):
+    # v0.8: running the scheduled worker runtime over a scope that has a deleted
+    # memory must keep the deletion guarantee (the run record is content-free and
+    # the deleted row stays unreachable / never resurrected).
+    from app.workers.orchestrator import Scope, WorkerOrchestrator
+    from app.workers.retry import RetryPolicy
+
+    _chat(gateway, "Remember that I prefer dark mode dashboards.")
+    mem = repo.list_memories("t1", "u1")[0]
+    repo.soft_delete("t1", "u1", mem.id)
+
+    orch = WorkerOrchestrator(
+        repo, owner="t", retry_policy=RetryPolicy(max_attempts=1), sleep=lambda _s: None
+    )
+    rec = orch.run_scope(Scope("t1", "u1"))
+
+    assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
+    assert mem.id not in {m.id for m in repo.list_memories("t1", "u1")}
+    assert repo.get_memory("t1", "u1", mem.id).status == Status.deleted
+    # Run record carries no memory content (ids/counts/status only).
+    assert "dark mode" not in str(rec.details)
+
+
 def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # v0.3.1: loop runs/events are operational evidence stored alongside the
     # write path. They must never re-expose a soft-deleted memory in retrieval.

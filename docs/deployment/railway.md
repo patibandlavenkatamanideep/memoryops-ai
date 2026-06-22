@@ -63,14 +63,20 @@ config files is resolved relative to the service **Root Directory**.
 - **Config File:** `railway/worker.railway.json`
 - **Dockerfile path:** `services/worker/Dockerfile` (relative to repo root)
 - **Start command:** `python main.py` (from config)
-- **No HTTP health check** — it is an interval scheduler, not a web server.
+- **No HTTP health check on the worker itself** — it is an interval scheduler, not
+  a web server. As of v0.8 it runs the orchestrator + scheduler over the real
+  lifecycle workers (leased, retried, dead-lettered); set
+  `MEMORYOPS_WORKER_SCOPES="tenant:user,…"` and optionally
+  `MEMORYOPS_WORKER_INTERVAL_SECONDS`. **Worker health is observable via the API**
+  at `GET /healthz/workers` (run history, dead-letter / failure counts, last run
+  per scope). See [worker-runtime.md](../worker-runtime.md).
 
 ## Deployment order
 
 Provision and deploy in this order so dependencies are ready:
 
 1. **Postgres** plugin — then run migrations from `infra/db/migrations` (apply
-   `001…005` in order; `005_loop_engineering.sql` is the latest).
+   `001…006` in order; `006_worker_runtime.sql` is the latest).
 2. **Redis** plugin.
 3. **`memoryops-api`** — set `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`,
    `REDIS_URL`. Wait for `/readyz` to report `ready: true`.
@@ -107,7 +113,8 @@ After all five are up, run the smoke test
   `HEALTHCHECK` is cosmetic in production.
 - `NEXT_PUBLIC_API_URL` is build-time; changing the API domain requires a **web
   rebuild**, not just a restart.
-- The worker is a single-replica interval scheduler (no Celery/Temporal yet);
-  it is intentionally simple and idempotent per tick.
+- The worker is an interval scheduler (no Celery/Temporal yet); it is idempotent
+  per tick and lease-arbitrated, so running more than one replica is safe (the
+  lease prevents duplicate runs) but there is no central schedule coordinator.
 - Postgres RLS is enforced in `004_rls_policies.sql`; verify with
   `scripts/check_rls_policies.py` against the Railway database.

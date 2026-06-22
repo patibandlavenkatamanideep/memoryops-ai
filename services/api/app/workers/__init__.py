@@ -22,9 +22,18 @@ from .decay import DecayWorker
 from .deletion_compaction import DeletionCompactionWorker
 from .deletion_verification import DeletionVerificationWorker
 from .lifecycle import LifecycleWorker, WorkerContext
+from .locks import WorkerLeaseManager, scope_key
 from .metrics import summarize_compaction_results, summarize_worker_results
+from .orchestrator import (
+    Scope,
+    WorkerOrchestrator,
+    parse_scopes,
+    summarize_runtime_health,
+)
 from .reflection import ReflectionWorker
+from .retry import RetryOutcome, RetryPolicy, run_with_retry
 from .runner import run_jobs
+from .scheduler import WorkerScheduler
 from .schemas import (
     PurgeVerification,
     WorkerJob,
@@ -44,13 +53,23 @@ __all__ = [
     "PurgeCheck",
     "PurgeVerification",
     "ReflectionWorker",
+    "RetryOutcome",
+    "RetryPolicy",
+    "Scope",
     "WorkerContext",
     "WorkerJob",
     "WorkerJobResult",
+    "WorkerLeaseManager",
+    "WorkerOrchestrator",
     "WorkerRunReport",
     "WorkerRunStatus",
+    "WorkerScheduler",
+    "parse_scopes",
     "run_jobs",
+    "run_with_retry",
+    "scope_key",
     "summarize_compaction_results",
+    "summarize_runtime_health",
     "summarize_worker_results",
     "verify_purged",
 ]

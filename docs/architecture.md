@@ -351,10 +351,19 @@ resurrect deleted memory and none bypass the policy broker (it stays
 authoritative — workers demote/flag/propose only). A worker failure is caught and
 recorded (`lifecycle_worker_failed`), never raised into a caller, so it cannot
 block chat. Workers add no HTTP route; they run via
-`python -m app.workers.runner` (hosted by the Railway `worker` service). See
+`python -m app.workers.runner` (hosted by the Railway `worker` service).
+
+As of **v0.8** these jobs run inside an operable **worker runtime**
+(`app/workers/{orchestrator,scheduler,locks,retry}.py`): a per-scope lease prevents
+duplicate concurrent runs, a retry/backoff policy absorbs transient faults,
+exhausted retries dead-letter, run history persists (`worker_runs`, migration
+`006`), and `GET /healthz/workers` exposes health. `services/worker/main.py` runs
+the scheduler over explicit `worker_scopes`. See
 [ADR-010](../infra/adr/ADR-010-background-memory-lifecycle-workers.md),
 [ADR-011](../infra/adr/ADR-011-physical-deletion-compaction-vector-purge.md),
-[background-lifecycle-workers.md](background-lifecycle-workers.md), and
+[ADR-012](../infra/adr/ADR-012-worker-runtime-orchestration.md),
+[background-lifecycle-workers.md](background-lifecycle-workers.md),
+[worker-runtime.md](worker-runtime.md), and
 [deletion-compaction.md](deletion-compaction.md).
 
 ## Failure modes considered

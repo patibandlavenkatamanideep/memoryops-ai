@@ -10,7 +10,15 @@ from datetime import UTC, datetime
 
 from ..loops.metrics import summarize_loop_runs
 from ..loops.types import LoopEvent, LoopRun
-from .entities import StoredAudit, StoredMemory, StoredSettings, apply_compaction, is_compacted
+from .entities import (
+    StoredAudit,
+    StoredMemory,
+    StoredSettings,
+    WorkerLease,
+    WorkerRunRecord,
+    apply_compaction,
+    is_compacted,
+)
 from .repository import Repository
 
 _ACTIVE = "active"
@@ -28,6 +36,8 @@ class InMemoryRepository(Repository):
         self._settings: dict[tuple[str, str], StoredSettings] = {}
         self._loop_runs: dict[str, LoopRun] = {}
         self._loop_events: list[LoopEvent] = []
+        self._leases: dict[str, WorkerLease] = {}
+        self._worker_runs: list[WorkerRunRecord] = []
 
     # ── memory ───────────────────────────────────────────────────────────────
     def create_memory(self, memory: StoredMemory) -> StoredMemory:
@@ -159,6 +169,54 @@ class InMemoryRepository(Repository):
         if memory_id:
             rows = [e for e in rows if e.memory_id == memory_id]
         return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]
+
+    # ── worker runtime (v0.8) ──────────────────────────────────────────────────
+    def try_acquire_lease(
+        self, key: str, owner: str, *, now: datetime, expires_at: datetime
+    ) -> bool:
+        existing = self._leases.get(key)
+        if existing and existing.expires_at > now and existing.owner != owner:
+            return False  # another owner holds a live lease → duplicate prevented
+        self._leases[key] = WorkerLease(
+            key=key, owner=owner, acquired_at=now, expires_at=expires_at
+        )
+        return True
+
+    def renew_lease(self, key: str, owner: str, *, expires_at: datetime) -> bool:
+        existing = self._leases.get(key)
+        if not existing or existing.owner != owner:
+            return False
+        existing.expires_at = expires_at
+        return True
+
+    def release_lease(self, key: str, owner: str) -> None:
+        existing = self._leases.get(key)
+        if existing and existing.owner == owner:
+            del self._leases[key]
+
+    def get_lease(self, key: str) -> WorkerLease | None:
+        return self._leases.get(key)
+
+    def add_worker_run(self, record: WorkerRunRecord) -> WorkerRunRecord:
+        self._worker_runs.append(record)
+        return record
+
+    def list_worker_runs(
+        self,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[WorkerRunRecord]:
+        rows = list(self._worker_runs)
+        if tenant_id:
+            rows = [r for r in rows if r.tenant_id == tenant_id]
+        if user_id:
+            rows = [r for r in rows if r.user_id == user_id]
+        if status:
+            rows = [r for r in rows if r.status == status]
+        return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
 
     # ── settings ─────────────────────────────────────────────────────────────
     def get_settings(self, tenant_id: str, user_id: str) -> StoredSettings:
