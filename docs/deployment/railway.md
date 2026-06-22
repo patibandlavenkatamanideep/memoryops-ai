@@ -76,7 +76,7 @@ config files is resolved relative to the service **Root Directory**.
 Provision and deploy in this order so dependencies are ready:
 
 1. **Postgres** plugin — then run migrations from `infra/db/migrations` (apply
-   `001…006` in order; `006_worker_runtime.sql` is the latest).
+   `001…007` in order; `007_retention_legal_hold_consent.sql` is the latest).
 2. **Redis** plugin.
 3. **`memoryops-api`** — set `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`,
    `REDIS_URL`. Wait for `/readyz` to report `ready: true`.
