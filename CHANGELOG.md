@@ -3,6 +3,17 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.1 — Prometheus Metrics Exposition
+Additive under the `1.x` compatibility promise. Process-wide, content-free
+Prometheus text metrics at `GET /metrics` (HTTP traffic, retrieval latency/mode,
+policy-decision rate, pull-derived worker run counts) for a Prometheus/Grafana
+scrape. Dependency-free (hand-rolled in `app/observability/`), low-cardinality
+(no `tenant_id`/`user_id` labels), and graceful — recording is no-throw and the
+scrape never 500s. `/healthz` now reports `uptime_seconds` + `metrics_enabled`.
+Toggle with `MEMORYOPS_METRICS_ENABLED`. No chat-path behavior change; distinct
+from the per-tenant `GET /api/metrics` JSON.
+See [docs/observability.md](docs/observability.md), [ADR-015](infra/adr/ADR-015-prometheus-metrics-exposition.md).
+
 ## v1.0 — Production-Ready Governed Memory Runtime
 The stable public release. The governed memory lifecycle (Capture → Evaluate →
 Store → Retrieve → Rank → Compose → Update → Forget → Audit), its seven enforced

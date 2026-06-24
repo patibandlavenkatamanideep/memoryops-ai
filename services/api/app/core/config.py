@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     service_name: str = "memoryops-api"
     log_level: str = "INFO"
 
+    # Observability (v0.13, ADR-015). Process-wide Prometheus metrics exposition at
+    # GET /metrics. Content-free, low-cardinality, no new dependency. ON by default;
+    # toggle with MEMORYOPS_METRICS_ENABLED. Distinct from the per-tenant business
+    # metrics JSON at GET /api/metrics.
+    metrics_enabled: bool = True
+
     # Storage backend: "memory" runs with no infra (default for dev/tests),
     # "postgres" uses SQLAlchemy + pgvector.
     storage: Literal["memory", "postgres"] = "memory"
@@ -122,6 +128,8 @@ def get_settings() -> Settings:
     import os
 
     overrides = {}
+    if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
+        overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
     if (val := os.getenv("MEMORYOPS_EMBEDDING_PROVIDER")) in ("stub", "heuristic", "openai"):

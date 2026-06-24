@@ -19,6 +19,7 @@ from ..db.repository import Repository
 from ..llm import detect_conflicts, get_llm_provider
 from ..loops.events import complete_loop_run_sync, emit_loop_event_sync, start_loop_run_sync
 from ..loops.types import LoopId, LoopState, LoopStatus
+from ..observability import observe_retrieval, record_policy_decision
 from ..schemas.memory import (
     ChatRequest,
     ChatResponse,
@@ -116,9 +117,11 @@ class Gateway:
             block, used = self._composer.compose(ranked)
             return block, used, result.mode
 
+        _read_start = time.monotonic()
         context_block, used_memories, retrieval_mode = safe_call(
             _read, default=("", [], "none"), label="retrieval"
         )
+        observe_retrieval(retrieval_mode, (time.monotonic() - _read_start) * 1000)
         emit_loop_event_sync(
             self._repo,
             read_loop,
@@ -298,6 +301,7 @@ class Gateway:
             outcome = self._policy.evaluate(
                 cand, tenant_id=req.tenant_id, user_id=req.user_id, settings=settings
             )
+            record_policy_decision(outcome.decision.value)
             emit_loop_event_sync(
                 self._repo,
                 write_loop,
