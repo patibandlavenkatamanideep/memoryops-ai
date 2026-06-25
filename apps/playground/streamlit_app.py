@@ -96,15 +96,15 @@ def _active(repo, user_id):
 def _badges(memory) -> str:
     out = []
     if gov.is_legal_hold(memory):
-        out.append("🔒 legal hold")
+        out.append("legal hold")
     if gov.is_pinned(memory):
-        out.append("📌 pinned")
+        out.append("pinned")
     if gov.is_protected(memory):
-        out.append("🛡 protected")
+        out.append("protected")
     consent = gov.consent_status(memory)
     if consent != gov.ConsentStatus.granted:
-        out.append(f"⚠ consent:{consent}")
-    return "  ".join(out)
+        out.append(f"consent: {consent}")
+    return " · ".join(out)
 
 
 # ── pages ─────────────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ def page_memories() -> None:
     st.divider()
     st.markdown("**Run the lifecycle workers** (decay · archive · retention · "
                 "deletion verification · compaction) over this session:")
-    if st.button("▶ Run lifecycle workers"):
+    if st.button("Run lifecycle workers"):
         report = run_jobs(repo, tenant_id=TENANT, user_id=user_id, jobs=["all"],
                           trace_id=_trace())
         st.success(f"Ran {len(report.results)} jobs · "
@@ -248,19 +248,19 @@ def page_audit() -> None:
 
 # ── shell ───────────────────────────────────────────────────────────────────
 def main() -> None:
-    st.set_page_config(page_title="MemoryOps AI — Playground", page_icon="🧠", layout="wide")
+    st.set_page_config(page_title="MemoryOps AI — Playground", layout="wide")
     repo, _, _, user_id = _session()
 
-    st.sidebar.title("🧠 MemoryOps Playground")
+    st.sidebar.title("MemoryOps Playground")
     st.sidebar.caption("Interactive public demo (v0.12) — runs the real governed "
                        "pipeline against a fresh in-memory store, per session.")
     st.sidebar.markdown(f"**Session scope:** `{TENANT} / {user_id}`")
     st.sidebar.metric("Active memories", len(_active(repo, user_id)))
-    if st.sidebar.button("🌱 Seed demo memories"):
+    if st.sidebar.button("Seed demo memories"):
         for msg in SEED_MESSAGES:
             _chat(msg)
         st.rerun()
-    if st.sidebar.button("♻ Reset session"):
+    if st.sidebar.button("Reset session"):
         _reset()
         st.rerun()
     st.sidebar.divider()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter
 
 from .. import __version__
@@ -10,10 +12,19 @@ from ..db.factory import get_repository
 
 router = APIRouter(tags=["ops"])
 
+# Captured at import so /healthz can report process uptime.
+_PROCESS_START = time.monotonic()
+
 
 @router.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok", "version": __version__}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "version": __version__,
+        "uptime_seconds": round(time.monotonic() - _PROCESS_START, 1),
+        "metrics_enabled": settings.metrics_enabled,
+    }
 
 
 @router.get("/healthz/workers")

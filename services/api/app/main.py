@@ -16,7 +16,8 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .core.config import get_settings
 from .core.logging import clear_request_context, get_logger, set_request_context, setup_logging
-from .routes import audit, chat, evals, health, loops, memories, retention
+from .observability import observe_http
+from .routes import audit, chat, evals, health, loops, memories, metrics_prometheus, retention
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -42,14 +43,21 @@ async def request_context(request: Request, call_next):
     request.state.trace_id = trace_id
     set_request_context(trace_id)
     start = time.monotonic()
+    status_code = 500
     try:
         response = await call_next(request)
+        status_code = response.status_code
     finally:
         latency_ms = int((time.monotonic() - start) * 1000)
         logger.info(
             f"{request.method} {request.url.path}",
             extra={"event": "http_request", "latency_ms": latency_ms, "status": "done"},
         )
+        # Record process-wide metrics with a bounded route label (the matched
+        # route *template*, not the raw URL, to keep cardinality finite). No-throw.
+        route = request.scope.get("route")
+        route_label = getattr(route, "path", None) or "__unmatched__"
+        observe_http(route_label, request.method, status_code, latency_ms)
         clear_request_context()
     response.headers["x-trace-id"] = trace_id
     return response
@@ -65,6 +73,7 @@ async def unhandled_exception(request: Request, exc: Exception):
 
 
 app.include_router(health.router)
+app.include_router(metrics_prometheus.router)
 app.include_router(chat.router)
 app.include_router(memories.router)
 app.include_router(retention.router)

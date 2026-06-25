@@ -32,6 +32,11 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   `app/services/{retriever,ranker,context_composer}.py`.
 - `services/api/app/embeddings` — swappable `EmbeddingProvider` (stub default + optional OpenAI).
   `MEMORYOPS_EMBEDDING_PROVIDER=stub|openai`. `app/core/embeddings.py` is a back-compat shim.
+- `services/api/app/observability` — process-wide, dependency-free Prometheus
+  metrics exposition at `GET /metrics` (v1.1). Content-free + low-cardinality
+  (no tenant/user labels); recording is no-throw (invariant #4); worker gauges are
+  pull-derived at scrape time. Distinct from the per-tenant `GET /api/metrics` JSON.
+  Toggle `MEMORYOPS_METRICS_ENABLED`. See ADR-015, `docs/observability.md`.
 - `services/api/app/compression` — optional context compression at the LLM boundary
   (`MEMORYOPS_CONTEXT_COMPRESSION=none|headroom`). `NoopCompressor` is the default;
   `HeadroomCompressor` is optional and degrades to no-op. Runs **after** policy/governance/

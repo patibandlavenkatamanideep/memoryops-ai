@@ -93,16 +93,23 @@ Query: `tenant_id` (req), `user_id` (opt), `memory_id` (opt), `limit` (opt, ≤1
 Returns `AuditEvent[]` (append-only), newest first.
 
 ## GET /api/metrics
-Query: `tenant_id` (req). Returns counts:
-`{ total_memories, by_status, audit_events, by_action }`.
+Query: `tenant_id` (req). Returns per-tenant business counts:
+`{ total_memories, by_status, audit_events, by_action }`. (Distinct from the
+process-wide Prometheus surface at `GET /metrics` — see Ops.)
 
 ## POST /api/evals/run
 Runs the invariant eval harness in-process. Returns
 `{ total, passed, failed, pass_rate, results[] }`.
 
 ## Ops
-- `GET /healthz` → `{ status, version }`
+- `GET /healthz` → `{ status, version, uptime_seconds, metrics_enabled }`
+- `GET /healthz/workers` → content-free worker run history (dead-letter / failure counts)
 - `GET /readyz` → `{ ready, storage, llm_provider, embeddings_provider, embedding_dim, detail }`
+- `GET /metrics` → **Prometheus text exposition** (v1.1; format `0.0.4`). Process-wide,
+  content-free, low-cardinality (no `tenant_id`/`user_id` labels): HTTP traffic,
+  retrieval latency/mode, policy-decision rate, worker run counts. Toggle with
+  `MEMORYOPS_METRICS_ENABLED` (returns `404` when disabled). See
+  [docs/observability.md](observability.md), ADR-015.
 - Every response carries an `x-trace-id` header.
 
 ## Loop Engineering (v0.3.1)
