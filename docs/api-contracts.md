@@ -30,10 +30,20 @@ Response:
     "confidence": 0.92, "importance": 8, "sensitivity": "low", "reason": "...", "memory_id": "..." }],
   "audit_event_ids": ["..."], "temporary_chat": false,
   "retrieval_mode": "hybrid",
+  "economics": { "embedding_model": "", "llm_model": "", "embedding_tokens": 6,
+    "context_tokens": 0, "compressed_tokens": 0, "tokens_saved": 0,
+    "llm_input_tokens": 18, "estimated_cost_usd": 0.0, "cost_saved_usd": 0.0,
+    "priced": false },
   "loop_evidence": { "memory.read": "completed", "memory.write": "completed" },
   "trace_id": "..." }
 ```
 `decision ∈ {SAVE, PENDING_APPROVAL, BLOCK, DROP_LOW_UTILITY, UPDATE_EXISTING, MERGE_WITH_EXISTING}`.
+
+**Economics (v1.2).** The optional `economics` block carries an *advisory* token +
+cost estimate for the request. Costs are list-price estimates (never billing);
+`priced=false` ⇒ the active model is unpriced (e.g. the stub provider) so costs are
+`0` while token counts stay real. Override prices with `MEMORYOPS_PRICING_OVERRIDES`.
+See [docs/economics.md](economics.md), ADR-016.
 
 **Retrieval (v0.3).** `retrieval_mode ∈ {hybrid, fallback, none}` — `hybrid` blends
 pgvector cosine similarity with keyword overlap; `fallback` is keyword-only after

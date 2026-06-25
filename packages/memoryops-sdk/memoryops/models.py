@@ -59,6 +59,9 @@ class ChatResult:
     retrieval_mode: str
     trace_id: str
     temporary_chat: bool = False
+    # Advisory per-request token + cost estimate (server v1.2, ADR-016). None when
+    # the server predates economics; otherwise the parsed `economics` block.
+    economics: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -72,6 +75,7 @@ class ChatResult:
             retrieval_mode=d.get("retrieval_mode", "none"),
             trace_id=d.get("trace_id", ""),
             temporary_chat=d.get("temporary_chat", False),
+            economics=d.get("economics"),
             raw=d,
         )
 

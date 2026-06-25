@@ -222,6 +222,14 @@ POLICY_DECISIONS_TOTAL = REGISTRY.counter(
     "memoryops_policy_decisions_total",
     "Policy broker decisions, by decision (SAVE|BLOCK|...). BLOCK/total = block rate.",
 )
+TOKENS_TOTAL = REGISTRY.counter(
+    "memoryops_tokens_total",
+    "Estimated tokens processed, by kind (embedding|context|compressed|saved|llm_input) and model.",
+)
+ESTIMATED_COST_USD_TOTAL = REGISTRY.counter(
+    "memoryops_estimated_cost_usd_total",
+    "Advisory estimated USD cost, by kind (embedding|llm_input|saved) and model. Not billing.",
+)
 WORKER_RUNS = REGISTRY.gauge(
     "memoryops_worker_runs",
     "Recent worker runs observed in persisted history, by status (pull-derived).",

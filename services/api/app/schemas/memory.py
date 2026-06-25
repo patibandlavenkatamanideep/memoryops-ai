@@ -123,6 +123,26 @@ class Compression(BaseModel):
     fallback: bool = False
 
 
+class Economics(BaseModel):
+    """Advisory per-request token + cost estimate (v1.2, ADR-016).
+
+    Costs are list-price *estimates* for instrumentation, never billing.
+    `priced=false` means the active model is unpriced (e.g. the stub provider) and
+    costs are 0 even though token counts are real.
+    """
+
+    embedding_model: str = ""
+    llm_model: str = ""
+    embedding_tokens: int = 0
+    context_tokens: int = 0
+    compressed_tokens: int = 0
+    tokens_saved: int = 0
+    llm_input_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    cost_saved_usd: float = 0.0
+    priced: bool = False
+
+
 class ChatResponse(BaseModel):
     assistant_message: str
     used_memories: list[UsedMemory] = Field(default_factory=list)
@@ -136,6 +156,8 @@ class ChatResponse(BaseModel):
     # Optional context compression metrics (present only when compression is
     # configured and there was a context block to compress).
     compression: Compression | None = None
+    # Optional advisory token + cost estimate for this request (v1.2, ADR-016).
+    economics: Economics | None = None
     loop_evidence: dict[str, str] = Field(default_factory=dict)
     trace_id: str
 
