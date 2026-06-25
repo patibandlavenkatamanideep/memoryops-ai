@@ -45,6 +45,37 @@ def record_policy_decision(decision: str) -> None:
         logger.debug("record_policy_decision failed", extra={"event": "metric_drop"})
 
 
+def observe_economics(econ) -> None:
+    """Record advisory token + cost estimates for a request (no-throw).
+
+    ``econ`` is a ``app.economics.RequestEconomics``. Labels are bounded
+    (kind + model); no tenant/user/content ever reaches a metric.
+    """
+    try:
+        emb_model = econ.embedding_model or "stub"
+        llm_model = econ.llm_model or "stub"
+        if econ.embedding_tokens:
+            m.TOKENS_TOTAL.inc({"kind": "embedding", "model": emb_model}, econ.embedding_tokens)
+        if econ.context_tokens:
+            m.TOKENS_TOTAL.inc({"kind": "context", "model": llm_model}, econ.context_tokens)
+        if econ.compressed_tokens:
+            m.TOKENS_TOTAL.inc({"kind": "compressed", "model": llm_model}, econ.compressed_tokens)
+        if econ.tokens_saved:
+            m.TOKENS_TOTAL.inc({"kind": "saved", "model": llm_model}, econ.tokens_saved)
+        if econ.llm_input_tokens:
+            m.TOKENS_TOTAL.inc({"kind": "llm_input", "model": llm_model}, econ.llm_input_tokens)
+        if econ.estimated_cost_usd:
+            m.ESTIMATED_COST_USD_TOTAL.inc(
+                {"kind": "request", "model": llm_model}, econ.estimated_cost_usd
+            )
+        if econ.cost_saved_usd:
+            m.ESTIMATED_COST_USD_TOTAL.inc(
+                {"kind": "saved", "model": llm_model}, econ.cost_saved_usd
+            )
+    except Exception:  # noqa: BLE001 — never break the chat path
+        logger.debug("observe_economics failed", extra={"event": "metric_drop"})
+
+
 def collect_worker_gauges(repo, limit: int = 500) -> None:
     """Refresh pull-derived worker gauges from persisted run history at scrape time.
 

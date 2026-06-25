@@ -8,6 +8,7 @@ process-wide, content-free operational signals for a Prometheus/Grafana scrape a
 
 from .instrument import (
     collect_worker_gauges,
+    observe_economics,
     observe_http,
     observe_retrieval,
     record_policy_decision,
@@ -20,5 +21,6 @@ __all__ = [
     "observe_http",
     "observe_retrieval",
     "record_policy_decision",
+    "observe_economics",
     "collect_worker_gauges",
 ]

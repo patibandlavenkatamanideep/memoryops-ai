@@ -37,6 +37,12 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   (no tenant/user labels); recording is no-throw (invariant #4); worker gauges are
   pull-derived at scrape time. Distinct from the per-tenant `GET /api/metrics` JSON.
   Toggle `MEMORYOPS_METRICS_ENABLED`. See ADR-015, `docs/observability.md`.
+- `services/api/app/economics` — advisory per-request token + cost estimation
+  (v1.2). Reuses the deterministic token estimator + a configurable price table
+  (`MEMORYOPS_PRICING_OVERRIDES`); unknown/stub models are unpriced ($0). Surfaced
+  as an optional `economics` block on the chat response and content-free Prometheus
+  counters. No-throw (invariant #4), advisory not billing. See ADR-016,
+  `docs/economics.md`.
 - `services/api/app/compression` — optional context compression at the LLM boundary
   (`MEMORYOPS_CONTEXT_COMPRESSION=none|headroom`). `NoopCompressor` is the default;
   `HeadroomCompressor` is optional and degrades to no-op. Runs **after** policy/governance/

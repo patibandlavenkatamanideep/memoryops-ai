@@ -25,6 +25,17 @@ def test_memory_path_records_metrics(gateway):
     assert _counter_total(m.POLICY_DECISIONS_TOTAL) > policy_before
 
 
+def test_memory_path_attaches_economics(gateway):
+    """The read path attaches an advisory economics estimate (ADR-016) without
+    altering loop behavior; token counters move and cost is 0 under stub providers."""
+    tokens_before = _counter_total(m.TOKENS_TOTAL)
+    resp = _chat(gateway, "Remember that I prefer dark mode dashboards.", trace_id="econ")
+    assert resp.economics is not None
+    assert resp.economics.llm_input_tokens >= 0
+    assert resp.economics.priced is False  # stub providers ⇒ unpriced
+    assert _counter_total(m.TOKENS_TOTAL) > tokens_before
+
+
 def test_memory_read_loop_emits_events(gateway, repo):
     _chat(gateway, "Remember that I prefer dark mode dashboards.", trace_id="seed")
     resp = _chat(gateway, "Which dashboard theme do I like?")

@@ -34,6 +34,8 @@ and returns `404`).
 | `memoryops_worker_runs` | gauge | `status` | Recent worker runs by status (pull-derived) |
 | `memoryops_worker_dead_letter_count` | gauge | — | Dead-lettered worker runs in recent history |
 | `memoryops_worker_failed_count` | gauge | — | Failed worker runs in recent history |
+| `memoryops_tokens_total` | counter | `kind`, `model` | Estimated tokens processed (advisory; see [economics.md](economics.md)) |
+| `memoryops_estimated_cost_usd_total` | counter | `kind`, `model` | Advisory estimated USD cost (not billing) |
 
 ### Useful derived signals
 
@@ -69,8 +71,13 @@ scrape_configs:
 - `GET /readyz` — repository + provider readiness rollup.
 - `GET /healthz/workers` — worker run history (dead-letter / failure counts).
 
+## Related
+
+- **Economics** — advisory per-request token + cost estimation (v1.2) is documented
+  separately in [economics.md](economics.md); its `memoryops_tokens_total` and
+  `memoryops_estimated_cost_usd_total` counters appear on this same `/metrics`.
+
 ## Not (yet) included
 
 - OpenTelemetry / distributed tracing (deferred).
-- Token/embedding cost economics.
 - An admin observability dashboard UI.

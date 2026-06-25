@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # metrics JSON at GET /api/metrics.
     metrics_enabled: bool = True
 
+    # Economics (v1.2, ADR-016). Advisory per-request token + cost estimation,
+    # surfaced on the chat response + Prometheus counters. Costs are list-price
+    # estimates, never billing; unknown/stub models are unpriced ($0). Operators
+    # override per-model prices with MEMORYOPS_PRICING_OVERRIDES (JSON, e.g.
+    # '{"gpt-4o-mini":{"input":0.15,"output":0.6}}'). USD per 1M tokens.
+    pricing_overrides_json: str = ""
+
     # Storage backend: "memory" runs with no infra (default for dev/tests),
     # "postgres" uses SQLAlchemy + pgvector.
     storage: Literal["memory", "postgres"] = "memory"
@@ -130,6 +137,8 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_PRICING_OVERRIDES")) is not None:
+        overrides["pricing_overrides_json"] = val
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
     if (val := os.getenv("MEMORYOPS_EMBEDDING_PROVIDER")) in ("stub", "heuristic", "openai"):

@@ -25,8 +25,22 @@ default and never weakens an invariant. See ADR-007,
 - [ADR-007 Headroom compression](../../infra/adr/ADR-007-headroom-token-compression.md)
 
 ## Gaps to close (→ later)
-- Per-tenant token budgets + cost dashboards.
-- Cost-per-write / cost-per-retrieval rollups (v0.7 observability + economics).
+- Per-tenant token budgets + cost dashboards (persisted ledger + enforcement).
 - Quality A/B evals with a real compression provider.
+- Real provider token-usage readback (vs. deterministic estimates).
 
-## Status: ✅ Implemented (v0.2.1 — optional compression + savings instrumentation)
+## Gate (additional, v1.2)
+- Per-request token + cost estimates (embedding + context + LLM input + savings)
+  are reported on the chat response and as content-free Prometheus counters.
+- Costs are advisory/estimated and configurable; unknown/stub models are unpriced.
+- Estimation is no-throw and never affects the chat path.
+
+## Evidence (v1.2)
+- `services/api/app/economics/` (`pricing`, `estimator`); `app/observability/`
+  (`memoryops_tokens_total`, `memoryops_estimated_cost_usd_total`);
+  `app/services/gateway.py` (per-request economics); `app/schemas/memory.py`
+  (`Economics` block); `services/api/tests/test_economics.py`;
+  [docs/economics.md](../economics.md);
+  [ADR-016](../../infra/adr/ADR-016-economics-cost-estimation.md)
+
+## Status: ✅ Implemented (v0.2.1 compression savings + v1.2 per-request token/cost economics)

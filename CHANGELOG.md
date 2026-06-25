@@ -3,6 +3,18 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.2 — Advisory Economics: Token + Cost Estimation
+Additive under the `1.x` compatibility promise. Every chat response gains an
+optional `economics` block — advisory per-request token counts (embedding, context,
+compressed, saved, LLM input) and estimated USD cost — and the same signals roll up
+as content-free Prometheus counters (`memoryops_tokens_total`,
+`memoryops_estimated_cost_usd_total`) on `GET /metrics`. Costs are list-price
+*estimates*, never billing: unknown/stub models are unpriced ($0) while token counts
+stay real; override prices with `MEMORYOPS_PRICING_OVERRIDES`. Reuses the
+deterministic token estimator; estimation is no-throw and never affects the chat
+path. SDK exposes `result.economics`. No DB migration; per-tenant budgets remain a
+later item. See [docs/economics.md](docs/economics.md), [ADR-016](infra/adr/ADR-016-economics-cost-estimation.md).
+
 ## v1.1 — Prometheus Metrics Exposition
 Additive under the `1.x` compatibility promise. Process-wide, content-free
 Prometheus text metrics at `GET /metrics` (HTTP traffic, retrieval latency/mode,

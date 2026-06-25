@@ -12,18 +12,22 @@ from __future__ import annotations
 import time
 
 from ..compression import get_compressor
+from ..compression.metrics import estimate_tokens
+from ..core.config import get_settings as get_app_settings
 from ..core.llm import get_llm
 from ..core.logging import get_logger
 from ..core.reliability import safe_call
 from ..db.repository import Repository
+from ..economics import build_request_economics
 from ..llm import detect_conflicts, get_llm_provider
 from ..loops.events import complete_loop_run_sync, emit_loop_event_sync, start_loop_run_sync
 from ..loops.types import LoopId, LoopState, LoopStatus
-from ..observability import observe_retrieval, record_policy_decision
+from ..observability import observe_economics, observe_retrieval, record_policy_decision
 from ..schemas.memory import (
     ChatRequest,
     ChatResponse,
     Compression,
+    Economics,
     Source,
     UsedMemory,
 )
@@ -53,6 +57,20 @@ class Gateway:
         # v0.4: provider-neutral LLM used for advisory conflict detection on the
         # write path. Stub by default; never overrides the policy broker (ADR-008).
         self._llm_provider = get_llm_provider()
+
+    @staticmethod
+    def _embedding_model(settings) -> str:
+        """Model name for embedding-cost estimation; "" (unpriced) for stub."""
+        return settings.openai_embedding_model if settings.embeddings_provider == "openai" else ""
+
+    @staticmethod
+    def _llm_model(settings) -> str:
+        """Model name for LLM-cost estimation; "" (unpriced) for stub/heuristic."""
+        return {
+            "openai": settings.openai_model,
+            "anthropic": settings.anthropic_model,
+            "gemini": settings.gemini_model,
+        }.get(settings.llm_provider, "")
 
     def handle_chat(self, req: ChatRequest, trace_id: str) -> ChatResponse:
         start = time.monotonic()
@@ -196,6 +214,37 @@ class Gateway:
                     compression_ratio=result.compression_ratio,
                     fallback=result.failed,
                 )
+        # ── Economics (advisory token + cost estimate, v1.2, ADR-016) ───────────
+        # Reuses the deterministic token estimator + compression result; no-throw
+        # so it can never affect the chat path (invariant #4). Records content-free
+        # Prometheus counters and attaches an economics block to the response.
+        economics: Economics | None = None
+        try:
+            if compression is not None:
+                ctx_tokens = compression.original_tokens_estimate
+                comp_tokens = compression.compressed_tokens_estimate
+                saved = compression.tokens_saved_estimate
+            else:
+                ctx_tokens = estimate_tokens(context_block)
+                comp_tokens = ctx_tokens
+                saved = 0
+            app_settings = get_app_settings()
+            req_econ = build_request_economics(
+                embedding_model=self._embedding_model(app_settings),
+                llm_model=self._llm_model(app_settings),
+                query_text=req.message,
+                context_tokens=ctx_tokens,
+                compressed_tokens=comp_tokens,
+                tokens_saved=saved,
+                llm_context_text=llm_context,
+                embedded=(retrieval_mode == "hybrid"),
+                overrides_json=app_settings.pricing_overrides_json,
+            )
+            observe_economics(req_econ)
+            economics = Economics(**req_econ.as_dict())
+        except Exception:  # noqa: BLE001 — economics is advisory, never fatal
+            logger.debug("economics estimate skipped", extra={"event": "economics"})
+
         if retrieval_mode == "fallback" or compression_failed:
             emit_loop_event_sync(
                 self._repo,
@@ -390,6 +439,7 @@ class Gateway:
             temporary_chat=False,
             retrieval_mode=retrieval_mode,
             compression=compression,
+            economics=economics,
             loop_evidence={
                 "memory.read": read_status.value,
                 "memory.write": LoopStatus.COMPLETED.value,
