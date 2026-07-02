@@ -36,7 +36,13 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   Trace (`trace` block). Defense-in-depth (only ever removes memory), no-throw,
   audited (`context_admission_blocked`); conservative defaults change no behavior.
   Toggle `MEMORYOPS_ADMISSION_GATE` / `MEMORYOPS_MEMORY_TRACE`. See ADR-017,
-  `docs/context-admission-gate.md`.
+  `docs/context-admission-gate.md`. **Tombstone lineage** (`app/db/lineage.py`,
+  v1.4) extends the deletion guarantee to *derived* artifacts: a memory records its
+  `parent_memory_ids` (content-free, in metadata), deletion stamps a tombstone, and
+  the gate's `BLOCK_TOMBSTONED_ANCESTOR` verdict denies any memory whose lineage
+  ancestry contains a deleted/purged ancestor (fail-closed, transitive). Proven by
+  the `leakage` + `derived_tombstone` eval case kinds. See ADR-018,
+  `docs/deletion-proof-lineage.md`.
 - `services/api/app/embeddings` — swappable `EmbeddingProvider` (stub default + optional OpenAI).
   `MEMORYOPS_EMBEDDING_PROVIDER=stub|openai`. `app/core/embeddings.py` is a back-compat shim.
 - `services/api/app/observability` — process-wide, dependency-free Prometheus

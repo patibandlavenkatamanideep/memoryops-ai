@@ -31,6 +31,7 @@ were stored, whether they were still valid, and why each was (or wasn't) admitte
 | `BLOCK_INACTIVE` | `pending` / `rejected` / `blocked` status | on |
 | `BLOCK_CONSENT_WITHDRAWN` | Consent withdrawn or expired (still-active memory) | on |
 | `BLOCK_EXPIRED` | Retention window elapsed (and not hold/pin/protect exempt) | on |
+| `BLOCK_TOMBSTONED_ANCESTOR` | Derived from a deleted/tombstoned/purged ancestor (v1.4) | on |
 | `BLOCK_SENSITIVE` | `sensitivity='high'` | **opt-in** |
 | `BLOCK_LOW_CONFIDENCE` | Ranked score below `admission_min_score` | **opt-in** |
 

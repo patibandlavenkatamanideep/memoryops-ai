@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..db import governance as gov
+from ..db import lineage
 from ..db.entities import StoredAudit
 from ..db.factory import get_repository
 from ..deps import audit_service
@@ -347,6 +348,12 @@ def delete_memory(memory_id: str, body: DeleteRequest, request: Request) -> dict
     m = repo.soft_delete(body.tenant_id, body.user_id, memory_id)
     if not m:
         raise HTTPException(status_code=404, detail="memory not found")
+    # Tombstone lineage (v1.4, ADR-018): stamp an explicit, audited tombstone so
+    # any artifact derived from this memory is blocked from context by the
+    # admission gate. Soft-deletion alone already blocks direct retrieval (#2);
+    # the marker propagates the deletion through derived lineage.
+    lineage.set_tombstone(m, on=True, reason="memory deleted")
+    repo.update_memory(m)
     emit_loop_event_sync(
         repo,
         loop,
