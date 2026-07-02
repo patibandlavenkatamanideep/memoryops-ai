@@ -170,6 +170,24 @@ def test_delete_soft_hides_from_list_but_keeps_forensics(api_client):
     assert detail.json()["status"] == "deleted"
 
 
+def test_delete_stamps_tombstone_lineage(api_client):
+    # v1.4: the delete route stamps an explicit, audited tombstone marker so any
+    # artifact derived from this memory is blocked from context (deletion
+    # propagation via lineage, ADR-018).
+    from app.db import lineage
+
+    client, repo = api_client
+    m = _seed(repo)
+
+    d = client.request("DELETE", f"/api/memories/{m.id}",
+                       json={"tenant_id": "t1", "user_id": "u1"})
+    assert d.status_code == 200
+
+    deleted = repo.get_memory("t1", "u1", m.id)
+    assert deleted.status is Status.deleted
+    assert lineage.is_tombstoned(deleted)
+
+
 def test_delete_blocked_for_legal_hold_memory(api_client):
     """Legal hold (v0.10) is fail-closed: manual delete is refused with 409."""
     client, repo = api_client

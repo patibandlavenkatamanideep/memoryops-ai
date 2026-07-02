@@ -8,6 +8,10 @@ tenant data. Case types map to invariants:
   block       — secret/injection must BLOCK (nothing stored)
   pending     — sensitive content must be PENDING_APPROVAL
   deleted     — a deleted memory must not be retrievable
+  leakage     — a deleted memory must not influence output, directly or indirectly,
+                across multiple probe queries or after a re-query/reindex (v1.4)
+  derived_tombstone — an artifact derived from a deleted memory must not enter
+                context (tombstone lineage propagation, v1.4)
   isolation   — another tenant's memory must not be retrievable
   temporary   — temporary chat must not write or retrieve
   archived    — an archived memory must not be retrieved (unless asked)
@@ -147,6 +151,72 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         active = repo.retrieve_active(tenant, user)
         ok = row.id not in {m.id for m in active}
         return CaseResult(cid, kind, ok, f"deleted_id_in_active={not ok}")
+
+    if kind == "leakage":
+        # Store a secret, confirm it is used, delete it, then probe with direct,
+        # indirect, and inference-style queries — plus a re-query (reindex sim).
+        # The secret must not appear in used-memory content OR the answer, and the
+        # deleted row must never be retrievable again.
+        save_msg = case["save_message"]
+        secret = case["secret_substring"].lower()
+        probes = case.get("probe_queries") or [msg]
+        _decisions_for(gw, tenant, user, save_msg)
+        row = repo.list_memories(tenant, user)[0]
+        used_before = _decisions_for(gw, tenant, user, probes[0]).used_memories
+        seen_before = any(secret in u.content.lower() for u in used_before)
+        repo.soft_delete(tenant, user, row.id)
+        leaked_via = []
+        for q in probes:
+            resp = _decisions_for(gw, tenant, user, q)
+            used = " ".join(u.content.lower() for u in resp.used_memories)
+            if secret in used or secret in resp.assistant_message.lower():
+                leaked_via.append(q)
+            if row.id in {u.memory_id for u in resp.used_memories}:
+                leaked_via.append(f"id:{q}")
+        # Re-query after deletion never resurrects the deleted row (reindex sim).
+        still_active = row.id in {m.id for m in repo.retrieve_active(tenant, user)}
+        ok = seen_before and not leaked_via and not still_active
+        return CaseResult(
+            cid, kind, ok,
+            f"used_before={seen_before} leaked={leaked_via or 'none'} resurrected={still_active}",
+        )
+
+    if kind == "derived_tombstone":
+        # Save a source memory, derive an artifact from it, confirm the derived
+        # artifact is used, then delete the source. The derived artifact must be
+        # blocked from context (ancestry contains a tombstone) and the secret must
+        # not surface in the answer.
+        from ..db import lineage
+        from ..db.entities import StoredMemory
+        from ..schemas.memory import MemoryType, Sensitivity, Source
+
+        save_msg = case["save_message"]
+        derived_content = case["derived_content"]
+        query = case["query"]
+        secret = case.get("secret_substring", "").lower()
+        _decisions_for(gw, tenant, user, save_msg)
+        parent = repo.list_memories(tenant, user)[0]
+        derived = StoredMemory(
+            tenant_id=tenant, user_id=user, memory_type=MemoryType.semantic,
+            content=derived_content, importance=6, confidence=0.9,
+            sensitivity=Sensitivity.low, status=Status.active,
+            source=Source(kind="reflection"),
+        )
+        lineage.set_lineage(derived, parent_ids=[parent.id])
+        repo.create_memory(derived)
+        used_before = _decisions_for(gw, tenant, user, query).used_memories
+        derived_used_before = derived.id in {u.memory_id for u in used_before}
+        repo.soft_delete(tenant, user, parent.id)
+        lineage.set_tombstone(parent, on=True, reason="deleted")
+        repo.update_memory(parent)
+        resp = _decisions_for(gw, tenant, user, query)
+        derived_used_after = derived.id in {u.memory_id for u in resp.used_memories}
+        leaked = bool(secret) and secret in resp.assistant_message.lower()
+        ok = derived_used_before and not derived_used_after and not leaked
+        return CaseResult(
+            cid, kind, ok,
+            f"derived_used_before={derived_used_before} after={derived_used_after} leaked={leaked}",
+        )
 
     if kind == "isolation":
         other_tenant = case.get("other_tenant_id", "tenant_other")

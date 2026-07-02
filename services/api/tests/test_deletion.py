@@ -149,6 +149,34 @@ def _ctx_for(mem):
     return WorkerContext(tenant_id=mem.tenant_id, user_id=mem.user_id)
 
 
+def test_deletion_guarantee_propagates_to_derived_artifacts(gateway, repo):
+    # v1.4: the deletion guarantee extends to *derived* artifacts via tombstone
+    # lineage. A memory derived from a deleted ancestor must not enter context
+    # (BLOCK_TOMBSTONED_ANCESTOR), even though it is itself an active row.
+    from app.db import lineage
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source
+
+    _chat(gateway, "Remember that I prefer Vendor X for cloud deployments.")
+    parent = repo.list_memories("t1", "u1")[0]
+    derived = StoredMemory(
+        tenant_id="t1", user_id="u1", memory_type=MemoryType.semantic,
+        content="summary: the user consistently chooses Vendor X for cloud",
+        importance=6, confidence=0.9, sensitivity=Sensitivity.low,
+        status=Status.active, source=Source(kind="reflection"),
+    )
+    lineage.set_lineage(derived, parent_ids=[parent.id])
+    repo.create_memory(derived)
+
+    repo.soft_delete("t1", "u1", parent.id)
+    lineage.set_tombstone(parent, on=True, reason="deleted")
+    repo.update_memory(parent)
+
+    resp = _chat(gateway, "Which cloud vendor do I prefer?")
+    assert derived.id not in {u.memory_id for u in resp.used_memories}
+    assert "vendor x" not in resp.assistant_message.lower()
+
+
 def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # v0.3.1: loop runs/events are operational evidence stored alongside the
     # write path. They must never re-expose a soft-deleted memory in retrieval.

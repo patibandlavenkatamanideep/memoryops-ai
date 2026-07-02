@@ -46,7 +46,11 @@ Newest-first lifecycle history scoped to one memory.
   `status` to approve (`active`), reject (`rejected`), archive (`archived`), or
   restore (`active`). `404` on a deleted memory — `deleted` is terminal.
 - `DELETE /api/memories/{id}` — soft delete; the row is excluded from all future
-  retrieval and listing.
+  retrieval and listing. Since v1.4 the delete also stamps an audited **tombstone
+  lineage** marker, so any artifact *derived* from this memory is blocked from
+  context (`BLOCK_TOMBSTONED_ANCESTOR`) — the deletion guarantee propagated to
+  derived artifacts. See [deletion-proof-lineage.md](deletion-proof-lineage.md),
+  [ADR-018](../infra/adr/ADR-018-tombstone-lineage-deletion-proof.md).
 
 ### Tenant-wide audit
 `GET /api/audit?tenant_id=&user_id=&memory_id=&limit=` — append-only history;

@@ -26,18 +26,25 @@ two stricter gates (``BLOCK_SENSITIVE``, ``BLOCK_LOW_CONFIDENCE``) are opt-in.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
 from ..core.config import get_settings
 from ..db import governance as gov
+from ..db import lineage
+from ..db.entities import StoredMemory
 from ..schemas.memory import (
     MemoryTraceEntry,
     Sensitivity,
     Status,
 )
 from .ranker import RankedMemory
+
+# Resolves a memory id to its stored row (must return soft-deleted rows too) so
+# the gate can walk lineage ancestry. Supplied by the gateway (has the repo).
+AncestorLookup = Callable[[str], "StoredMemory | None"]
 
 _PREVIEW_CHARS = 160
 
@@ -50,6 +57,7 @@ class AdmissionDecision(str, Enum):
     BLOCK_INACTIVE = "BLOCK_INACTIVE"  # pending / rejected / blocked
     BLOCK_CONSENT_WITHDRAWN = "BLOCK_CONSENT_WITHDRAWN"
     BLOCK_EXPIRED = "BLOCK_EXPIRED"  # retention window elapsed
+    BLOCK_TOMBSTONED_ANCESTOR = "BLOCK_TOMBSTONED_ANCESTOR"  # derived from deleted memory
     BLOCK_SENSITIVE = "BLOCK_SENSITIVE"  # opt-in
     BLOCK_LOW_CONFIDENCE = "BLOCK_LOW_CONFIDENCE"  # opt-in
 
@@ -131,11 +139,19 @@ class AdmissionGate:
         tenant_id: str,
         user_id: str,
         now: datetime | None = None,
+        ancestor_lookup: AncestorLookup | None = None,
     ) -> AdmissionResult:
         now = now or datetime.now(UTC)
         settings = get_settings()
         records = [
-            self._decide(r, tenant_id=tenant_id, user_id=user_id, now=now, settings=settings)
+            self._decide(
+                r,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                now=now,
+                settings=settings,
+                ancestor_lookup=ancestor_lookup,
+            )
             for r in ranked
         ]
         return AdmissionResult(records=records, enforced=settings.admission_gate_enabled)
@@ -148,6 +164,7 @@ class AdmissionGate:
         user_id: str,
         now: datetime,
         settings,
+        ancestor_lookup: AncestorLookup | None = None,
     ) -> AdmissionRecord:
         m = ranked.memory
         consent = gov.consent_status(m, now=now)
@@ -191,14 +208,25 @@ class AdmissionGate:
                 "retention window has elapsed",
             )
 
-        # 5. Sensitivity gate (opt-in; off by default).
+        # 5. Tombstone lineage (v1.4): a derived artifact may not enter context if
+        #    any ancestor is tombstoned (deleted / purged / marked). This is how
+        #    the deletion guarantee (#2) propagates to summaries/consolidations.
+        if ancestor_lookup is not None and lineage.is_derived(m):
+            tombstoned = lineage.ancestry_tombstone(m, ancestor_lookup)
+            if tombstoned is not None:
+                return rec(
+                    AdmissionDecision.BLOCK_TOMBSTONED_ANCESTOR,
+                    f"derived from a tombstoned/deleted ancestor ({tombstoned})",
+                )
+
+        # 6. Sensitivity gate (opt-in; off by default).
         if settings.admission_block_sensitive and m.sensitivity is Sensitivity.high:
             return rec(
                 AdmissionDecision.BLOCK_SENSITIVE,
                 "sensitivity is 'high' and the sensitivity gate is enabled",
             )
 
-        # 6. Low-confidence gate (opt-in; min_score=0 disables it).
+        # 7. Low-confidence gate (opt-in; min_score=0 disables it).
         if settings.admission_min_score > 0 and ranked.score < settings.admission_min_score:
             return rec(
                 AdmissionDecision.BLOCK_LOW_CONFIDENCE,
