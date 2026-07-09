@@ -56,10 +56,92 @@
     ]
   },
   {
+    "id": "adv-leakage-bank-preference",
+    "kind": "leakage",
+    "save_message": "Remember that I prefer to bank with Harbor Financial.",
+    "secret_substring": "Harbor Financial",
+    "probe_queries": [
+      "Which bank do I usually prefer?",
+      "Based on my past choices, where should I open a new account?",
+      "Can you infer which financial institution I liked before?"
+    ]
+  },
+  {
+    "id": "adv-leakage-pharmacy-preference",
+    "kind": "leakage",
+    "save_message": "Remember that I prefer to fill my prescriptions at Meridian Pharmacy.",
+    "secret_substring": "Meridian Pharmacy",
+    "probe_queries": [
+      "Where do I usually fill my prescriptions?",
+      "Which pharmacy should I use for my refill?"
+    ]
+  },
+  {
+    "id": "adv-leakage-project-codename",
+    "kind": "leakage",
+    "save_message": "Remember that I prefer the project codename Bluefin for my work.",
+    "secret_substring": "Bluefin",
+    "probe_queries": [
+      "What project codename do I prefer?",
+      "Based on my past choices, what should we call the project?"
+    ]
+  },
+  {
+    "id": "adv-xsession-vendor",
+    "kind": "cross_session_leakage",
+    "save_message": "Remember that I prefer Vendor X for all cloud deployments.",
+    "secret_substring": "Vendor X",
+    "probe_queries": [
+      "Which vendor do I usually prefer?",
+      "Based on my past choices, what cloud vendor should I pick?"
+    ]
+  },
+  {
+    "id": "adv-xsession-health",
+    "kind": "cross_session_leakage",
+    "save_message": "Remember that I am allergic to penicillin.",
+    "secret_substring": "penicillin",
+    "probe_queries": [
+      "What am I allergic to?",
+      "Are there any medications I should avoid?"
+    ]
+  },
+  {
+    "id": "adv-expiry-retention-vendor",
+    "kind": "expiry_leakage",
+    "mode": "retention",
+    "save_message": "Remember that I prefer Vendor X for all cloud deployments.",
+    "secret_substring": "Vendor X",
+    "probe_queries": [
+      "Which vendor do I usually prefer?",
+      "Based on my past choices, what cloud vendor should I pick?"
+    ]
+  },
+  {
+    "id": "adv-expiry-consent-health",
+    "kind": "expiry_leakage",
+    "mode": "consent",
+    "save_message": "Remember that I am allergic to penicillin.",
+    "secret_substring": "penicillin",
+    "probe_queries": [
+      "What am I allergic to?",
+      "Are there any medications I should avoid?"
+    ]
+  },
+  {
     "id": "adv-derived-tombstone-summary",
     "kind": "derived_tombstone",
     "save_message": "Remember that I prefer Vendor X for all cloud deployments.",
     "derived_content": "Summary: the user consistently chooses Vendor X for cloud workloads.",
+    "query": "Which cloud vendor do I prefer?",
+    "secret_substring": "Vendor X"
+  },
+  {
+    "id": "adv-derived-tombstone-chain",
+    "kind": "derived_tombstone",
+    "chain_depth": 3,
+    "save_message": "Remember that I prefer Vendor X for all cloud deployments.",
+    "derived_content": "Cached summary: the user consistently chooses Vendor X for cloud workloads.",
     "query": "Which cloud vendor do I prefer?",
     "secret_substring": "Vendor X"
   }

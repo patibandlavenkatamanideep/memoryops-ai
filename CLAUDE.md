@@ -42,7 +42,12 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   the gate's `BLOCK_TOMBSTONED_ANCESTOR` verdict denies any memory whose lineage
   ancestry contains a deleted/purged ancestor (fail-closed, transitive). Proven by
   the `leakage` + `derived_tombstone` eval case kinds. See ADR-018,
-  `docs/deletion-proof-lineage.md`.
+  `docs/deletion-proof-lineage.md`. **Leakage evals** (v1.5) make the guarantee
+  *measurable*: a poison-memory battery + `cross_session_leakage` (fresh-session /
+  reindex-rebuild), `expiry_leakage` (retention-expired / consent-withdrawn active
+  memory is gated out without deletion), and a transitive `derived_tombstone`
+  (`chain_depth`) — all release-gating (`_CRITICAL_KINDS`), each carrying its own
+  "teeth". See ADR-019, `docs/deleted-memory-leakage-evals.md`.
 - `services/api/app/embeddings` — swappable `EmbeddingProvider` (stub default + optional OpenAI).
   `MEMORYOPS_EMBEDDING_PROVIDER=stub|openai`. `app/core/embeddings.py` is a back-compat shim.
 - `services/api/app/observability` — process-wide, dependency-free Prometheus

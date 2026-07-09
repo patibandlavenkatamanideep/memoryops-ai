@@ -21,8 +21,13 @@ sys.path.insert(0, str(REPO_ROOT / "services" / "api"))
 
 from app.services.eval_harness import run_evals  # noqa: E402
 
-# Invariant cases that must NEVER fail, regardless of overall rate.
-_CRITICAL_KINDS = {"block", "deleted", "isolation", "temporary", "archived"}
+# Invariant cases that must NEVER fail, regardless of overall rate. The deletion /
+# leakage kinds (v1.4–v1.5) prove the core guarantee — deleted or expired memory can
+# never influence output — so they gate releases too.
+_CRITICAL_KINDS = {
+    "block", "deleted", "isolation", "temporary", "archived",
+    "leakage", "derived_tombstone", "cross_session_leakage", "expiry_leakage",
+}
 
 
 def main() -> int:
