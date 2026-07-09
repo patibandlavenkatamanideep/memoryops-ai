@@ -3,6 +3,24 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.4 — Deletion Proof: Tombstone Lineage + Leakage Evals
+Additive under the `1.x` compatibility promise. Extends the deletion guarantee (#2)
+to *derived* artifacts. New **tombstone lineage** (`app/db/lineage.py`) records where
+a memory was derived from (`parent_memory_ids`, `lineage_root_id`, `source_event_id`)
+content-free in metadata, and deletion stamps an explicit audited tombstone. The
+Context Admission Gate gains a `BLOCK_TOMBSTONED_ANCESTOR` verdict (ADR-017): a
+memory whose lineage ancestry contains a tombstoned/deleted/purged ancestor is denied
+context admission — fail-closed (a missing ancestor blocks too), transitive, and
+cycle/depth-safe. The gateway supplies a tenant/user-scoped ancestry resolver that
+sees soft-deleted rows; originals (no parents) skip the check. A **deleted-memory
+leakage eval suite** adds two case kinds to the real harness — `leakage` (store →
+use → delete → probe with direct/indirect/inference queries + re-query; the secret
+must not surface in used content or the answer, and the row must never resurface) and
+`derived_tombstone` (an artifact derived from a deleted memory must be blocked) —
+shipped in `adversarial_cases.json` so they run in `run_evals` and the dashboard.
+Defense-in-depth (only ever *removes* memory), no-throw, no DB migration.
+See [docs/deletion-proof-lineage.md](docs/deletion-proof-lineage.md), [ADR-018](infra/adr/ADR-018-tombstone-lineage-deletion-proof.md).
+
 ## v1.3 — Context Admission Gate + Memory Usage Trace
 Additive under the `1.x` compatibility promise. A new **Context Admission Gate**
 (`app/services/admission_gate.py`) runs between the ranker and the context composer

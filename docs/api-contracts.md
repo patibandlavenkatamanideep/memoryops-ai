@@ -52,8 +52,11 @@ permissioned, explainable memory trail behind the answer: `memories_used` (admit
 and `memories_blocked` (retrieved but denied), each with provenance, `stored_at`,
 `consent_status`, `retention_status`, and an `admission_decision ∈ {ALLOW,
 BLOCK_WRONG_TENANT, BLOCK_DELETED, BLOCK_ARCHIVED, BLOCK_INACTIVE,
-BLOCK_CONSENT_WITHDRAWN, BLOCK_EXPIRED, BLOCK_SENSITIVE, BLOCK_LOW_CONFIDENCE}` +
-`admission_reason`. The gate only ever *removes* memory (defense-in-depth), is
+BLOCK_CONSENT_WITHDRAWN, BLOCK_EXPIRED, BLOCK_TOMBSTONED_ANCESTOR, BLOCK_SENSITIVE,
+BLOCK_LOW_CONFIDENCE}` + `admission_reason`. `BLOCK_TOMBSTONED_ANCESTOR` (v1.4)
+denies a memory whose lineage ancestry contains a deleted/tombstoned/purged
+ancestor — the deletion guarantee propagated to derived artifacts; see
+[docs/deletion-proof-lineage.md](deletion-proof-lineage.md), ADR-018. The gate only ever *removes* memory (defense-in-depth), is
 no-throw, and audits blocked turns as `context_admission_blocked`. Toggle with
 `MEMORYOPS_ADMISSION_GATE` (observe-only when off) / `MEMORYOPS_MEMORY_TRACE`.
 See [docs/context-admission-gate.md](context-admission-gate.md), ADR-017.

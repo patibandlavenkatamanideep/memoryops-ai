@@ -145,7 +145,15 @@ class Gateway:
             # composed (or all, in observe-only mode). Defense-in-depth: it only
             # ever removes memory, never adds.
             admission = self._admission_gate.evaluate(
-                ranked, tenant_id=req.tenant_id, user_id=req.user_id
+                ranked,
+                tenant_id=req.tenant_id,
+                user_id=req.user_id,
+                # Resolve lineage ancestry (incl. soft-deleted rows) so a memory
+                # derived from a deleted ancestor is blocked (tombstone lineage,
+                # v1.4, ADR-018). Scoped to this tenant/user (invariant #1).
+                ancestor_lookup=lambda mid: self._repo.get_memory(
+                    req.tenant_id, req.user_id, mid
+                ),
             )
             block, used = self._composer.compose(admission.admitted)
             return block, used, result.mode, admission

@@ -55,6 +55,21 @@ The most dangerous failures for an AI memory system are:
 - `DELETE` is a soft delete: `status='deleted'`, `deleted_at=now()`, plus an audit event.
 - Retrieval excludes non-active statuses, so deleted memory can never be retrieved again.
 
+### Tombstone lineage — deletion propagation to derived artifacts (v1.4)
+- Deletion also stamps an explicit, audited **tombstone** marker
+  (`metadata.lineage.tombstoned`) so the guarantee propagates to *derived*
+  artifacts (summaries/consolidations), not just the source row — closing the
+  *"not retrievable ≠ cannot influence output"* gap.
+- The Context Admission Gate blocks any memory whose lineage ancestry contains a
+  tombstoned/deleted/**purged-or-unknown** ancestor (`BLOCK_TOMBSTONED_ANCESTOR`),
+  fail-closed and transitive. Ancestry is resolved through a **tenant/user-scoped**
+  lookup, so a cross-tenant parent id reads as missing and is blocked (no
+  cross-tenant ancestry resolution).
+- Proven by `test_deletion.py`, `test_deletion_proof_lineage.py`,
+  `test_tenant_isolation.py`, and the `leakage` / `derived_tombstone` eval cases.
+  See [deletion-proof-lineage.md](deletion-proof-lineage.md),
+  [ADR-018](../infra/adr/ADR-018-tombstone-lineage-deletion-proof.md).
+
 ### Temporary chat (invariant #6)
 - `temporary_chat=true` short-circuits both read and write — no candidates extracted, none stored,
   none retrieved. Audit records `temporary_chat_skipped`.

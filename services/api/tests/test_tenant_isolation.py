@@ -97,6 +97,34 @@ def test_audit_listing_is_tenant_and_memory_scoped(gateway, repo):
     assert repo.list_audit("tenant_acme", "user_acme", memory_id="missing") == []
 
 
+def test_lineage_ancestry_lookup_is_tenant_scoped(gateway, repo):
+    # v1.4: tombstone-lineage ancestry is resolved through a tenant/user-scoped
+    # lookup. A derived memory in one tenant that references an id living in
+    # another tenant must NOT resolve cross-tenant — the ancestor reads as missing
+    # and the derived artifact is blocked fail-closed (no cross-tenant leakage).
+    from app.db import lineage
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    _chat(gateway, "t2", "bob", "Remember Bob prefers Vendor Z.")
+    foreign_parent = repo.list_memories("t2", "bob")[0]
+
+    derived = StoredMemory(
+        tenant_id="t1", user_id="alice", memory_type=MemoryType.semantic,
+        content="summary derived from a foreign-tenant id", importance=6,
+        confidence=0.9, sensitivity=Sensitivity.low, status=Status.active,
+        source=Source(kind="reflection"),
+    )
+    lineage.set_lineage(derived, parent_ids=[foreign_parent.id])
+    repo.create_memory(derived)
+
+    # Scoped resolver for tenant t1/alice cannot see t2/bob's row → missing → block.
+    def scoped_lookup(mid):
+        return repo.get_memory("t1", "alice", mid)
+
+    assert lineage.ancestry_tombstone(derived, scoped_lookup) == foreign_parent.id
+
+
 def test_governance_flags_are_tenant_scoped(gateway, repo):
     # v0.10: setting a legal hold on one tenant's memory must not affect another
     # tenant's memory, and update_memory persists governance metadata in scope.
