@@ -387,7 +387,9 @@ Planned beyond v1.0:
   compaction).
 - Optional queue/cron backend behind the orchestrator interface; auto-discovered scope
   enumeration.
-- Observability and economics, AI PR review runtime, deployment hardening.
+- Next: deletion proof layer, tombstone lineage, deleted-memory leakage evals,
+  cache/summary invalidation, auth adapters, storage backend abstraction, and
+  enterprise evidence reports.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).
 
