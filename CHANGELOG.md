@@ -3,6 +3,28 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.5 — Deleted / Expired Memory Leakage Evals
+Additive under the `1.x` compatibility promise. Makes the deletion guarantee (#2)
+*measurable* rather than merely asserted — most memory systems claim deletion, few
+test whether a deleted or expired memory can still influence output. Builds on v1.4's
+tombstone lineage (no new runtime mechanism) with a poison-memory battery and three
+new proofs in the real eval harness (`app/services/eval_harness.py`, shipped in
+`adversarial_cases.json` so they run in `run_evals` and the dashboard):
+**`cross_session_leakage`** — a deleted memory must not leak into a brand-new session
+(a fresh `Gateway`/read stack rebuilt on the same store; this also proves
+reindex/rebuild non-reappearance); **`expiry_leakage`** — a retention-expired or
+consent-withdrawn *active* memory is denied context admission (`BLOCK_EXPIRED` /
+`BLOCK_CONSENT_WITHDRAWN`) without being deleted (expiry ≠ deletion); and a transitive
+**`derived_tombstone`** (`chain_depth`) — deleting the *root* of a `root → … → leaf`
+lineage chain blocks a grandchild summary, proving lineage blocking walks the whole
+chain. Every case carries its own teeth (the secret must be *used* before
+deletion/expiry, so a pass is never vacuous), and the leakage family is now
+release-gating (`_CRITICAL_KINDS`). New unit proofs in
+`tests/test_deleted_memory_leakage_evals.py` assert the admission *decision* in the
+Memory Usage Trace, not just the used-memory list. Deterministic + offline (stub
+stack, no API keys); no schema or chat-path change.
+See [docs/deleted-memory-leakage-evals.md](docs/deleted-memory-leakage-evals.md), [ADR-019](infra/adr/ADR-019-deleted-memory-leakage-evals.md).
+
 ## v1.4 — Deletion Proof: Tombstone Lineage + Leakage Evals
 Additive under the `1.x` compatibility promise. Extends the deletion guarantee (#2)
 to *derived* artifacts. New **tombstone lineage** (`app/db/lineage.py`) records where

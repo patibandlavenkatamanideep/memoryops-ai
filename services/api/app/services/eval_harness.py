@@ -11,7 +11,12 @@ tenant data. Case types map to invariants:
   leakage     — a deleted memory must not influence output, directly or indirectly,
                 across multiple probe queries or after a re-query/reindex (v1.4)
   derived_tombstone — an artifact derived from a deleted memory must not enter
-                context (tombstone lineage propagation, v1.4)
+                context (tombstone lineage propagation; transitive via chain_depth, v1.4/v1.5)
+  cross_session_leakage — a deleted memory must not leak into a *brand-new session*
+                (a fresh stack rebuilt on the same store — also proves reindex/rebuild
+                non-reappearance), directly or indirectly (v1.5)
+  expiry_leakage — a retention-expired / consent-withdrawn *active* memory must be
+                denied context admission and must not leak, without being deleted (v1.5)
   isolation   — another tenant's memory must not be retrievable
   temporary   — temporary chat must not write or retrieve
   archived    — an archived memory must not be retrieved (unless asked)
@@ -182,10 +187,12 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         )
 
     if kind == "derived_tombstone":
-        # Save a source memory, derive an artifact from it, confirm the derived
-        # artifact is used, then delete the source. The derived artifact must be
-        # blocked from context (ancestry contains a tombstone) and the secret must
-        # not surface in the answer.
+        # Save a source memory, derive an artifact from it (optionally through a
+        # multi-level lineage chain via ``chain_depth``), confirm the *leaf*
+        # artifact is used, then delete the ROOT source. The leaf must be blocked
+        # from context (its ancestry transitively contains a tombstone) and the
+        # secret must not surface in the answer — proving lineage blocking is
+        # transitive, not just one hop deep.
         from ..db import lineage
         from ..db.entities import StoredMemory
         from ..schemas.memory import MemoryType, Sensitivity, Source
@@ -194,28 +201,111 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         derived_content = case["derived_content"]
         query = case["query"]
         secret = case.get("secret_substring", "").lower()
+        depth = max(1, int(case.get("chain_depth", 1)))
         _decisions_for(gw, tenant, user, save_msg)
-        parent = repo.list_memories(tenant, user)[0]
-        derived = StoredMemory(
-            tenant_id=tenant, user_id=user, memory_type=MemoryType.semantic,
-            content=derived_content, importance=6, confidence=0.9,
-            sensitivity=Sensitivity.low, status=Status.active,
-            source=Source(kind="reflection"),
-        )
-        lineage.set_lineage(derived, parent_ids=[parent.id])
-        repo.create_memory(derived)
+        root = repo.list_memories(tenant, user)[0]
+        parent = root
+        leaf = None
+        for level in range(depth):
+            is_leaf = level == depth - 1
+            content = (
+                derived_content
+                if is_leaf
+                else f"Intermediate consolidation (level {level}) of an earlier memory."
+            )
+            node = StoredMemory(
+                tenant_id=tenant, user_id=user, memory_type=MemoryType.semantic,
+                content=content, importance=6, confidence=0.9,
+                sensitivity=Sensitivity.low, status=Status.active,
+                source=Source(kind="reflection"),
+            )
+            lineage.set_lineage(node, parent_ids=[parent.id])
+            repo.create_memory(node)
+            parent = node
+            leaf = node
         used_before = _decisions_for(gw, tenant, user, query).used_memories
-        derived_used_before = derived.id in {u.memory_id for u in used_before}
-        repo.soft_delete(tenant, user, parent.id)
-        lineage.set_tombstone(parent, on=True, reason="deleted")
-        repo.update_memory(parent)
+        derived_used_before = leaf.id in {u.memory_id for u in used_before}
+        repo.soft_delete(tenant, user, root.id)
+        lineage.set_tombstone(root, on=True, reason="deleted")
+        repo.update_memory(root)
         resp = _decisions_for(gw, tenant, user, query)
-        derived_used_after = derived.id in {u.memory_id for u in resp.used_memories}
+        derived_used_after = leaf.id in {u.memory_id for u in resp.used_memories}
         leaked = bool(secret) and secret in resp.assistant_message.lower()
         ok = derived_used_before and not derived_used_after and not leaked
         return CaseResult(
             cid, kind, ok,
-            f"derived_used_before={derived_used_before} after={derived_used_after} leaked={leaked}",
+            f"depth={depth} used_before={derived_used_before} after={derived_used_after} leaked={leaked}",
+        )
+
+    if kind == "cross_session_leakage":
+        # Store a secret in "session 1", confirm it is used, delete it, then probe
+        # from a BRAND-NEW session: a fresh Gateway rebuilt on the same store. This
+        # rebuilds the whole read stack (retriever → ranker → gate → composer) from
+        # scratch, so it also proves reindex/rebuild non-reappearance. The deleted
+        # memory must not surface in any later session — in used content, in the
+        # answer, or by id — and must never become retrievable again.
+        save_msg = case["save_message"]
+        secret = case["secret_substring"].lower()
+        probes = case.get("probe_queries") or [msg]
+        _decisions_for(gw, tenant, user, save_msg)
+        row = repo.list_memories(tenant, user)[0]
+        used_before = _decisions_for(gw, tenant, user, probes[0]).used_memories
+        seen_before = any(secret in u.content.lower() for u in used_before)
+        repo.soft_delete(tenant, user, row.id)
+        fresh_session = Gateway(repo)  # new session; nothing carried over but the store
+        leaked_via: list[str] = []
+        for q in probes:
+            resp = _decisions_for(fresh_session, tenant, user, q)
+            used = " ".join(u.content.lower() for u in resp.used_memories)
+            if secret in used or secret in resp.assistant_message.lower():
+                leaked_via.append(q)
+            if row.id in {u.memory_id for u in resp.used_memories}:
+                leaked_via.append(f"id:{q}")
+        still_active = row.id in {m.id for m in repo.retrieve_active(tenant, user)}
+        ok = seen_before and not leaked_via and not still_active
+        return CaseResult(
+            cid, kind, ok,
+            f"used_before={seen_before} leaked={leaked_via or 'none'} resurrected={still_active}",
+        )
+
+    if kind == "expiry_leakage":
+        # A retention-expired or consent-withdrawn memory must be denied context
+        # admission even while its row is still active (the retention worker deletes
+        # it later). Store, confirm it is used, then either revoke consent or elapse
+        # the retention window, and re-probe: the secret must not surface, the row
+        # must not be used — yet the row stays active (expiry != deletion).
+        from datetime import UTC, datetime, timedelta
+
+        from ..db import governance as gov
+
+        save_msg = case["save_message"]
+        secret = case["secret_substring"].lower()
+        mode = case.get("mode", "retention")  # retention | consent
+        probes = case.get("probe_queries") or [msg]
+        _decisions_for(gw, tenant, user, save_msg)
+        row = repo.list_memories(tenant, user)[0]
+        used_before = _decisions_for(gw, tenant, user, probes[0]).used_memories
+        seen_before = any(secret in u.content.lower() for u in used_before)
+        now = datetime.now(UTC)
+        if mode == "consent":
+            gov.set_consent(row, status=gov.ConsentStatus.withdrawn)
+        else:
+            gov.set_retention(row, policy="eval-expired", expires_at=now - timedelta(days=1))
+        repo.update_memory(row)
+        leaked_via: list[str] = []
+        for q in probes:
+            resp = _decisions_for(gw, tenant, user, q)
+            used = " ".join(u.content.lower() for u in resp.used_memories)
+            if secret in used or secret in resp.assistant_message.lower():
+                leaked_via.append(q)
+            if row.id in {u.memory_id for u in resp.used_memories}:
+                leaked_via.append(f"id:{q}")
+        # Expiry is not deletion: the row must remain active but be gated out.
+        still_active = row.id in {m.id for m in repo.retrieve_active(tenant, user)}
+        ok = seen_before and not leaked_via and still_active
+        return CaseResult(
+            cid, kind, ok,
+            f"used_before={seen_before} mode={mode} leaked={leaked_via or 'none'} row_active={still_active}",
         )
 
     if kind == "isolation":
