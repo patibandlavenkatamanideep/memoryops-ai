@@ -7,7 +7,7 @@ influenced an answer, and what evidence proves each decision** — treating memo
 governed state, not just a vector database.
 
 [![CI](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml)
-&nbsp;![Benchmark](https://img.shields.io/badge/governance%20benchmark-100%25-brightgreen)
+&nbsp;[![Benchmark](https://img.shields.io/github/actions/workflow/status/patibandlavenkatamanideep/memoryops-ai/ci.yml?branch=main&job=benchmark&label=benchmark)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml)
 &nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 &nbsp;![License](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![Release](https://img.shields.io/badge/release-v2.2-blue)
