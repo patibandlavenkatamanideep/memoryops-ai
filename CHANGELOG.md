@@ -3,6 +3,23 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v2.2 — Public Benchmark + Examples
+Additive under the `1.x` compatibility promise. Turns MemoryOps' *measured* governance
+into a public, reproducible artifact. A new **benchmark** (`benchmark/run_benchmark.py`)
+reuses the real eval harness (no new eval logic) and scores every case into named
+governance suites — **deletion_and_leakage**, **tenant_isolation**, **context_admission**,
+**policy_governance**, **retrieval_quality** — emitting a human scorecard/leaderboard, a
+`--json` machine format, and a committed `benchmark/SCORECARD.md` (currently **32/32,
+100%, critical suites perfect**). The two **critical** suites (deletion/leakage +
+tenant isolation) must be perfect or the benchmark exits non-zero, and a test asserts
+**every eval kind maps to a suite** so coverage can't silently drop. Suites are defined
+by outcome, so another memory system can implement the same case kinds and fill in the
+same table — the deletion-leakage "leaderboard" per entrant. Two domain examples ship in
+the SDK: an **enterprise assistant** and a **regulated (healthcare/legal/finance) memory
+demo** — governed recall, audience-scoped disclosure, verifiable erasure, tamper-evident
+audit, end to end. +5 tests (`tests/test_benchmark.py`); full suite 360 passed. See
+[benchmark/README.md](benchmark/README.md), [ADR-026](infra/adr/ADR-026-public-benchmark.md).
+
 ## v2.1 — Agent Framework Integrations
 Additive under the `1.x` compatibility promise. Makes MemoryOps easy to plug into real
 agent systems as the **governed memory layer** — one framework-agnostic adapter plus

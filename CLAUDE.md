@@ -160,6 +160,11 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   LlamaIndex, CrewAI, AutoGen, Semantic Kernel, and the OpenAI Agents SDK
   (`examples/integrations/`). See ADR-025, `docs/agent-integrations.md`.
 - `evals` — golden + adversarial cases, `run_evals.py`.
+- `benchmark` — public memory-governance benchmark (v2.2). `run_benchmark.py` reuses the
+  eval harness and scores cases into named suites (deletion_and_leakage, tenant_isolation,
+  context_admission, policy_governance, retrieval_quality); critical suites must be 100%
+  or it exits non-zero. Emits a human scorecard/leaderboard + `--json` + `SCORECARD.md`.
+  Reproducible + offline. See ADR-026, `benchmark/README.md`.
 
 ## Running
 
