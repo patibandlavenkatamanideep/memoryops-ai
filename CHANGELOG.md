@@ -3,6 +3,25 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.7 — Storage / Vector Backend Abstraction
+Additive under the `1.x` compatibility promise; default unchanged. Makes MemoryOps
+portable across vector stores **without weakening any governance guarantee**, by
+splitting retrieval into an authoritative `Repository` (memory metadata, governance,
+tombstone lineage, audit, workers — still the single enforcement point for isolation +
+deletion) and a narrow, swappable **`VectorIndex`** seam (`app/db/vector/`) that
+abstracts only nearest-neighbour search and holds **ids + embeddings only** (never
+content/consent/lineage). After the index returns candidate ids the repository + the
+admission gate re-check every one, so a stale index entry can't leak content. A written
+contract in `base.py` (tenant isolation, deletion non-reappearance, no-bypass, graceful
+degradation) is proven by `assert_vector_index_contract` — a reusable conformance suite
+any backend must pass. The in-memory backend **actually uses** the seam (an
+`InMemoryVectorIndex` maintained across create/update/delete/compaction), so it is
+load-bearing, not decorative, and every retrieval test exercises it. Optional,
+**import-guarded** adapters ship for **Qdrant, LanceDB, and Weaviate** (Pinecone is the
+same shape); with no client installed they report unavailable and the factory falls back
+to in-memory (invariant #4). Select with `MEMORYOPS_VECTOR_INDEX=memory|qdrant|lancedb|weaviate`.
++5 tests (`tests/test_vector_index.py`); full suite 321 passed. See [docs/storage-backends.md](docs/storage-backends.md), [ADR-021](infra/adr/ADR-021-vector-backend-abstraction.md).
+
 ## v1.6 — Auth + Authorization Adapters
 Additive under the `1.x` compatibility promise; **off by default** so no behavior
 changes until an operator opts in. MemoryOps previously trusted `tenant_id`/`user_id`

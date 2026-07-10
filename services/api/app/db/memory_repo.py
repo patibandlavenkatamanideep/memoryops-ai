@@ -20,6 +20,7 @@ from .entities import (
     is_compacted,
 )
 from .repository import Repository
+from .vector import InMemoryVectorIndex, VectorIndex
 
 _ACTIVE = "active"
 _DELETED = "deleted"
@@ -30,7 +31,7 @@ def _norm(text: str) -> str:
 
 
 class InMemoryRepository(Repository):
-    def __init__(self) -> None:
+    def __init__(self, vector_index: VectorIndex | None = None) -> None:
         self._memories: dict[str, StoredMemory] = {}
         self._audit: list[StoredAudit] = []
         self._settings: dict[tuple[str, str], StoredSettings] = {}
@@ -38,12 +39,16 @@ class InMemoryRepository(Repository):
         self._loop_events: list[LoopEvent] = []
         self._leases: dict[str, WorkerLease] = {}
         self._worker_runs: list[WorkerRunRecord] = []
+        # The pluggable vector-search seam (v1.7, ADR-021). Defaults to the
+        # dependency-free cosine index; an operator can inject an external backend.
+        self._vectors: VectorIndex = vector_index or InMemoryVectorIndex()
 
     # ── memory ───────────────────────────────────────────────────────────────
     def create_memory(self, memory: StoredMemory) -> StoredMemory:
         if not memory.source:  # provenance is mandatory (invariant #3)
             raise ValueError("memory.source (provenance) is required")
         self._memories[memory.id] = memory
+        self._vectors.upsert(memory.tenant_id, memory.user_id, memory.id, memory.embedding or [])
         return memory
 
     def _scoped(self, tenant_id: str, user_id: str) -> list[StoredMemory]:
@@ -81,6 +86,11 @@ class InMemoryRepository(Repository):
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         memory.updated_at = datetime.now(UTC)
         self._memories[memory.id] = memory
+        # Keep the vector index in sync: a non-active row is not searchable.
+        if memory.status.value == _ACTIVE:
+            self._vectors.upsert(memory.tenant_id, memory.user_id, memory.id, memory.embedding or [])
+        else:
+            self._vectors.delete(memory.tenant_id, memory.user_id, memory.id)
         return memory
 
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
@@ -92,6 +102,8 @@ class InMemoryRepository(Repository):
         m.status = Status.deleted
         m.deleted_at = datetime.now(UTC)
         m.updated_at = m.deleted_at
+        # Deletion (#2): the vector is removed so it can never be a candidate again.
+        self._vectors.delete(tenant_id, user_id, memory_id)
         return m
 
     def list_deleted_for_compaction(
@@ -117,6 +129,7 @@ class InMemoryRepository(Repository):
             return None
         apply_compaction(m, reason=reason, now=now or datetime.now(UTC))
         self._memories[m.id] = m
+        self._vectors.delete(tenant_id, user_id, memory_id)  # vector material cleared
         return m
 
     def find_similar_active(
@@ -140,13 +153,20 @@ class InMemoryRepository(Repository):
         *,
         limit: int = 50,
     ) -> list[tuple[StoredMemory, float]]:
-        from ..embeddings import cosine
-
+        # Similarity is delegated to the pluggable VectorIndex (v1.7, ADR-021); the
+        # repository stays authoritative for which rows are candidates. Active rows
+        # the index does not score (no vector, or embedding failure) are still
+        # returned at 0.0 so callers degrade to keyword-only ranking (invariant #4).
         active = self.retrieve_active(tenant_id, user_id)
-        scored: list[tuple[StoredMemory, float]] = []
-        for m in active:
-            sim = cosine(query_embedding, m.embedding) if (query_embedding and m.embedding) else 0.0
-            scored.append((m, sim))
+        if not query_embedding:
+            return [(m, 0.0) for m in active][:limit]
+        ranked = {
+            match.memory_id: match.score
+            for match in self._vectors.query(
+                tenant_id, user_id, query_embedding, limit=max(limit, len(active))
+            )
+        }
+        scored = [(m, ranked.get(m.id, 0.0)) for m in active]
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return scored[:limit]
 
