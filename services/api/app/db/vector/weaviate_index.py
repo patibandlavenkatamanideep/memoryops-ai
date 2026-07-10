@@ -25,7 +25,9 @@ def _object_id(tenant_id: str, user_id: str, memory_id: str) -> str:
 class WeaviateVectorIndex(VectorIndex):
     name = "weaviate"
 
-    def __init__(self, *, url: str, api_key: str | None = None, collection: str = "MemoryOps") -> None:
+    def __init__(
+        self, *, url: str, api_key: str | None = None, collection: str = "MemoryOps"
+    ) -> None:
         self._collection_name = collection
         self._client = None
         try:

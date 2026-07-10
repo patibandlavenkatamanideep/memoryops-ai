@@ -35,9 +35,9 @@ def _verify_hmac(alg: str, signing_input: bytes, signature: bytes, secret: str) 
 
 def _verify_rsa(alg: str, signing_input: bytes, signature: bytes, public_key: str) -> bool:
     try:  # optional: only needed for asymmetric algorithms
+        from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding
-        from cryptography.exceptions import InvalidSignature
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise JWTError(
             f"algorithm {alg} needs the 'cryptography' package; "
@@ -116,4 +116,6 @@ def claim_path(payload: dict, dotted: str) -> str | None:
         if not isinstance(node, dict) or part not in node:
             return None
         node = node[part]
-    return str(node) if node is not None and not isinstance(node, (dict, list)) else None
+    if node is None or isinstance(node, dict | list):
+        return None
+    return str(node)

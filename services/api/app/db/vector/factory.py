@@ -29,7 +29,9 @@ def create_vector_index(name: str, **kwargs) -> VectorIndex:
     if name == "lancedb":
         from .lancedb_index import LanceDBVectorIndex
 
-        return LanceDBVectorIndex(uri=kwargs.get("uri", "./.lancedb"), table=kwargs.get("table", "memoryops"))
+        return LanceDBVectorIndex(
+            uri=kwargs.get("uri", "./.lancedb"), table=kwargs.get("table", "memoryops")
+        )
     if name == "weaviate":
         from .weaviate_index import WeaviateVectorIndex
 
@@ -38,4 +40,6 @@ def create_vector_index(name: str, **kwargs) -> VectorIndex:
             api_key=kwargs.get("api_key"),
             collection=kwargs.get("collection", "MemoryOps"),
         )
-    raise ValueError(f"unknown vector index '{name}'; expected memory or one of {sorted(_EXTERNAL)}")
+    raise ValueError(
+        f"unknown vector index '{name}'; expected memory or one of {sorted(_EXTERNAL)}"
+    )

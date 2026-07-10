@@ -89,7 +89,9 @@ class InMemoryRepository(Repository):
         self._memories[memory.id] = memory
         # Keep the vector index in sync: a non-active row is not searchable.
         if memory.status.value == _ACTIVE:
-            self._vectors.upsert(memory.tenant_id, memory.user_id, memory.id, memory.embedding or [])
+            self._vectors.upsert(
+                memory.tenant_id, memory.user_id, memory.id, memory.embedding or []
+            )
         else:
             self._vectors.delete(memory.tenant_id, memory.user_id, memory.id)
         return memory

@@ -24,7 +24,7 @@ from .principal import Principal
 
 
 class IdentityProvider(Protocol):
-    def resolve(self, headers: "HeaderMap") -> Principal | None: ...
+    def resolve(self, headers: HeaderMap) -> Principal | None: ...
 
 
 class HeaderMap(Protocol):

@@ -40,7 +40,7 @@ from ..schemas.memory import (
     Source,
     UsedMemory,
 )
-from .admission_gate import AdmissionGate, AdmissionResult
+from .admission_gate import AdmissionGate
 from .audit import AuditService
 from .context_composer import ContextComposer
 from .extractor import Extractor
@@ -197,9 +197,10 @@ class Gateway:
             return block, used, result.mode, admission, admitted_records, recall_blocked
 
         _read_start = time.monotonic()
-        context_block, used_memories, retrieval_mode, admission, admitted_records, recall_blocked = (
-            safe_call(_read, default=("", [], "none", None, [], []), label="retrieval")
-        )
+        (
+            context_block, used_memories, retrieval_mode,
+            admission, admitted_records, recall_blocked,
+        ) = safe_call(_read, default=("", [], "none", None, [], []), label="retrieval")
         observe_retrieval(retrieval_mode, (time.monotonic() - _read_start) * 1000)
 
         # ── Admission accounting: metrics, audit, and the memory usage trace ────
@@ -421,7 +422,7 @@ class Gateway:
                     tenant_id=req.tenant_id,
                     user_id=req.user_id,
                     action="output_gate_blocked",
-                    reason=f"output gate {review.action}: {review.disclosures} disclosure(s) caught",
+                    reason=f"output gate {review.action}: {review.disclosures} disclosure(s)",
                     trace_id=trace_id,
                     metadata={
                         "action": review.action,

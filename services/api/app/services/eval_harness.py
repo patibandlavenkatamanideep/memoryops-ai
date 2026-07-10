@@ -234,7 +234,7 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         ok = derived_used_before and not derived_used_after and not leaked
         return CaseResult(
             cid, kind, ok,
-            f"depth={depth} used_before={derived_used_before} after={derived_used_after} leaked={leaked}",
+            f"depth={depth} before={derived_used_before} after={derived_used_after} leak={leaked}",
         )
 
     if kind == "cross_session_leakage":
@@ -305,7 +305,7 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         ok = seen_before and not leaked_via and still_active
         return CaseResult(
             cid, kind, ok,
-            f"used_before={seen_before} mode={mode} leaked={leaked_via or 'none'} row_active={still_active}",
+            f"before={seen_before} mode={mode} leaked={leaked_via or 'none'} active={still_active}",
         )
 
     if kind == "isolation":
