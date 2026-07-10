@@ -55,6 +55,9 @@ integration" is import-guarded illustrative glue.
 | Weaviate | contract-tested, optional dependency |
 | LangGraph / LlamaIndex / CrewAI / AutoGen / Semantic Kernel / OpenAI Agents SDK | example integrations, import-guarded, not live-service tested in CI |
 
+Full detail (pip extras, env, live-validation): **[docs/adapters/](docs/adapters/README.md)**.
+New to integrating? Start with the **[LangGraph tutorial](docs/tutorials/langgraph.md)**.
+
 ## Benchmark
 
 MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
