@@ -380,16 +380,22 @@ Release-readiness is documented in [known limitations](docs/limitations.md), the
 [production-readiness map](docs/production-readiness.md), and the
 [CHANGELOG](CHANGELOG.md).
 
-Planned beyond v1.0:
+Shipped since v1.0: deletion proof layer + tombstone lineage (v1.4), deleted-memory
+leakage evals (v1.5), auth + authorization adapters (v1.6), storage/vector backend
+abstraction (v1.7), full observability / distributed tracing (v1.8), Recall Gate +
+Output Gate (v1.9), the Enterprise Evidence Layer — tamper-evident audit + evidence
+reports (v2.0), agent framework integrations (v2.1), and a public memory-governance
+benchmark (v2.2). See the [CHANGELOG](CHANGELOG.md).
+
+Planned next:
 
 - Consent capture at the UI/SDK edge; cross-tenant retention scheduling.
 - Hard purge / crypto-shred and pgvector index reclamation (beyond v0.7's auditable
   compaction).
 - Optional queue/cron backend behind the orchestrator interface; auto-discovered scope
   enumeration.
-- Next: deletion proof layer, tombstone lineage, deleted-memory leakage evals,
-  cache/summary invalidation, auth adapters, storage backend abstraction, and
-  enterprise evidence reports.
+- External audit-chain notarization; semantic (LLM-judge) Output Gate; published
+  per-framework integration packages and a hosted benchmark leaderboard.
 
 See [docs/rollout.md](docs/rollout.md) and the build phases in [CLAUDE.md](CLAUDE.md).
 
