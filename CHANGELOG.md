@@ -3,6 +3,24 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.6 — Auth + Authorization Adapters
+Additive under the `1.x` compatibility promise; **off by default** so no behavior
+changes until an operator opts in. MemoryOps previously trusted `tenant_id`/`user_id`
+from the caller — fine behind a trusted boundary, but not enough to run behind real
+user identity. v1.6 adds an **identity-neutral** auth layer (`app/auth/`) that verifies
+an externally-minted identity and enforces that every operation is scoped to the
+authenticated tenant/user. Two modes via `MEMORYOPS_AUTH_MODE`: `trusted_header` (an
+authenticated upstream proxy injects `X-MemoryOps-Tenant`/`X-MemoryOps-User` — the
+bring-your-own-auth pattern) and `jwt` (MemoryOps verifies an `Authorization: Bearer`
+token and maps configured claims, dotted paths allowed, to the principal).
+JWT verification is **dependency-free** for HS256/384/512 (stdlib `hmac`, tests need
+no keys); RS\* works when `cryptography` is present. A **scope-validation middleware**
+authenticates every `/api/*` request and checks any `tenant_id`/`user_id` in the query
+string; body routes (`chat`, `retention`) call `enforce_scope()` after parsing — a
+mismatch is `403`, a missing/invalid credential is `401`, never a `500`. Adapters ship
+as copy-paste env recipes (Clerk / Auth0 / Supabase / BYO), not a bespoke SDK. New
+tests in `tests/test_auth.py`. See [docs/auth-adapters.md](docs/auth-adapters.md), [ADR-020](infra/adr/ADR-020-auth-authorization-adapters.md).
+
 ## v1.5 — Deleted / Expired Memory Leakage Evals
 Additive under the `1.x` compatibility promise. Makes the deletion guarantee (#2)
 *measurable* rather than merely asserted — most memory systems claim deletion, few
