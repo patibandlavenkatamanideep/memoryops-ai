@@ -41,6 +41,29 @@ def test_read_path_emits_tracing_spans(gateway):
     )
 
 
+def test_read_path_recall_gate_blocks_by_audience(gateway, repo):
+    """v1.9: the read path runs the Recall Gate — a high-sensitivity memory is kept
+    out of context for a `public` audience without changing loop behavior."""
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import ChatRequest, MemoryType, Sensitivity, Source, Status
+
+    seed = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1", user_id="u1", memory_type=MemoryType.preference,
+            content="my confidential diagnosis is condition X", importance=7,
+            confidence=0.9, sensitivity=Sensitivity.high, status=Status.active,
+            source=Source(kind="chat", excerpt="diagnosis"), embedding=[1.0, 0.0, 0.0],
+        )
+    )
+    resp = gateway.handle_chat(
+        ChatRequest(tenant_id="t1", user_id="u1", message="what is my diagnosis", audience="public"),
+        trace_id="recall",
+    )
+    assert seed.id not in {u.memory_id for u in resp.used_memories}
+    blocked = {b.memory_id: b for b in resp.trace.memories_blocked} if resp.trace else {}
+    assert blocked.get(seed.id) and blocked[seed.id].admission_decision == "BLOCK_AUDIENCE"
+
+
 def test_memory_path_attaches_economics(gateway):
     """The read path attaches an advisory economics estimate (ADR-016) without
     altering loop behavior; token counters move and cost is 0 under stub providers."""

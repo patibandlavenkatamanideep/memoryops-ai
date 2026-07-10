@@ -36,6 +36,7 @@ from ..schemas.memory import (
     Compression,
     Economics,
     MemoryUsageTrace,
+    OutputGateResult,
     Source,
     UsedMemory,
 )
@@ -43,8 +44,10 @@ from .admission_gate import AdmissionGate, AdmissionResult
 from .audit import AuditService
 from .context_composer import ContextComposer
 from .extractor import Extractor
+from .output_gate import OutputGate
 from .policy_broker import PolicyBroker
 from .ranker import Ranker
+from .recall_gate import RecallGate
 from .retriever import Retriever
 from .write_service import WriteService
 
@@ -61,6 +64,7 @@ class Gateway:
         self._retriever = Retriever(repo)
         self._ranker = Ranker()
         self._admission_gate = AdmissionGate()
+        self._recall_gate = RecallGate()  # v1.9 audience-aware recall (ADR-023)
         self._composer = ContextComposer()
         self._compressor = get_compressor()
         self._llm = get_llm()
@@ -142,9 +146,9 @@ class Gateway:
             evidence={"tenant_scoped": True, "user_scoped": True, "active_only": True},
         )
 
-        def _read() -> tuple[str, list[UsedMemory], str, AdmissionResult | None]:
+        def _read():
             # v1.8: each read stage is a span under this turn's correlation id, so a
-            # trace shows retrieve → rank → admission → compose end to end (ADR-022).
+            # trace shows retrieve → rank → admission → recall → compose (ADR-022/023).
             with span("memory.read"):
                 with span("retrieve") as sp:
                     result = self._retriever.retrieve(req.tenant_id, req.user_id, req.message)
@@ -173,13 +177,28 @@ class Gateway:
                             admitted=len(admission.admitted),
                             blocked=len(admission.blocked_records),
                         )
+                # Recall Gate (v1.9, ADR-023): audience-aware entry — re-blocks any
+                # admitted memory whose sensitivity exceeds this session's clearance.
+                admitted_records = admission.admitted_records
+                recall_blocked: list = []
+                if get_app_settings().recall_gate_enabled:
+                    with span("recall") as sp:
+                        recall = self._recall_gate.evaluate(
+                            admitted_records, audience=req.audience
+                        )
+                        admitted_records = recall.allowed
+                        recall_blocked = recall.blocked
+                        if sp is not None:
+                            sp.attributes.update(
+                                audience=req.audience, blocked=len(recall_blocked)
+                            )
                 with span("compose"):
-                    block, used = self._composer.compose(admission.admitted)
-            return block, used, result.mode, admission
+                    block, used = self._composer.compose([r.ranked for r in admitted_records])
+            return block, used, result.mode, admission, admitted_records, recall_blocked
 
         _read_start = time.monotonic()
-        context_block, used_memories, retrieval_mode, admission = safe_call(
-            _read, default=("", [], "none", None), label="retrieval"
+        context_block, used_memories, retrieval_mode, admission, admitted_records, recall_blocked = (
+            safe_call(_read, default=("", [], "none", None, [], []), label="retrieval")
         )
         observe_retrieval(retrieval_mode, (time.monotonic() - _read_start) * 1000)
 
@@ -188,8 +207,15 @@ class Gateway:
         if admission is not None:
             for record in admission.records:
                 record_admission_decision(record.decision.value)
-            blocked = admission.blocked_records
+            # v1.9: the Recall Gate's audience blocks join the admission blocks, so
+            # the trace, metrics, and audit explain them uniformly (ADR-023).
+            for record in recall_blocked:
+                record_admission_decision(record.decision.value)
+            blocked = admission.blocked_records + recall_blocked
             if blocked:
+                counts = admission.counts()
+                if recall_blocked:
+                    counts["BLOCK_AUDIENCE"] = counts.get("BLOCK_AUDIENCE", 0) + len(recall_blocked)
                 self._audit.record(
                     tenant_id=req.tenant_id,
                     user_id=req.user_id,
@@ -198,16 +224,19 @@ class Gateway:
                     trace_id=trace_id,
                     metadata={
                         "blocked_count": len(blocked),
-                        "decisions": admission.counts(),
+                        "decisions": counts,
                         "blocked_memory_ids": [r.memory.id for r in blocked],
                     },
                 )
             if get_app_settings().memory_trace_enabled:
+                counts = admission.counts()
+                if recall_blocked:
+                    counts["BLOCK_AUDIENCE"] = counts.get("BLOCK_AUDIENCE", 0) + len(recall_blocked)
                 trace = MemoryUsageTrace(
                     response_id=trace_id,
-                    memories_used=[r.to_trace_entry() for r in admission.admitted_records],
+                    memories_used=[r.to_trace_entry() for r in admitted_records],
                     memories_blocked=[r.to_trace_entry() for r in blocked],
-                    admission_counts=admission.counts(),
+                    admission_counts=counts,
                 )
         emit_loop_event_sync(
             self._repo,
@@ -368,6 +397,39 @@ class Gateway:
         # ── Response generation ────────────────────────────────────────────────
         answer = self._llm.complete(system=llm_context, user=req.message)
 
+        # ── Output Gate (v1.9, ADR-023): the mirror of the Recall/Admission gates on
+        # the way out — inspect the generated answer and redact/refuse any content
+        # that would disclose a memory those gates blocked. No-throw; only ever
+        # removes information from the answer, never adds.
+        output_gate_result: OutputGateResult | None = None
+        if get_app_settings().output_gate_enabled and admission is not None:
+            protected = admission.blocked_records + recall_blocked
+            with span("output_gate") as _sp:
+                review = OutputGate(mode=get_app_settings().output_gate_mode).review(
+                    answer, protected=protected
+                )
+                if _sp is not None:
+                    _sp.attributes.update(action=review.action, disclosures=review.disclosures)
+            if review.action != "allow":
+                answer = review.answer
+                output_gate_result = OutputGateResult(
+                    action=review.action,
+                    disclosures=review.disclosures,
+                    escalated=review.escalated,
+                )
+                self._audit.record(
+                    tenant_id=req.tenant_id,
+                    user_id=req.user_id,
+                    action="output_gate_blocked",
+                    reason=f"output gate {review.action}: {review.disclosures} disclosure(s) caught",
+                    trace_id=trace_id,
+                    metadata={
+                        "action": review.action,
+                        "disclosures": review.disclosures,
+                        "protected_memory_ids": review.protected_ids,
+                    },
+                )
+
         # ── WRITE path (policy before storage) ─────────────────────────────────
         write_loop = start_loop_run_sync(
             self._repo,
@@ -522,6 +584,7 @@ class Gateway:
             compression=compression,
             economics=economics,
             trace=trace,
+            output_gate=output_gate_result,
             loop_evidence={
                 "memory.read": read_status.value,
                 "memory.write": LoopStatus.COMPLETED.value,

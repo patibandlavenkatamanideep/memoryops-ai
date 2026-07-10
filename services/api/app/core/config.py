@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     admission_block_sensitive: bool = False  # block sensitivity='high' from context
     admission_min_score: float = 0.0  # block ranked score below this (0 = disabled)
 
+    # Recall Gate + Output Gate (v1.9, ADR-023). The Recall Gate admits a memory into
+    # context only if its sensitivity is permitted for the request's `audience`
+    # (default "private" = full clearance → no behavior change). The Output Gate
+    # inspects the generated answer and redacts/refuses content that would disclose a
+    # memory the gates blocked. Both ON by default but no-op unless there is something
+    # to protect. `output_gate_mode` = redact | refuse.
+    recall_gate_enabled: bool = True
+    output_gate_enabled: bool = True
+    output_gate_mode: Literal["redact", "refuse"] = "redact"
+
     # Storage backend: "memory" runs with no infra (default for dev/tests),
     # "postgres" uses SQLAlchemy + pgvector.
     storage: Literal["memory", "postgres"] = "memory"
@@ -200,6 +210,13 @@ def get_settings() -> Settings:
     if (val := os.getenv("MEMORYOPS_ADMISSION_MIN_SCORE")) is not None:
         with contextlib.suppress(ValueError):
             overrides["admission_min_score"] = float(val)
+    # v1.9 Recall Gate + Output Gate knobs (ADR-023). Public operator toggles.
+    if (val := os.getenv("MEMORYOPS_RECALL_GATE")) is not None:
+        overrides["recall_gate_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_OUTPUT_GATE")) is not None:
+        overrides["output_gate_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_OUTPUT_GATE_MODE")) in ("redact", "refuse"):
+        overrides["output_gate_mode"] = val
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
     # v1.7 pluggable vector index (ADR-021). Public operator toggles; default "memory".

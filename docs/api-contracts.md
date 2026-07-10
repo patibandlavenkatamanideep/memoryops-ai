@@ -28,8 +28,12 @@ Request:
 ```json
 { "tenant_id": "tenant_demo", "user_id": "user_demo",
   "message": "Remember that I prefer enterprise-style explanations.",
-  "temporary_chat": false, "conversation_id": null }
+  "temporary_chat": false, "conversation_id": null, "audience": "private" }
 ```
+`audience ∈ {private (default), team, public}` (v1.9) — the Recall Gate recalls a
+memory only if its sensitivity is within the audience's clearance (`private`=all,
+`team`=low+medium, `public`=low). A withheld memory appears in `trace.memories_blocked`
+with `admission_decision: "BLOCK_AUDIENCE"`.
 Response:
 ```json
 { "assistant_message": "...",
@@ -53,10 +57,15 @@ Response:
       "admission_decision": "ALLOW", "admission_reason": "...", "retrieval_score": 0.42,
       "score_breakdown": { "vector_similarity": 0.84 } }],
     "memories_blocked": [] },
+  "output_gate": null,
   "loop_evidence": { "memory.read": "completed", "memory.write": "completed" },
   "trace_id": "..." }
 ```
 `decision ∈ {SAVE, PENDING_APPROVAL, BLOCK, DROP_LOW_UTILITY, UPDATE_EXISTING, MERGE_WITH_EXISTING}`.
+`output_gate` (v1.9) is present only when the Output Gate acted:
+`{ "action": "redacted"|"refused", "disclosures": n, "escalated": true }` — the answer
+would have disclosed a memory the Recall/Admission gates blocked. `admission_decision`
+gains `BLOCK_AUDIENCE` (Recall Gate).
 
 **Context Admission Gate + Memory Usage Trace (v1.3).** A memory enters context
 only if it is relevant **and** allowed. The optional `trace` block is the
