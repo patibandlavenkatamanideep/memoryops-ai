@@ -46,6 +46,55 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python evals/run_evals.py
 
+  benchmark:
+    name: Benchmark — memory-governance scorecard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API deps
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run public benchmark (critical suites must be perfect)
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: python benchmark/run_benchmark.py
+
+  sdk:
+    name: SDK — tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps (API for the in-process e2e fixture + SDK)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r services/api/requirements.txt
+          python -m pip install pytest httpx
+          python -m pip install -e packages/memoryops-sdk
+
+      - name: SDK tests
+        working-directory: packages/memoryops-sdk
+        env:
+          MEMORYOPS_STORAGE: memory
+          PYTHONPATH: ${{ github.workspace }}/services/api
+        run: pytest -q
+
   web:
     name: Web — build
     runs-on: ubuntu-latest
