@@ -3,6 +3,21 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v2.1 — Agent Framework Integrations
+Additive under the `1.x` compatibility promise. Makes MemoryOps easy to plug into real
+agent systems as the **governed memory layer** — one framework-agnostic adapter plus
+per-framework examples, not six bespoke SDKs. New `memoryops.GovernedMemory` exposes a
+uniform `remember` / `recall` / `context_for` / `answer` / `forget` / `withdraw_consent`
+surface over `MemoryOpsClient`, carries an `audience` (applied to every recall via the
+v1.9 Recall Gate), and adds **no** governance — the server stays authoritative.
+`GovernedMemory.for_audience(...)` gives a per-agent clearance view over one store (e.g.
+a customer-facing agent gets `public`, an internal agent `private`). The SDK `chat()`
+gains an additive `audience` parameter. Runnable, import-guarded examples ship for
+**LangGraph, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, and the OpenAI Agents SDK**
+(`packages/memoryops-sdk/examples/integrations/`), each wrapping the adapter into that
+framework's memory/tool/plugin interface. The adapter is tested against the real
+in-process app (`tests/test_integrations.py`, +5). See [docs/agent-integrations.md](docs/agent-integrations.md), [ADR-025](infra/adr/ADR-025-agent-framework-integrations.md).
+
 ## v2.0 — Enterprise Evidence Layer
 Additive under the `1.x` compatibility promise. Makes MemoryOps' governance
 **verifiable**, not just claimed — security-reviewable and compliance-friendly. Adds a
