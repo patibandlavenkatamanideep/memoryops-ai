@@ -119,6 +119,11 @@ class StoredAudit:
     metadata: dict = field(default_factory=dict)
     id: str = field(default_factory=new_id)
     created_at: datetime = field(default_factory=_now)
+    # Tamper-evident hash chain (v2.0, ADR-024). Set by the repository on append:
+    # entry_hash = H(canonical(event) + prev_hash), as a per-tenant chain. Empty
+    # until persisted. See app/evidence/hashchain.py.
+    prev_hash: str = ""
+    entry_hash: str = ""
 
 
 # ── Worker runtime (v0.8, ADR-012) ───────────────────────────────────────────

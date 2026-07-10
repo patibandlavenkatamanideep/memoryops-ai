@@ -77,6 +77,13 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   (request `trace_id` or a minted `worker-…` id); content-free, no-throw. Logs gain a
   `span_id`; spans exposed at `GET /api/traces`. `MEMORYOPS_TRACING_ENABLED` /
   `MEMORYOPS_OTEL_ENABLED`. See ADR-022, `docs/observability-tracing.md`.
+- `services/api/app/evidence` — Enterprise Evidence Layer (v2.0). Tamper-evident
+  audit hash chain (`hashchain.py`: `entry_hash = SHA-256(canonical(event)+prev_hash)`,
+  per-tenant, set in `repo.add_audit`; `verify_chain` reconstructs order from links,
+  detects edits/deletions/inserts) + read-only tenant-scoped evidence reports
+  (`reports.py`, `routes/evidence.py`): per-response bundle, deletion proof, policy
+  report, lifecycle export, chain verify — all `enforce_scope`-guarded, content-
+  minimizing. Tamper-evidence, not tamper-proofing. See ADR-024, `docs/enterprise-evidence.md`.
 - `services/api/app/economics` — advisory per-request token + cost estimation
   (v1.2). Reuses the deterministic token estimator + a configurable price table
   (`MEMORYOPS_PRICING_OVERRIDES`); unknown/stub models are unpriced ($0). Surfaced
