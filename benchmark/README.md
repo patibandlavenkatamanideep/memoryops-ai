@@ -15,6 +15,18 @@ python benchmark/run_benchmark.py --md benchmark/SCORECARD.md
 
 No API keys, no infra — the cases run against the deterministic stub stack (`evals/`).
 
+### Run it in Docker
+
+If you'd rather not set up Python locally, the repo ships an opt-in Compose profile
+that runs the same scorecard in an isolated container (offline, in-memory, no DB/Redis):
+
+```bash
+docker compose --profile benchmark run --rm benchmark
+```
+
+The `benchmark` profile keeps it out of the default `docker compose up` stack — it's a
+one-shot run that exits non-zero if a critical suite isn't perfect.
+
 ## Suites
 
 | Suite | What it proves | Critical |
