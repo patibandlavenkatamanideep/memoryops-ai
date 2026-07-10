@@ -47,7 +47,15 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   reindex-rebuild), `expiry_leakage` (retention-expired / consent-withdrawn active
   memory is gated out without deletion), and a transitive `derived_tombstone`
   (`chain_depth`) — all release-gating (`_CRITICAL_KINDS`), each carrying its own
-  "teeth". See ADR-019, `docs/deleted-memory-leakage-evals.md`.
+  "teeth". See ADR-019, `docs/deleted-memory-leakage-evals.md`. **Recall Gate +
+  Output Gate** (`recall_gate.py` / `output_gate.py`, v1.9) govern both edges of
+  generation: the Recall Gate makes context entry *audience-aware* (`ChatRequest.audience`
+  = private|team|public → sensitivity clearance; withheld memory gets `BLOCK_AUDIENCE`
+  in the trace), and the Output Gate inspects the generated answer and redacts/refuses
+  content that would disclose a blocked memory (deterministic, no-throw, audited
+  `output_gate_blocked`, `output_gate` response block). On by default but no-op for the
+  default `private` audience + honest model. `MEMORYOPS_RECALL_GATE` /
+  `MEMORYOPS_OUTPUT_GATE` / `MEMORYOPS_OUTPUT_GATE_MODE`. See ADR-023, `docs/recall-output-gates.md`.
 - `services/api/app/embeddings` — swappable `EmbeddingProvider` (stub default + optional OpenAI).
   `MEMORYOPS_EMBEDDING_PROVIDER=stub|openai`. `app/core/embeddings.py` is a back-compat shim.
 - `services/api/app/auth` — identity-neutral auth + authorization adapters (v1.6).

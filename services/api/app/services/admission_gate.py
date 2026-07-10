@@ -60,6 +60,7 @@ class AdmissionDecision(str, Enum):
     BLOCK_TOMBSTONED_ANCESTOR = "BLOCK_TOMBSTONED_ANCESTOR"  # derived from deleted memory
     BLOCK_SENSITIVE = "BLOCK_SENSITIVE"  # opt-in
     BLOCK_LOW_CONFIDENCE = "BLOCK_LOW_CONFIDENCE"  # opt-in
+    BLOCK_AUDIENCE = "BLOCK_AUDIENCE"  # recall gate: sensitivity exceeds audience clearance (v1.9)
 
 
 @dataclass

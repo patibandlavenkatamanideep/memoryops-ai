@@ -3,6 +3,24 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.9 — Recall Gate + Output Gate
+Additive under the `1.x` compatibility promise; on by default but no-op unless there is
+something to protect (default `private` audience + an honest model → unchanged). Adds
+governance on **both** edges of generation. The **Recall Gate**
+(`app/services/recall_gate.py`) makes context entry *audience-aware*: each request
+carries an `audience` (`private` | `team` | `public`) and a memory is recalled only if
+its `sensitivity` is within that clearance (`private`=low+med+high, `team`=low+med,
+`public`=low) — withheld memories surface in the Memory Usage Trace with a new
+`BLOCK_AUDIENCE` decision, reusing the existing trace/metrics/audit path. The **Output
+Gate** (`app/services/output_gate.py`) is the mirror on the way out: it inspects the
+generated answer and, when it shares a distinctive contiguous phrase (≥4 significant
+words) with a memory the gates blocked, **redacts** the spans (default) or **refuses**
+with a safe message — deterministic, no-throw, audited (`output_gate_blocked`), and
+surfaced as an optional `output_gate` block. `ChatRequest.audience` +
+`ChatResponse.output_gate` are additive. Toggles `MEMORYOPS_RECALL_GATE`,
+`MEMORYOPS_OUTPUT_GATE`, `MEMORYOPS_OUTPUT_GATE_MODE`. +9 tests
+(`tests/test_recall_output_gates.py`); full suite 344 passed. See [docs/recall-output-gates.md](docs/recall-output-gates.md), [ADR-023](infra/adr/ADR-023-recall-output-gates.md).
+
 ## v1.8 — Full Memory Observability (Distributed Tracing)
 Additive under the `1.x` compatibility promise; on by default but content-free and
 dependency-free. Metrics (v1.1) tell you *how much*; v1.8 tracing tells you *what

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -146,6 +146,25 @@ class ChatRequest(BaseModel):
     message: str
     temporary_chat: bool = False
     conversation_id: str | None = None
+    # Audience/clearance for this session (v1.9, ADR-023). The Recall Gate admits a
+    # memory into context only if its sensitivity is permitted for this audience:
+    #   private (default) → low + medium + high   (full clearance; no behavior change)
+    #   team              → low + medium
+    #   public            → low only
+    audience: Literal["private", "team", "public"] = "private"
+
+
+class OutputGateResult(BaseModel):
+    """Post-generation disclosure control (v1.9, ADR-023).
+
+    The Output Gate inspects the final answer *after* generation and redacts (or
+    refuses) content that would disclose memory the Recall/Admission gates blocked —
+    catching leakage the pre-composition gates cannot see.
+    """
+
+    action: str  # allow | redacted | refused
+    disclosures: int = 0  # number of protected memories whose content was caught
+    escalated: bool = False
 
 
 class Compression(BaseModel):
@@ -198,6 +217,9 @@ class ChatResponse(BaseModel):
     # Optional memory usage trace: the permissioned, explainable memory trail
     # behind this answer (v1.3, ADR-017). Present when the trace is enabled.
     trace: MemoryUsageTrace | None = None
+    # Optional Output Gate result (v1.9, ADR-023). Present only when the gate acted
+    # (redacted / refused) — i.e. it caught a would-be disclosure post-generation.
+    output_gate: OutputGateResult | None = None
     loop_evidence: dict[str, str] = Field(default_factory=dict)
     trace_id: str
 
