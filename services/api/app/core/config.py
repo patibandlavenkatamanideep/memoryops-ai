@@ -88,6 +88,21 @@ class Settings(BaseSettings):
     headroom_mode: Literal["library", "proxy", "mcp"] = "library"
     headroom_output_shaper: bool = False
 
+    # Auth + authorization adapters (v1.6, ADR-020). Identity-neutral: MemoryOps
+    # verifies an identity an upstream issuer minted and scopes every operation to
+    # it. OFF by default ("none" trusts the caller, as before) → no behavior change.
+    #   trusted_header — an authenticated upstream proxy injects tenant/user headers
+    #   jwt            — MemoryOps verifies a bearer JWT and maps claims to tenant/user
+    auth_mode: Literal["none", "trusted_header", "jwt"] = "none"
+    auth_tenant_header: str = "X-MemoryOps-Tenant"
+    auth_user_header: str = "X-MemoryOps-User"
+    auth_jwt_key: str = ""  # HS* shared secret or RS* PEM public key
+    auth_jwt_algorithms: str = "HS256"  # comma-separated allow-list
+    auth_jwt_tenant_claim: str = "tenant_id"  # dotted path ok (e.g. app_metadata.tenant_id)
+    auth_jwt_user_claim: str = "sub"
+    auth_jwt_audience: str = ""
+    auth_jwt_issuer: str = ""
+
     # Background memory lifecycle workers (v0.6, ADR-010). Workers run outside the
     # chat path; these are policy thresholds, not request knobs. Defaults are
     # conservative so a default run touches little. Reflection is proposal-only
@@ -165,6 +180,21 @@ def get_settings() -> Settings:
             overrides["admission_min_score"] = float(val)
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
+    # v1.6 auth adapters (ADR-020). Public operator toggles; default "none".
+    if (val := os.getenv("MEMORYOPS_AUTH_MODE")) in ("none", "trusted_header", "jwt"):
+        overrides["auth_mode"] = val
+    for env_name, field_name in (
+        ("MEMORYOPS_AUTH_TENANT_HEADER", "auth_tenant_header"),
+        ("MEMORYOPS_AUTH_USER_HEADER", "auth_user_header"),
+        ("MEMORYOPS_AUTH_JWT_KEY", "auth_jwt_key"),
+        ("MEMORYOPS_AUTH_JWT_ALGORITHMS", "auth_jwt_algorithms"),
+        ("MEMORYOPS_AUTH_JWT_TENANT_CLAIM", "auth_jwt_tenant_claim"),
+        ("MEMORYOPS_AUTH_JWT_USER_CLAIM", "auth_jwt_user_claim"),
+        ("MEMORYOPS_AUTH_JWT_AUDIENCE", "auth_jwt_audience"),
+        ("MEMORYOPS_AUTH_JWT_ISSUER", "auth_jwt_issuer"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            overrides[field_name] = val
     if (val := os.getenv("MEMORYOPS_EMBEDDING_PROVIDER")) in ("stub", "heuristic", "openai"):
         overrides["embeddings_provider"] = val
     if (val := os.getenv("MEMORYOPS_CONTEXT_COMPRESSION")) in ("none", "headroom"):

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import __version__
+from .auth import install_auth_middleware
 from .core.config import get_settings
 from .core.logging import clear_request_context, get_logger, set_request_context, setup_logging
 from .observability import observe_http
@@ -35,6 +36,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Auth + scope validation (v1.6, ADR-020). Installed before request_context is
+# declared so request_context stays the outermost middleware (trace_id + metrics
+# still wrap a 401/403). No-op unless MEMORYOPS_AUTH_MODE is set.
+install_auth_middleware(app)
 
 
 @app.middleware("http")

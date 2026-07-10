@@ -23,6 +23,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ..auth import enforce_scope
 from ..db import governance as gov
 from ..db.factory import get_repository
 from ..deps import audit_service
@@ -52,7 +53,8 @@ class ConsentRequest(_ScopedRequest):
     expires_at: datetime | None = None
 
 
-def _load(req: _ScopedRequest):
+def _load(req: _ScopedRequest, request: Request):
+    enforce_scope(request, req.tenant_id, req.user_id)
     repo = get_repository()
     memory = repo.get_memory(req.tenant_id, req.user_id, req.memory_id)
     if memory is None:
@@ -71,7 +73,7 @@ def _state(memory) -> dict:
 # ── mutations ─────────────────────────────────────────────────────────────────
 @router.post("/legal-hold")
 def set_legal_hold(req: LegalHoldRequest, request: Request) -> dict:
-    repo, memory = _load(req)
+    repo, memory = _load(req, request)
     gov.set_legal_hold(memory, on=req.on, reason=req.reason)
     repo.update_memory(memory)
     audit_service().record(
@@ -88,7 +90,7 @@ def set_legal_hold(req: LegalHoldRequest, request: Request) -> dict:
 
 @router.post("/pin")
 def set_pin(req: FlagRequest, request: Request) -> dict:
-    repo, memory = _load(req)
+    repo, memory = _load(req, request)
     gov.set_pinned(memory, on=req.on)
     repo.update_memory(memory)
     audit_service().record(
@@ -105,7 +107,7 @@ def set_pin(req: FlagRequest, request: Request) -> dict:
 
 @router.post("/protect")
 def set_protect(req: FlagRequest, request: Request) -> dict:
-    repo, memory = _load(req)
+    repo, memory = _load(req, request)
     gov.set_protected(memory, on=req.on)
     repo.update_memory(memory)
     audit_service().record(
@@ -124,7 +126,7 @@ def set_protect(req: FlagRequest, request: Request) -> dict:
 def set_consent(req: ConsentRequest, request: Request) -> dict:
     if req.status not in gov.ConsentStatus.ALL:
         raise HTTPException(status_code=422, detail=f"unknown consent status: {req.status}")
-    repo, memory = _load(req)
+    repo, memory = _load(req, request)
     gov.set_consent(memory, status=req.status, expires_at=req.expires_at)
     repo.update_memory(memory)
     audit_service().record(

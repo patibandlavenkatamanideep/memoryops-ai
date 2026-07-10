@@ -9,6 +9,18 @@ must update this file (enforced by the PR Invariant Evidence Gate).
 
 Base URL (dev): `http://localhost:8000`. Interactive docs: `/docs`.
 
+## Authentication & scope (v1.6, optional)
+Off by default (`MEMORYOPS_AUTH_MODE=none`) — the surface below is unchanged. When
+enabled (`trusted_header` or `jwt`), every `/api/*` route requires an authenticated
+caller and each request's `tenant_id`/`user_id` (query string or body) must match the
+authenticated principal:
+- `401` — missing or invalid credential (no identity header / bad or expired JWT).
+- `403` — the requested `tenant_id`/`user_id` does not match the principal.
+
+Send identity as headers (`X-MemoryOps-Tenant`/`X-MemoryOps-User`) or a bearer JWT
+(`Authorization: Bearer <token>`). Additive: no request/response *shape* changes, only
+these status codes when auth is on. See [auth-adapters.md](auth-adapters.md).
+
 ## POST /api/chat
 Write + read path for a turn.
 
