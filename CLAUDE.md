@@ -111,6 +111,14 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
     control, not crypto-shred. See ADR-013, `docs/retention-policies.md`.
 - `services/api/app/db` — repository abstraction. `MEMORYOPS_STORAGE=memory|postgres`. Vector
   retrieval goes through `Repository.search_candidates` (pgvector on Postgres, cosine in memory).
+  **Vector backend abstraction** (`app/db/vector/`, v1.7): the swappable ANN-search
+  seam. The `Repository` stays authoritative for governance; `VectorIndex` holds
+  ids+embeddings only and every backend must pass `assert_vector_index_contract`
+  (tenant isolation, deletion non-reappearance, no-bypass, graceful degradation). The
+  in-memory repo genuinely uses it (`InMemoryVectorIndex` maintained across
+  create/update/delete/compaction). Optional import-guarded adapters: Qdrant / LanceDB
+  / Weaviate (Pinecone is the same shape). `MEMORYOPS_VECTOR_INDEX=memory|qdrant|lancedb|weaviate`
+  (default `memory`, falls back if unreachable). See ADR-021, `docs/storage-backends.md`.
 - `infra/db/migrations` — SQL schema (Postgres + pgvector). RLS is **enforced** in
   `004_rls_policies.sql` (`FORCE` + tenant policy); verify with `scripts/check_rls_policies.py`. See ADR-006.
 - `apps/web` — Next.js frontend.

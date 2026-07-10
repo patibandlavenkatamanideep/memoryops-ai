@@ -38,6 +38,20 @@ The most dangerous failures for an AI memory system are:
   `deleted`/non-active rows at the source, so deleted and wrong-tenant memories are
   never retrievable.
 
+### Pluggable vector backend (v1.7)
+- Similarity search flows through a swappable `VectorIndex` (`app/db/vector/`) so
+  MemoryOps runs on Qdrant / LanceDB / Weaviate / pgvector without moving governance
+  into the vector store. The index holds **ids + embeddings only** — never content,
+  provenance, consent, or lineage — and the authoritative `Repository` plus the
+  admission gate re-check every candidate id it returns, so a stale index entry can
+  never leak content (defense-in-depth).
+- Every backend must uphold a written contract, proven by
+  `assert_vector_index_contract`: `query(tenant, user, …)` returns only that scope's
+  vectors (isolation, #1); `delete`/soft-delete/compaction remove the vector so a
+  deleted memory can never resurface as a candidate (deletion, #2); an unreachable
+  backend returns no matches and degrades to keyword-only rather than failing (#4).
+  Deletion compaction now also clears the memory's vector material via the index.
+
 ### Policy-before-storage (invariant #5)
 - The Policy Broker runs before the Write Service. Nothing reaches the store unevaluated.
 

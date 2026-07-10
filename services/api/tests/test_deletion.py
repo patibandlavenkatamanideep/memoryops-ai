@@ -177,6 +177,23 @@ def test_deletion_guarantee_propagates_to_derived_artifacts(gateway, repo):
     assert "vendor x" not in resp.assistant_message.lower()
 
 
+def test_deletion_removes_vector_from_index_seam(gateway, repo):
+    # v1.7: with similarity delegated to the pluggable VectorIndex, deletion must
+    # remove the vector so the row can never come back as a scored candidate — the
+    # deletion guarantee (#2) must not be weakened by the swappable backend.
+    from app.embeddings import embed
+
+    _chat(gateway, "Remember that I prefer dark mode dashboards.")
+    mem = repo.list_memories("t1", "u1")[0]
+    q = embed("dark mode dashboards")
+    assert repo.search_candidates("t1", "u1", q)  # present before deletion
+
+    repo.soft_delete("t1", "u1", mem.id)
+    # Gone from the vector candidate path and from active retrieval.
+    assert repo.search_candidates("t1", "u1", q) == []
+    assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
+
+
 def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # v0.3.1: loop runs/events are operational evidence stored alongside the
     # write path. They must never re-expose a soft-deleted memory in retrieval.

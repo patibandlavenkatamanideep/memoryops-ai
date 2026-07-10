@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     # Storage backend: "memory" runs with no infra (default for dev/tests),
     # "postgres" uses SQLAlchemy + pgvector.
     storage: Literal["memory", "postgres"] = "memory"
+
+    # Pluggable vector-search backend (v1.7, ADR-021). The one store-specific part
+    # of retrieval; the repository stays authoritative for governance. "memory" is
+    # dependency-free (default). External backends (qdrant|lancedb|weaviate) are
+    # constructed only when selected and degrade to keyword-only if unreachable.
+    vector_index: Literal["memory", "qdrant", "lancedb", "weaviate"] = "memory"
+    vector_index_url: str = ""  # qdrant/weaviate endpoint
+    vector_index_uri: str = "./.lancedb"  # lancedb path/uri
+    vector_index_api_key: str = ""
+    vector_index_collection: str = "memoryops"
     database_url: str = "postgresql+psycopg://memoryops:memoryops@localhost:5432/memoryops"
 
     redis_url: str = "redis://localhost:6379/0"
@@ -180,6 +190,17 @@ def get_settings() -> Settings:
             overrides["admission_min_score"] = float(val)
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
+    # v1.7 pluggable vector index (ADR-021). Public operator toggles; default "memory".
+    if (val := os.getenv("MEMORYOPS_VECTOR_INDEX")) in ("memory", "qdrant", "lancedb", "weaviate"):
+        overrides["vector_index"] = val
+    for env_name, field_name in (
+        ("MEMORYOPS_VECTOR_INDEX_URL", "vector_index_url"),
+        ("MEMORYOPS_VECTOR_INDEX_URI", "vector_index_uri"),
+        ("MEMORYOPS_VECTOR_INDEX_API_KEY", "vector_index_api_key"),
+        ("MEMORYOPS_VECTOR_INDEX_COLLECTION", "vector_index_collection"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            overrides[field_name] = val
     # v1.6 auth adapters (ADR-020). Public operator toggles; default "none".
     if (val := os.getenv("MEMORYOPS_AUTH_MODE")) in ("none", "trusted_header", "jwt"):
         overrides["auth_mode"] = val

@@ -43,6 +43,27 @@ def test_vector_search_is_tenant_and_user_scoped(gateway, repo):
     assert repo.search_candidates("tenant_acme", "user_acme", q) != []
 
 
+def test_vector_index_seam_preserves_isolation_and_deletion(gateway, repo):
+    # v1.7: similarity now flows through the pluggable VectorIndex. The seam must
+    # not weaken isolation or deletion — a query only sees its own scope, and a
+    # soft-deleted memory's vector is removed so it can never be a candidate again.
+    from app.embeddings import embed
+
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    q = embed("roadmap")
+
+    # Isolation through the index: other tenant / other user see nothing.
+    assert repo.search_candidates("tenant_demo", "user_demo", q) == []
+    assert repo.search_candidates("tenant_acme", "other_user", q) == []
+    hit = repo.search_candidates("tenant_acme", "user_acme", q)
+    assert hit and hit[0][1] > 0.0
+
+    # Deletion through the index: after soft-delete the vector is gone.
+    mem_id = repo.list_memories("tenant_acme", "user_acme")[0].id
+    repo.soft_delete("tenant_acme", "user_acme", mem_id)
+    assert repo.search_candidates("tenant_acme", "user_acme", q) == []
+
+
 def test_loop_runs_are_tenant_and_user_scoped(gateway, repo):
     # The v0.3.1 loop engineering store records operational traces tagged by
     # tenant/user; those traces must not leak across the same boundary.
