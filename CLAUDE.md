@@ -154,7 +154,11 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   examples (quickstart, FastAPI, RAG, agent memory). Additive client only — the
   server stays authoritative for all governance; the SDK adds none. Tested against
   the real app in-process via an injectable `httpx.Client`. See ADR-014 and
-  `docs/assistant-sdk.md`.
+  `docs/assistant-sdk.md`. **Agent framework integrations** (v2.1): a framework-
+  agnostic `GovernedMemory` adapter (`remember`/`recall`/`context_for`/`forget`,
+  audience-aware via `for_audience`) + import-guarded examples for LangGraph,
+  LlamaIndex, CrewAI, AutoGen, Semantic Kernel, and the OpenAI Agents SDK
+  (`examples/integrations/`). See ADR-025, `docs/agent-integrations.md`.
 - `evals` — golden + adversarial cases, `run_evals.py`.
 
 ## Running

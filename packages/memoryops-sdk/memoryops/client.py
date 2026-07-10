@@ -91,17 +91,22 @@ class MemoryOpsClient:
         *,
         temporary_chat: bool = False,
         conversation_id: str | None = None,
+        audience: str | None = None,
     ) -> ChatResult:
         """Send a message through the governed memory pipeline (write + read).
 
         With ``temporary_chat=True`` the server reads and writes nothing
         (invariant #6) — useful for one-off prompts that must not be remembered.
+        ``audience`` (``private``/``team``/``public``, v1.9) applies the Recall Gate:
+        higher-sensitivity memory is kept out of context for a lower-trust audience.
         """
         body = self._scope(
             message=message,
             temporary_chat=temporary_chat,
             conversation_id=conversation_id,
         )
+        if audience is not None:
+            body["audience"] = audience
         return ChatResult.from_dict(self._request("POST", "/api/chat", json=body))
 
     # ── memories ───────────────────────────────────────────────────────────────

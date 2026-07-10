@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from .client import MemoryOpsClient
 from .errors import APIError, LegalHoldError, MemoryOpsError, NotFoundError
+from .integrations import GovernedMemory, RememberResult
 from .models import (
     AuditEvent,
     CandidateDecision,
@@ -38,5 +39,7 @@ __all__ = [
     "CandidateDecision",
     "AuditEvent",
     "RetentionDecision",
+    "GovernedMemory",
+    "RememberResult",
     "__version__",
 ]
