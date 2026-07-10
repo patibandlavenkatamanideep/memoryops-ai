@@ -72,6 +72,8 @@ def run_jobs(
     Each job runs independently; one job failing is recorded in its result and
     never prevents the others from running (workers never block the pipeline).
     """
+    from ..observability import new_correlation_id, set_correlation_id, span
+
     audit = audit or AuditService(repo)
     ctx = WorkerContext(
         tenant_id=tenant_id,
@@ -80,10 +82,14 @@ def run_jobs(
         now=now or datetime.now(UTC),
         dry_run=dry_run,
     )
+    # v1.8: a worker run has no HTTP trace, so mint a correlation id; each job is a
+    # span so a run is one correlated trace end to end (ADR-022).
+    set_correlation_id(trace_id) if trace_id else new_correlation_id("worker")
     report = WorkerRunReport(started_at=ctx.now)
     for job in _resolve_jobs(jobs or ["all"]):
-        worker = _WORKERS[job](repo, audit)
-        report.add(worker.run(ctx))
+        with span("worker.job", job=job.value, dry_run=dry_run):
+            worker = _WORKERS[job](repo, audit)
+            report.add(worker.run(ctx))
     report.completed_at = datetime.now(UTC)
     return report
 

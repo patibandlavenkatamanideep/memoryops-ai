@@ -112,3 +112,16 @@ def test_summarize_worker_results(repo) -> None:
     assert summary["jobs"] == len(DEFAULT_JOB_ORDER)
     assert summary["failed"] == 0
     assert "by_status" in summary and "by_job" in summary
+
+
+def test_worker_run_is_traced(repo) -> None:
+    """v1.8 (ADR-022): each job is a span under a minted worker correlation id, so a
+    run is one correlated trace — without changing job behavior."""
+    from app.observability import recent_spans, reset_spans
+
+    seed_memory(repo, importance=8, age_days=400)
+    reset_spans()
+    run_jobs(repo, tenant_id="t1", user_id="u1", jobs=["decay"], now=NOW)
+    job_spans = [s for s in recent_spans(limit=512) if s["name"] == "worker.job"]
+    assert job_spans and job_spans[0]["attributes"].get("job") == "decay"
+    assert job_spans[0]["correlation_id"].startswith("worker-")

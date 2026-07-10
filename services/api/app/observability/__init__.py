@@ -15,6 +15,15 @@ from .instrument import (
     record_policy_decision,
 )
 from .registry import REGISTRY, render_prometheus
+from .tracing import (
+    current_correlation_id,
+    current_span_id,
+    new_correlation_id,
+    recent_spans,
+    reset_spans,
+    set_correlation_id,
+    span,
+)
 
 __all__ = [
     "REGISTRY",
@@ -25,4 +34,11 @@ __all__ = [
     "record_admission_decision",
     "observe_economics",
     "collect_worker_gauges",
+    "span",
+    "recent_spans",
+    "reset_spans",
+    "set_correlation_id",
+    "new_correlation_id",
+    "current_correlation_id",
+    "current_span_id",
 ]

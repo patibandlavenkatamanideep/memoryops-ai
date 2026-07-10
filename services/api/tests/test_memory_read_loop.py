@@ -25,6 +25,22 @@ def test_memory_path_records_metrics(gateway):
     assert _counter_total(m.POLICY_DECISIONS_TOTAL) > policy_before
 
 
+def test_read_path_emits_tracing_spans(gateway):
+    """v1.8: the read path is traced (memory.read → retrieve/rank/admission/compose)
+    under this turn's correlation id, without altering loop/metrics behavior."""
+    from app.observability import recent_spans, reset_spans
+
+    reset_spans()
+    _chat(gateway, "Remember that I prefer dark mode dashboards.", trace_id="trace-spans")
+    names = {s["name"] for s in recent_spans(limit=512)}
+    assert {"memory.read", "retrieve", "rank", "admission", "compose"} <= names
+    assert all(
+        s["correlation_id"] == "trace-spans"
+        for s in recent_spans(limit=512)
+        if s["name"] == "memory.read"
+    )
+
+
 def test_memory_path_attaches_economics(gateway):
     """The read path attaches an advisory economics estimate (ADR-016) without
     altering loop behavior; token counters move and cost is 0 under stub providers."""

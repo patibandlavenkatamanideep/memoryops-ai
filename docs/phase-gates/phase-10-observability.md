@@ -4,9 +4,12 @@
 
 ## MemoryOps mapping
 Streams: append-only audit log (business events); structured JSON logs with a
-secret-redacting formatter + per-request `trace_id`; per-tenant business metrics
-at `GET /api/metrics`; and a process-wide **Prometheus exposition** at `GET /metrics`
-(v0.13, content-free, dependency-free; see ADR-015).
+secret-redacting formatter + per-request `trace_id` + `span_id`; per-tenant business
+metrics at `GET /api/metrics`; a process-wide **Prometheus exposition** at `GET /metrics`
+(v0.13, content-free, dependency-free; see ADR-015); and **distributed tracing** (v1.8,
+ADR-022) — a dependency-free span façade with an optional OpenTelemetry bridge that
+traces every lifecycle stage (write / read / admission / worker / deletion-proof) under
+a correlation id, exposed content-free at `GET /api/traces`.
 
 ## Gate (must be true to pass)
 - Every lifecycle action emits an audit event.
@@ -32,7 +35,8 @@ at `GET /api/metrics`; and a process-wide **Prometheus exposition** at `GET /met
 - [ADR-004 observability](../../infra/adr/ADR-004-observability.md), [ADR-007 compression](../../infra/adr/ADR-007-headroom-token-compression.md), [ADR-015 Prometheus metrics](../../infra/adr/ADR-015-prometheus-metrics-exposition.md)
 
 ## Gaps to close (→ later)
-- OpenTelemetry traces → Tempo/Jaeger; Langfuse LLM traces; per-write/retrieval
-  cost attribution (economics). Prometheus/Grafana metrics: ✅ done (v0.13).
+- Durable span storage / sampling (delegate to the OTel backend); `traceparent`
+  propagation into external LLM/vector calls; Langfuse LLM traces. OpenTelemetry
+  tracing façade + `/api/traces`: ✅ done (v1.8). Prometheus/Grafana metrics: ✅ (v0.13).
 
-## Status: 🟡 Partial (logs + audit + business + Prometheus metrics done; OTel/Langfuse/economics roadmap)
+## Status: ✅ Implemented (logs + audit + business + Prometheus metrics + distributed tracing; durable OTel storage delegated to the backend)

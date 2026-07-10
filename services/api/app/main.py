@@ -17,8 +17,18 @@ from . import __version__
 from .auth import install_auth_middleware
 from .core.config import get_settings
 from .core.logging import clear_request_context, get_logger, set_request_context, setup_logging
-from .observability import observe_http
-from .routes import audit, chat, evals, health, loops, memories, metrics_prometheus, retention
+from .observability import observe_http, set_correlation_id
+from .routes import (
+    audit,
+    chat,
+    evals,
+    health,
+    loops,
+    memories,
+    metrics_prometheus,
+    retention,
+    traces,
+)
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -48,6 +58,9 @@ async def request_context(request: Request, call_next):
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
     request.state.trace_id = trace_id
     set_request_context(trace_id)
+    # v1.8: the request trace_id is also the tracing correlation id, so spans, logs,
+    # and the `x-trace-id` response header all line up for one turn (ADR-022).
+    set_correlation_id(trace_id)
     start = time.monotonic()
     status_code = 500
     try:
@@ -86,6 +99,7 @@ app.include_router(retention.router)
 app.include_router(audit.router)
 app.include_router(evals.router)
 app.include_router(loops.router)
+app.include_router(traces.router)
 
 
 @app.get("/")

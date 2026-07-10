@@ -15,7 +15,9 @@ lifecycle off the request path. Five jobs (decay, archive, deletion verification
 conflict scan, reflection) execute against an explicit `(tenant_id, user_id)`
 scope via the runner. Every job is tenant scoped, idempotent, retry-safe, audited,
 and unable to resurrect deleted memory. The policy broker stays authoritative —
-workers demote/archive/flag/propose only. See
+workers demote/archive/flag/propose only. Each run is also **traced** (v1.8,
+ADR-022): the runner mints a `worker-…` correlation id and opens a `worker.job` span
+per job, so a run is one correlated, content-free trace at `GET /api/traces`. See
 [background-lifecycle-workers.md](../background-lifecycle-workers.md),
 [memory-decay-policy.md](../memory-decay-policy.md),
 [deletion-verification.md](../deletion-verification.md).
