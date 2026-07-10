@@ -27,7 +27,9 @@ def _words(text: str) -> list[str]:
 
 
 def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
-    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)} if len(words) >= n else set()
+    if len(words) < n:
+        return set()
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
 
 
 @dataclass

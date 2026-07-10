@@ -27,7 +27,9 @@ def _point_id(tenant_id: str, user_id: str, memory_id: str) -> str:
 class QdrantVectorIndex(VectorIndex):
     name = "qdrant"
 
-    def __init__(self, *, url: str, api_key: str | None = None, collection: str = "memoryops") -> None:
+    def __init__(
+        self, *, url: str, api_key: str | None = None, collection: str = "memoryops"
+    ) -> None:
         self._collection = collection
         self._client = None
         try:

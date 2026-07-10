@@ -83,6 +83,6 @@ def verify_chain(events: list) -> dict:
     if walked != total:
         return {
             "ok": False, "length": total, "broken_at": None,
-            "detail": f"only {walked}/{total} events form an unbroken chain (missing/inserted rows)",
+            "detail": f"only {walked}/{total} events form an unbroken chain (missing/inserted)",
         }
     return {"ok": True, "length": total, "broken_at": None, "detail": "chain intact"}
