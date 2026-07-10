@@ -91,6 +91,15 @@ The most dangerous failures for an AI memory system are:
 ### Audit immutability (invariant #7)
 - `memory_audit_logs` is append-only by convention (no update/delete endpoints). In production this
   is enforced with a revoked-UPDATE/DELETE grant and/or WORM storage.
+- **Tamper-evident hash chain (v2.0, ADR-024).** Each audit event links to the previous
+  one in its **tenant's** chain (`entry_hash = SHA-256(canonical(event) + prev_hash)`),
+  set centrally in `repo.add_audit`. `verify_chain` reconstructs order from the links and
+  detects any edit, deletion, insertion, or reorder — surfaced at
+  `GET /api/evidence/audit/verify` and folded into every evidence report
+  (`chain_intact`). The chain is per-tenant (no cross-tenant linkage; invariant #1) and
+  covers deletion/compaction audit events too, so a deletion proof is verifiable. This is
+  tamper-*evidence*, not tamper-*proofing* — pin the head hash to a WORM store/notary for
+  a stronger guarantee. See [enterprise-evidence.md](enterprise-evidence.md).
 
 ### Loop engineering traces (v0.3.1)
 - `loop_runs` / `loop_events` (migration `005_loop_engineering.sql`) store operational lifecycle

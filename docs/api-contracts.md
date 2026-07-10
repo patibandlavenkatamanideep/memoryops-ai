@@ -164,6 +164,20 @@ or raw tenant/user ids). `correlation_id` equals the response `x-trace-id` for a
 Toggle `MEMORYOPS_TRACING_ENABLED`; set `MEMORYOPS_OTEL_ENABLED` to also export to an
 OpenTelemetry backend. See [docs/observability-tracing.md](observability-tracing.md), ADR-022.
 
+## Evidence (v2.0)
+Tenant/user-scoped, read-only, tamper-evident evidence. Query: `tenant_id`, `user_id`
+(both required; `enforce_scope`-guarded when auth is on).
+- `GET /api/evidence/audit/verify` → `{ tenant_id, ok, length, broken_at, detail }` —
+  verifies the tenant's audit hash chain (tamper-evidence).
+- `GET /api/evidence/response/{trace_id}` → per-response evidence bundle
+  `{ trace_id, event_count, actions, events[], bundle_hash, chain_intact }`.
+- `GET /api/evidence/deletion/{memory_id}` → deletion proof
+  `{ found, proven, checks{…}, audit_events[], chain_intact }`.
+- `GET /api/evidence/policy` → `{ total_events, by_action{…}, chain_intact }`.
+- `GET /api/evidence/lifecycle/{memory_id}` → portable, content-minimized lifecycle
+  record `{ status, sensitivity, provenance, governance, lineage, audit_timeline[] }`.
+See [docs/enterprise-evidence.md](enterprise-evidence.md), ADR-024.
+
 ## Ops
 - `GET /healthz` → `{ status, version, uptime_seconds, metrics_enabled }`
 - `GET /healthz/workers` → content-free worker run history (dead-letter / failure counts)

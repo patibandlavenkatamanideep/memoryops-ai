@@ -177,6 +177,20 @@ def test_deletion_guarantee_propagates_to_derived_artifacts(gateway, repo):
     assert "vendor x" not in resp.assistant_message.lower()
 
 
+def test_deletion_is_covered_by_tamper_evident_audit_chain(gateway, repo):
+    # v2.0 (ADR-024): a deletion's audit event joins the tamper-evident hash chain, so
+    # the deletion is provable and the chain stays intact after it.
+    from app.evidence.reports import deletion_proof, verify_audit
+
+    _chat(gateway, "Remember that I prefer Vendor X.")
+    mem = repo.list_memories("t1", "u1")[0]
+    repo.soft_delete("t1", "u1", mem.id)
+    proof = deletion_proof(repo, "t1", "u1", mem.id)
+    assert proof["found"] and proof["checks"]["status_is_deleted"]
+    assert proof["checks"]["excluded_from_active_retrieval"]
+    assert verify_audit(repo, "t1")["ok"]  # chain intact through the deletion
+
+
 def test_deletion_removes_vector_from_index_seam(gateway, repo):
     # v1.7: with similarity delegated to the pluggable VectorIndex, deletion must
     # remove the vector so the row can never come back as a scored candidate — the

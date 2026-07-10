@@ -3,6 +3,24 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v2.0 — Enterprise Evidence Layer
+Additive under the `1.x` compatibility promise. Makes MemoryOps' governance
+**verifiable**, not just claimed — security-reviewable and compliance-friendly. Adds a
+**tamper-evident audit hash chain** (`app/evidence/hashchain.py`): every audit event
+links to the previous one in its tenant's chain
+(`entry_hash = SHA-256(canonical(event) + prev_hash)`), set in `repo.add_audit` so all
+audited actions are covered; `verify_chain` reconstructs order from the links (robust to
+timestamp ties) and detects any edit / deletion / insertion / reorder. Two new
+`StoredAudit` fields (`prev_hash`, `entry_hash`). Read-only, tenant-scoped **evidence
+reports** (`app/evidence/reports.py`, `app/routes/evidence.py`): per-response
+**evidence bundle** (`GET /api/evidence/response/{trace_id}`), **deletion proof**
+(`/deletion/{memory_id}`), **policy report** (`/policy`), **lifecycle export**
+(`/lifecycle/{memory_id}`), and chain **verification** (`/audit/verify`) — each
+`enforce_scope`-guarded, content-minimizing (previews + ids + decisions, never full
+secrets). The admin evidence dashboard consumes these JSON endpoints. Tamper-evidence,
+not tamper-proofing (pin the head hash externally for stronger guarantees). +8 tests
+(`tests/test_evidence_layer.py`); full suite 353 passed. See [docs/enterprise-evidence.md](docs/enterprise-evidence.md), [ADR-024](infra/adr/ADR-024-enterprise-evidence-layer.md).
+
 ## v1.9 — Recall Gate + Output Gate
 Additive under the `1.x` compatibility promise; on by default but no-op unless there is
 something to protect (default `private` audience + an honest model → unchanged). Adds

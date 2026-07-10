@@ -73,6 +73,21 @@ def test_loop_runs_are_tenant_and_user_scoped(gateway, repo):
     assert repo.list_loop_runs(tenant_id="tenant_acme", user_id="other_user") == []
 
 
+def test_audit_hash_chain_is_per_tenant(gateway, repo):
+    # v2.0 (ADR-024): the tamper-evident audit chain is per-tenant, so one tenant's
+    # events never link into another's and each chain verifies independently.
+    from app.evidence.reports import verify_audit
+
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme prefers Vendor A.")
+    _chat(gateway, "tenant_demo", "user_demo", "Remember Demo prefers Vendor B.")
+    acme = repo.list_audit("tenant_acme", limit=1000)
+    demo = repo.list_audit("tenant_demo", limit=1000)
+    assert acme and demo
+    # No cross-tenant leakage into either chain, and both verify.
+    assert all(e.tenant_id == "tenant_acme" for e in acme)
+    assert verify_audit(repo, "tenant_acme")["ok"] and verify_audit(repo, "tenant_demo")["ok"]
+
+
 def test_compaction_listing_is_tenant_scoped(gateway, repo):
     # v0.7: the compaction worker's source query (list_deleted_for_compaction)
     # and the compaction mutation must stay within the (tenant, user) scope.

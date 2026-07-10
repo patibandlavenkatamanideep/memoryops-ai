@@ -22,6 +22,7 @@ from .routes import (
     audit,
     chat,
     evals,
+    evidence,
     health,
     loops,
     memories,
@@ -100,6 +101,7 @@ app.include_router(audit.router)
 app.include_router(evals.router)
 app.include_router(loops.router)
 app.include_router(traces.router)
+app.include_router(evidence.router)
 
 
 @app.get("/")

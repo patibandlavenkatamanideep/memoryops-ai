@@ -34,6 +34,7 @@ class InMemoryRepository(Repository):
     def __init__(self, vector_index: VectorIndex | None = None) -> None:
         self._memories: dict[str, StoredMemory] = {}
         self._audit: list[StoredAudit] = []
+        self._audit_head: dict[str, str] = {}  # tenant → last entry_hash (v2.0 chain)
         self._settings: dict[tuple[str, str], StoredSettings] = {}
         self._loop_runs: dict[str, LoopRun] = {}
         self._loop_events: list[LoopEvent] = []
@@ -172,6 +173,13 @@ class InMemoryRepository(Repository):
 
     # ── audit ────────────────────────────────────────────────────────────────
     def add_audit(self, event: StoredAudit) -> StoredAudit:
+        # Tamper-evident per-tenant hash chain (v2.0, ADR-024): link each event to the
+        # previous one in its tenant's chain so any later edit/reorder is detectable.
+        from ..evidence.hashchain import GENESIS, compute_entry_hash
+
+        event.prev_hash = self._audit_head.get(event.tenant_id, GENESIS)
+        event.entry_hash = compute_entry_hash(event, event.prev_hash)
+        self._audit_head[event.tenant_id] = event.entry_hash
         self._audit.append(event)  # append-only (invariant #7)
         return event
 
