@@ -1,0 +1,55 @@
+name: Publish memoryops-sdk
+
+# Publishes the Python SDK (packages/memoryops-sdk) to PyPI.
+#
+# Setup (one time): add a PyPI API token as the repo secret `PYPI_API_TOKEN`
+# (Settings → Secrets and variables → Actions). Then either:
+#   * push a tag like `sdk-v1.0.1`, or
+#   * run this workflow manually (Actions → Publish memoryops-sdk → Run workflow).
+#
+# A dry run (build only, no upload) happens on manual dispatch with publish=false.
+
+on:
+  push:
+    tags: ["sdk-v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to PyPI (false = build + check only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    name: Build + publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        working-directory: packages/memoryops-sdk
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/sdk-v') || inputs.publish
+        working-directory: packages/memoryops-sdk
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TWINE_PASSWORD" ]; then
+            echo "::error::PYPI_API_TOKEN secret is not set — add it in repo settings."
+            exit 1
+          fi
+          python -m twine upload dist/*

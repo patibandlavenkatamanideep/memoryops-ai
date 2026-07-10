@@ -1,9 +1,16 @@
 # MemoryOps AI
 
-Enterprise memory governance for AI assistants. MemoryOps AI implements a
-ChatGPT-style memory lifecycle — capture, policy evaluation, typed storage, hybrid
-retrieval, controlled forgetting, auditability, and tenant isolation. Most demos
-treat memory as a vector database; MemoryOps AI treats it as governed state.
+**MemoryOps AI is an open-source governed memory runtime for production AI assistants.**
+
+It controls **what becomes memory, what enters context, what must be forgotten, what
+influenced an answer, and what evidence proves each decision** — treating memory as
+governed state, not just a vector database.
+
+[![CI](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml)
+&nbsp;![Benchmark](https://img.shields.io/badge/governance%20benchmark-100%25-brightgreen)
+&nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+&nbsp;![License](https://img.shields.io/badge/license-MIT-green)
+&nbsp;![Release](https://img.shields.io/badge/release-v2.2-blue)
 
 ## Live demo
 
@@ -12,10 +19,58 @@ treat memory as a vector database; MemoryOps AI treats it as governed state.
 Try the MemoryOps Playground — an interactive, demo-safe governed memory runtime
 that runs the real MemoryOps pipeline in-process with ephemeral session state.
 
-> v1.0 is production-ready. The public HTTP API and Python SDK are stable under a
-> `1.x` additive-compatibility promise ([docs/api-stability.md](docs/api-stability.md)).
+> **v2.2 (current).** The public HTTP API and Python SDK are stable under a `1.x`
+> additive-compatibility promise ([docs/api-stability.md](docs/api-stability.md)).
 > See the [CHANGELOG](CHANGELOG.md), [production-readiness](docs/production-readiness.md),
 > and [known limitations](docs/limitations.md).
+
+## Current capabilities (all shipped)
+
+| Version | Capability | What it gives you |
+| --- | --- | --- |
+| **v1.3** | Context Admission Gate + Memory Usage Trace | a memory enters context only if relevant **and** allowed; every answer carries an explainable trail |
+| **v1.4** | Deletion Proof Layer | tombstone lineage — deletion propagates to derived artifacts |
+| **v1.5** | Deleted-Memory Leakage Evals | prove deleted/expired memory can't leak (direct/indirect/cross-session/summary/reindex) |
+| **v1.6** | Auth + Authorization Adapters | verify identity (JWT / trusted header) + tenant/user scope enforcement |
+| **v1.7** | Vector Backend Abstraction | swap Postgres/pgvector · in-memory · Qdrant · LanceDB · Weaviate without weakening governance |
+| **v1.8** | Full Observability | distributed tracing (+ optional OpenTelemetry), correlation IDs, `GET /api/traces` |
+| **v1.9** | Recall Gate + Output Gate | audience-aware entry + post-generation disclosure control |
+| **v2.0** | Enterprise Evidence Layer | tamper-evident audit chain + evidence bundles / deletion proofs |
+| **v2.1** | Agent Framework Integrations | LangGraph · LlamaIndex · CrewAI · AutoGen · Semantic Kernel · OpenAI Agents SDK |
+| **v2.2** | Public Benchmark + Regulated Demos | reproducible governance scorecard + healthcare/legal/finance demos |
+
+## Adapter support level
+
+Honest about what is exercised where. "Fully tested locally" runs in CI against the real
+stack; "contract-tested" means the adapter conforms to a written contract
+(`assert_vector_index_contract`) but a live server isn't a CI dependency; "example
+integration" is import-guarded illustrative glue.
+
+| Adapter | Support level |
+| --- | --- |
+| Postgres + pgvector | **fully tested locally** |
+| In-memory | **fully tested locally** |
+| Qdrant | contract-tested, optional dependency |
+| LanceDB | contract-tested, optional dependency |
+| Weaviate | contract-tested, optional dependency |
+| LangGraph / LlamaIndex / CrewAI / AutoGen / Semantic Kernel / OpenAI Agents SDK | example integrations, import-guarded, not live-service tested in CI |
+
+## Benchmark
+
+MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
+scores the eval harness into named suites; the two critical suites (deletion/leakage +
+tenant isolation) must be perfect or the benchmark fails. Current scorecard
+([benchmark/SCORECARD.md](benchmark/SCORECARD.md)):
+
+| Suite | Pass rate |
+| --- | --- |
+| deletion_and_leakage ★ | 100% (12/12) |
+| tenant_isolation ★ | 100% (1/1) |
+| context_admission | 100% (2/2) |
+| policy_governance | 100% (13/13) |
+| retrieval_quality | 100% (4/4) |
+
+★ critical — must be 100%. Reproducible + offline (no API keys).
 
 ---
 
