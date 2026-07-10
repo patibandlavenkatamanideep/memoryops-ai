@@ -27,6 +27,8 @@ from ..observability import (
     observe_retrieval,
     record_admission_decision,
     record_policy_decision,
+    set_correlation_id,
+    span,
 )
 from ..schemas.memory import (
     ChatRequest,
@@ -82,6 +84,9 @@ class Gateway:
 
     def handle_chat(self, req: ChatRequest, trace_id: str) -> ChatResponse:
         start = time.monotonic()
+        # v1.8: this turn's trace_id is the tracing correlation id; set it here too so
+        # spans correlate even when the gateway is driven directly (not via HTTP).
+        set_correlation_id(trace_id)
         settings = self._repo.get_settings(req.tenant_id, req.user_id)
 
         # ── Invariant #6: temporary chat / memory off → no read, no write ──────
@@ -138,24 +143,38 @@ class Gateway:
         )
 
         def _read() -> tuple[str, list[UsedMemory], str, AdmissionResult | None]:
-            result = self._retriever.retrieve(req.tenant_id, req.user_id, req.message)
-            ranked = self._ranker.rank(result.candidates)
-            # Context Admission Gate (v1.3, ADR-017): permissioned entry into
-            # context. Runs after rank / before compose; only ALLOW memories are
-            # composed (or all, in observe-only mode). Defense-in-depth: it only
-            # ever removes memory, never adds.
-            admission = self._admission_gate.evaluate(
-                ranked,
-                tenant_id=req.tenant_id,
-                user_id=req.user_id,
-                # Resolve lineage ancestry (incl. soft-deleted rows) so a memory
-                # derived from a deleted ancestor is blocked (tombstone lineage,
-                # v1.4, ADR-018). Scoped to this tenant/user (invariant #1).
-                ancestor_lookup=lambda mid: self._repo.get_memory(
-                    req.tenant_id, req.user_id, mid
-                ),
-            )
-            block, used = self._composer.compose(admission.admitted)
+            # v1.8: each read stage is a span under this turn's correlation id, so a
+            # trace shows retrieve → rank → admission → compose end to end (ADR-022).
+            with span("memory.read"):
+                with span("retrieve") as sp:
+                    result = self._retriever.retrieve(req.tenant_id, req.user_id, req.message)
+                    if sp is not None:
+                        sp.attributes.update(mode=result.mode, candidates=len(result.candidates))
+                with span("rank"):
+                    ranked = self._ranker.rank(result.candidates)
+                # Context Admission Gate (v1.3, ADR-017): permissioned entry into
+                # context. Runs after rank / before compose; only ALLOW memories are
+                # composed (or all, in observe-only mode). Defense-in-depth: it only
+                # ever removes memory, never adds.
+                with span("admission") as sp:
+                    admission = self._admission_gate.evaluate(
+                        ranked,
+                        tenant_id=req.tenant_id,
+                        user_id=req.user_id,
+                        # Resolve lineage ancestry (incl. soft-deleted rows) so a memory
+                        # derived from a deleted ancestor is blocked (tombstone lineage,
+                        # v1.4, ADR-018). Scoped to this tenant/user (invariant #1).
+                        ancestor_lookup=lambda mid: self._repo.get_memory(
+                            req.tenant_id, req.user_id, mid
+                        ),
+                    )
+                    if sp is not None:
+                        sp.attributes.update(
+                            admitted=len(admission.admitted),
+                            blocked=len(admission.blocked_records),
+                        )
+                with span("compose"):
+                    block, used = self._composer.compose(admission.admitted)
             return block, used, result.mode, admission
 
         _read_start = time.monotonic()
@@ -367,7 +386,12 @@ class Gateway:
             evidence={"message_present": bool(req.message.strip())},
         )
         source = Source(kind="chat", excerpt=req.message, conversation_id=req.conversation_id)
-        candidates = self._extractor.extract(req.message, source)
+        # v1.8: trace the write path (extract → policy → commit) under this turn's
+        # correlation id (ADR-022).
+        with span("memory.write.extract") as _sp:
+            candidates = self._extractor.extract(req.message, source)
+            if _sp is not None:
+                _sp.attributes.update(candidates=len(candidates))
         # v0.4: advisory conflict detection against existing active memories.
         # Observability only — it logs `conflict_detection_result` and never
         # changes the policy decision (broker stays authoritative). Wrapped so a
@@ -417,9 +441,12 @@ class Gateway:
                     "sensitivity": outcome.candidate.sensitivity.value,
                 },
             )
-            decision_view, ids = self._writer.commit(
-                outcome, tenant_id=req.tenant_id, user_id=req.user_id, trace_id=trace_id
-            )
+            with span("memory.write.commit") as _sp:
+                decision_view, ids = self._writer.commit(
+                    outcome, tenant_id=req.tenant_id, user_id=req.user_id, trace_id=trace_id
+                )
+                if _sp is not None:
+                    _sp.attributes.update(decision=outcome.decision.value)
             decisions.append(decision_view)
             audit_ids.extend(ids)
         if not candidates:

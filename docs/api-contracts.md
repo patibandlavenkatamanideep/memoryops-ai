@@ -145,6 +145,16 @@ process-wide Prometheus surface at `GET /metrics` — see Ops.)
 Runs the invariant eval harness in-process. Returns
 `{ total, passed, failed, pass_rate, results[] }`.
 
+## GET /api/traces (v1.8)
+Query: `limit` (1–512, default 100), `correlation_id` (optional filter). Returns the
+most-recent memory-lifecycle **spans** (write / read / admission / worker /
+deletion-proof), newest first:
+`{ count, spans: [{ name, correlation_id, span_id, parent_span_id, status, duration_ms, attributes }] }`.
+Content-free + low-cardinality (counts / modes / decisions only — never memory content
+or raw tenant/user ids). `correlation_id` equals the response `x-trace-id` for a turn.
+Toggle `MEMORYOPS_TRACING_ENABLED`; set `MEMORYOPS_OTEL_ENABLED` to also export to an
+OpenTelemetry backend. See [docs/observability-tracing.md](observability-tracing.md), ADR-022.
+
 ## Ops
 - `GET /healthz` → `{ status, version, uptime_seconds, metrics_enabled }`
 - `GET /healthz/workers` → content-free worker run history (dead-letter / failure counts)

@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # metrics JSON at GET /api/metrics.
     metrics_enabled: bool = True
 
+    # Distributed tracing (v1.8, ADR-022). In-process, content-free span recording
+    # for the memory lifecycle (write/read/admission/workers/deletion), exposed at
+    # GET /api/traces and correlated by request/job id. Dependency-free by default;
+    # if the OpenTelemetry SDK is installed and `otel_enabled`, spans also export to
+    # your real backend. Toggle with MEMORYOPS_TRACING_ENABLED / MEMORYOPS_OTEL_ENABLED.
+    tracing_enabled: bool = True
+    otel_enabled: bool = False
+
     # Economics (v1.2, ADR-016). Advisory per-request token + cost estimation,
     # surfaced on the chat response + Prometheus counters. Costs are list-price
     # estimates, never billing; unknown/stub models are unpriced ($0). Operators
@@ -176,6 +184,10 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_TRACING_ENABLED")) is not None:
+        overrides["tracing_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_OTEL_ENABLED")) is not None:
+        overrides["otel_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_PRICING_OVERRIDES")) is not None:
         overrides["pricing_overrides_json"] = val
     # v1.2 Context Admission Gate knobs (ADR-017). Public operator toggles.

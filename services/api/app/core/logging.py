@@ -45,6 +45,14 @@ class RedactingJsonFormatter(logging.Formatter):
             "user_id": _user_id.get(),
             "message": redact_secrets(record.getMessage()),
         }
+        # v1.8: correlate each log line with the active tracing span (ADR-022).
+        try:
+            from ..observability.tracing import current_span_id
+
+            if (span_id := current_span_id()) is not None:
+                payload["span_id"] = span_id
+        except Exception:  # noqa: BLE001 - logging must never fail on tracing
+            pass
         # Attach structured extras passed via logger.info(..., extra={"event": ...}).
         # v0.4 adds LLM-layer fields (provider/task/fallback/candidate/conflict
         # counts) so structured-intelligence events are observable (ADR-008).

@@ -3,6 +3,23 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v1.8 — Full Memory Observability (Distributed Tracing)
+Additive under the `1.x` compatibility promise; on by default but content-free and
+dependency-free. Metrics (v1.1) tell you *how much*; v1.8 tracing tells you *what
+happened to one turn*. A dependency-free tracing façade (`app/observability/tracing.py`)
+opens a **span** for every memory-lifecycle stage — write (`memory.write.extract` /
+`.commit`), read (`memory.read` → `retrieve` / `rank` / `admission` / `compose`), and
+`worker.job` — under a **correlation id** (the request `trace_id`, or a minted
+`worker-…` id for background jobs), so a chat turn or worker run is one correlated
+trace. Spans are **content-free + low-cardinality** (counts / modes / decisions / phase
+names only — never memory content or raw tenant/user ids) and recording is **no-throw**
+(invariant #4). Structured logs gain a `span_id`; the whole trail is exposed at
+**`GET /api/traces`** (filterable by `correlation_id`). If the OpenTelemetry SDK is
+installed and `MEMORYOPS_OTEL_ENABLED=true`, the same spans export to your real backend
+(Jaeger/Tempo/Honeycomb/Datadog) — otherwise the in-process 512-span ring buffer is the
+only sink, no dependency. Toggle `MEMORYOPS_TRACING_ENABLED`. +10 tests
+(`tests/test_tracing.py`); full suite 333 passed. See [docs/observability-tracing.md](docs/observability-tracing.md), [ADR-022](infra/adr/ADR-022-observability-tracing.md).
+
 ## v1.7 — Storage / Vector Backend Abstraction
 Additive under the `1.x` compatibility promise; default unchanged. Makes MemoryOps
 portable across vector stores **without weakening any governance guarantee**, by

@@ -63,6 +63,12 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   (no tenant/user labels); recording is no-throw (invariant #4); worker gauges are
   pull-derived at scrape time. Distinct from the per-tenant `GET /api/metrics` JSON.
   Toggle `MEMORYOPS_METRICS_ENABLED`. See ADR-015, `docs/observability.md`.
+  **Distributed tracing** (`tracing.py`, v1.8): a dependency-free span façade with an
+  optional OpenTelemetry bridge. Every lifecycle stage (`memory.read`→retrieve/rank/
+  admission/compose, `memory.write.*`, `worker.job`) is a span under a correlation id
+  (request `trace_id` or a minted `worker-…` id); content-free, no-throw. Logs gain a
+  `span_id`; spans exposed at `GET /api/traces`. `MEMORYOPS_TRACING_ENABLED` /
+  `MEMORYOPS_OTEL_ENABLED`. See ADR-022, `docs/observability-tracing.md`.
 - `services/api/app/economics` — advisory per-request token + cost estimation
   (v1.2). Reuses the deterministic token estimator + a configurable price table
   (`MEMORYOPS_PRICING_OVERRIDES`); unknown/stub models are unpriced ($0). Surfaced
