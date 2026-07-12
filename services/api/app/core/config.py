@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     auth_jwt_user_claim: str = "sub"
     auth_jwt_audience: str = ""
     auth_jwt_issuer: str = ""
+    # Optional JWKS endpoint (RS*/ES*). When set, the signing key is fetched + cached
+    # from the issuer's JWKS instead of using a static auth_jwt_key. Needs pyjwt[crypto].
+    auth_jwt_jwks_url: str = ""
 
     # Background memory lifecycle workers (v0.6, ADR-010). Workers run outside the
     # chat path; these are policy thresholds, not request knobs. Defaults are
@@ -276,6 +279,7 @@ def get_settings() -> Settings:
         ("MEMORYOPS_AUTH_JWT_USER_CLAIM", "auth_jwt_user_claim"),
         ("MEMORYOPS_AUTH_JWT_AUDIENCE", "auth_jwt_audience"),
         ("MEMORYOPS_AUTH_JWT_ISSUER", "auth_jwt_issuer"),
+        ("MEMORYOPS_AUTH_JWT_JWKS_URL", "auth_jwt_jwks_url"),
     ):
         if (val := os.getenv(env_name)) is not None:
             overrides[field_name] = val

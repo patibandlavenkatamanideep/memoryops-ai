@@ -48,13 +48,17 @@ export MEMORYOPS_AUTH_USER_HEADER=X-MemoryOps-User
 
 ## JWT verification (`jwt`)
 
-MemoryOps verifies the token itself. HS256/384/512 need only the standard library;
-RS256/384/512 additionally need the `cryptography` package (pass the PEM public key as
-the key).
+MemoryOps verifies the token with **PyJWT** (a maintained library, not hand-rolled
+token crypto). HS256/384/512 work with PyJWT alone; RS256/384/512, ES\*, and JWKS
+additionally need the `cryptography` extra (`pip install "PyJWT[crypto]"`). Provide a
+static key (shared secret or PEM public key) **or** a JWKS URL — with a JWKS URL the
+signing key is fetched and cached from the issuer, so key rotation just works.
 
 ```bash
 export MEMORYOPS_AUTH_MODE=jwt
 export MEMORYOPS_AUTH_JWT_KEY='<shared secret or PEM public key>'
+# ...or, instead of a static key, point at the issuer's JWKS (RS*/ES*):
+export MEMORYOPS_AUTH_JWT_JWKS_URL='https://issuer.example.com/.well-known/jwks.json'
 export MEMORYOPS_AUTH_JWT_ALGORITHMS=HS256          # comma-separated allow-list
 export MEMORYOPS_AUTH_JWT_USER_CLAIM=sub             # which claim is the user id
 export MEMORYOPS_AUTH_JWT_TENANT_CLAIM=tenant_id     # dotted path ok (nested claims)
@@ -122,10 +126,10 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST localhost:8000/api/chat \
 
 ## Limits
 
-- MemoryOps does not manage sessions, refresh, revocation lists, or JWKS rotation —
-  your issuer owns those. For `jwt` mode with rotating keys, front MemoryOps with a
-  proxy that validates against live JWKS and switch to `trusted_header`, or supply the
-  current public key.
+- MemoryOps does not manage sessions, refresh, or revocation lists — your issuer owns
+  those. Rotating keys **are** supported: set `MEMORYOPS_AUTH_JWT_JWKS_URL` and the
+  signing key is resolved (and cached) from the issuer's live JWKS via PyJWT's
+  `PyJWKClient`. A static public key also works if you prefer to pin it.
 - This is transport-level authorization of *who* may act on a tenant. It is
   orthogonal to the [Context Admission Gate](context-admission-gate.md), which governs
   *which memories* enter a prompt for an already-authorized caller.

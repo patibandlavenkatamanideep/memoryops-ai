@@ -58,6 +58,7 @@ class JWTProvider:
         user_claim: str,
         audience: str | None = None,
         issuer: str | None = None,
+        jwks_url: str | None = None,
     ) -> None:
         self._key = key
         self._algorithms = algorithms
@@ -65,6 +66,7 @@ class JWTProvider:
         self._user_claim = user_claim
         self._audience = audience
         self._issuer = issuer
+        self._jwks_url = jwks_url
 
     def resolve(self, headers: HeaderMap) -> Principal | None:
         auth = headers.get("authorization")
@@ -78,6 +80,7 @@ class JWTProvider:
                 algorithms=self._algorithms,
                 audience=self._audience,
                 issuer=self._issuer,
+                jwks_url=self._jwks_url,
             )
         except JWTError:
             return None
@@ -104,5 +107,6 @@ def build_provider(settings) -> IdentityProvider | None:
             user_claim=settings.auth_jwt_user_claim,
             audience=settings.auth_jwt_audience or None,
             issuer=settings.auth_jwt_issuer or None,
+            jwks_url=getattr(settings, "auth_jwt_jwks_url", "") or None,
         )
     return None
