@@ -11,6 +11,12 @@ governed state, not just a vector database.
 &nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 &nbsp;![License](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![Release](https://img.shields.io/badge/release-v2.2-blue)
+&nbsp;![API](https://img.shields.io/badge/API%20%2B%20SDK-1.x%20stable-green)
+
+> **Two version tracks:** the **platform release** (`v2.2`, the feature milestone of
+> the whole repo) is separate from the **public API + SDK contract** (`1.x`, the
+> additive-compatibility promise). v2.2 ships the 1.0.0 contract — see
+> [docs/api-stability.md](docs/api-stability.md#two-version-tracks).
 
 ## Live demo
 

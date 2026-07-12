@@ -5,10 +5,16 @@ MemoryOps AI ships in versioned GitHub Releases, following the same convention a
 
 ## Versioning
 
-- Git tags are `vMAJOR.MINOR[.PATCH]` (e.g. `v0.1`, `v0.2`, `v1.0.1`).
-- `MINOR` for new capabilities, `PATCH` for fixes/hardening.
-- The internal package version in `services/api/pyproject.toml` may lag behind the
-  release tag; the tag + GitHub Release are the source of truth for "what shipped".
+There are **two independent tracks** (see
+[docs/api-stability.md](docs/api-stability.md#two-version-tracks)):
+
+- **Platform release** — git tags `vMAJOR.MINOR[.PATCH]` (e.g. `v2.2`), the README
+  badge, and `CHANGELOG.md`. `MINOR` for new capabilities, `PATCH` for
+  fixes/hardening. The tag + GitHub Release are the source of truth for "what shipped".
+- **API + SDK contract** — `app.__version__` and `packages/memoryops-sdk`
+  `pyproject.toml`, released under `sdk-vX.Y.Z` tags. These two **must always move
+  together**; bump both in the same PR. CI (`publish-sdk.yml`) fails a release whose
+  `sdk-v*` tag does not match the SDK `pyproject.toml` version.
 
 ## Release checklist
 
