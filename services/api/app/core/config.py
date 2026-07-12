@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     service_name: str = "memoryops-api"
     log_level: str = "INFO"
 
+    # Public eval trigger (security). POST /api/evals/run executes the full eval
+    # harness on demand — a denial-of-wallet / compute-abuse vector if exposed
+    # unauthenticated on a public deployment. OFF by default: the trigger returns
+    # 403 unless an operator explicitly opts in with MEMORYOPS_PUBLIC_EVALS=true.
+    # GET /api/evals/latest serves a server-cached result and is always available.
+    public_evals: bool = False
+    # Minimum seconds between cached-result regenerations for GET /api/evals/latest.
+    evals_cache_ttl_seconds: int = 300
+
     # Observability (v0.13, ADR-015). Process-wide Prometheus metrics exposition at
     # GET /metrics. Content-free, low-cardinality, no new dependency. ON by default;
     # toggle with MEMORYOPS_METRICS_ENABLED. Distinct from the per-tenant business
@@ -194,6 +203,8 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_PUBLIC_EVALS")) is not None:
+        overrides["public_evals"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_TRACING_ENABLED")) is not None:
         overrides["tracing_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_OTEL_ENABLED")) is not None:

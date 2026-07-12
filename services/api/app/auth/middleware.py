@@ -23,7 +23,10 @@ from .principal import Principal
 from .providers import build_provider
 
 # `/api/*` paths that carry no tenant/user and need no authenticated caller.
-_PUBLIC_API_PATHS = frozenset({"/api/evals"})
+# NOTE: /api/evals is intentionally NOT public — the on-demand run trigger is a
+# compute-abuse vector, so when auth is enabled it is guarded like every other
+# route, and even with auth off the route itself is gated by MEMORYOPS_PUBLIC_EVALS.
+_PUBLIC_API_PATHS: frozenset[str] = frozenset()
 
 
 def _guarded(path: str) -> bool:

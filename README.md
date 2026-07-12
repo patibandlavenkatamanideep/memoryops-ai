@@ -41,15 +41,18 @@ that runs the real MemoryOps pipeline in-process with ephemeral session state.
 
 ## Adapter support level
 
-Honest about what is exercised where. "Fully tested locally" runs in CI against the real
-stack; "contract-tested" means the adapter conforms to a written contract
-(`assert_vector_index_contract`) but a live server isn't a CI dependency; "example
-integration" is import-guarded illustrative glue.
+Honest about what is exercised where. "RLS-tested in CI" means a real
+Postgres + pgvector service runs enforced row-level-security tests in CI (the
+`postgres-rls` job); "fully tested locally" means the full application suite runs
+against that backend on a developer machine, but not yet in CI; "contract-tested"
+means the adapter conforms to a written contract (`assert_vector_index_contract`)
+but a live server isn't a CI dependency; "example integration" is import-guarded
+illustrative glue.
 
 | Adapter | Support level |
 | --- | --- |
-| Postgres + pgvector | **fully tested locally** |
-| In-memory | **fully tested locally** |
+| Postgres + pgvector | **enforced-RLS tested in CI**, full app suite tested locally |
+| In-memory | **fully tested in CI** (default backend for the app + eval suites) |
 | Qdrant | contract-tested, optional dependency |
 | LanceDB | contract-tested, optional dependency |
 | Weaviate | contract-tested, optional dependency |
