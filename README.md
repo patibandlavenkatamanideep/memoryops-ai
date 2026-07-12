@@ -28,7 +28,8 @@ that runs the real MemoryOps pipeline in-process with ephemeral session state.
 > **v2.2 (current).** The public HTTP API and Python SDK are stable under a `1.x`
 > additive-compatibility promise ([docs/api-stability.md](docs/api-stability.md)).
 > See the [CHANGELOG](CHANGELOG.md), [production-readiness](docs/production-readiness.md),
-> and [known limitations](docs/limitations.md).
+> [known limitations](docs/limitations.md), and the
+> [design decisions](docs/design-decisions.md) (the hard calls + rejected alternatives).
 
 ## Current capabilities (all shipped)
 
