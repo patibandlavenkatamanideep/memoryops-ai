@@ -53,7 +53,8 @@ def _load_cases() -> list[dict]:
     evals_dir = _find_evals_dir()
     cases: list[dict] = []
     if evals_dir:
-        for name in ("golden_memory_cases.json", "adversarial_cases.json"):
+        for name in ("golden_memory_cases.json", "adversarial_cases.json",
+                     "tenant_isolation_cases.json"):
             path = evals_dir / name
             if path.exists():
                 cases.extend(json.loads(path.read_text()))
@@ -316,13 +317,40 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         )
 
     if kind == "isolation":
-        other_tenant = case.get("other_tenant_id", "tenant_other")
-        other_user = case.get("other_user_id", "user_other")
-        other_msg = case.get("other_message", "Remember I prefer X.")
-        _decisions_for(gw, other_tenant, other_user, other_msg)
-        leaked = repo.retrieve_active(tenant, user)
-        ok = len(leaked) == 0
-        return CaseResult(cid, kind, ok, f"leaked_rows={len(leaked)}")
+        # Plant one or more foreign memories, then prove the probe scope sees none
+        # of them — through the repository AND (optionally) the full gateway read
+        # path. Supports cross-tenant, cross-user, and adversarial/malformed
+        # tenant-id probes (wildcards, injection-looking strings, empty ids).
+        planted = case.get("planted") or [{
+            "tenant_id": case.get("other_tenant_id", "tenant_other"),
+            "user_id": case.get("other_user_id", "user_other"),
+            "message": case.get("other_message", "Remember I prefer X."),
+        }]
+        foreign_ids: set[str] = set()
+        for p in planted:
+            _decisions_for(gw, p["tenant_id"], p["user_id"], p["message"])
+            for m in repo.list_memories(p["tenant_id"], p["user_id"]):
+                foreign_ids.add(m.id)
+
+        probe_tenant = case.get("probe_tenant_id", tenant)
+        probe_user = case.get("probe_user_id", user)
+
+        # 1. Repository-level scoped read must return no foreign rows.
+        repo_leak = [m for m in repo.retrieve_active(probe_tenant, probe_user)
+                     if m.id in foreign_ids]
+        # 2. Full gateway read path (if a probe query is given) must not surface
+        #    any foreign memory into the composed context.
+        gw_leak = []
+        if case.get("probe_query"):
+            resp = _decisions_for(gw, probe_tenant, probe_user, case["probe_query"])
+            gw_leak = [u for u in resp.used_memories if u.memory_id in foreign_ids]
+
+        ok = not repo_leak and not gw_leak
+        return CaseResult(
+            cid, kind, ok,
+            f"probe={probe_tenant!r}/{probe_user!r} repo_leak={len(repo_leak)} "
+            f"gw_leak={len(gw_leak)} planted={len(foreign_ids)}",
+        )
 
     if kind == "archived":
         save_msg = case.get("save_message", msg)

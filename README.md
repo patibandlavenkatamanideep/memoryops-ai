@@ -65,17 +65,18 @@ New to integrating? Start with the **[LangGraph tutorial](docs/tutorials/langgra
 MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
 scores the eval harness into named suites; the two critical suites (deletion/leakage +
 tenant isolation) must be perfect or the benchmark fails. Current scorecard
-([benchmark/SCORECARD.md](benchmark/SCORECARD.md)) — **32/32 (100%), critical suites perfect ✅**:
+([benchmark/SCORECARD.md](benchmark/SCORECARD.md)) — **50/50 (100%), critical suites perfect ✅**:
 
 | Suite | Pass rate |
 | --- | --- |
 | deletion_and_leakage ★ | 100% (12/12) |
-| tenant_isolation ★ | 100% (1/1) |
+| tenant_isolation ★ | 100% (17/17) |
 | context_admission | 100% (2/2) |
-| policy_governance | 100% (13/13) |
+| policy_governance | 100% (15/15) |
 | retrieval_quality | 100% (4/4) |
 
-★ critical — must be 100%. Reproducible + offline (no API keys).
+★ critical — must be 100%. Reproducible + offline (no API keys); the same suites
+also run against real Postgres + pgvector in CI (the `api-postgres` job).
 
 ---
 
