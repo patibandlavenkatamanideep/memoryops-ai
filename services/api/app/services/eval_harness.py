@@ -24,6 +24,7 @@ tenant data. Case types map to invariants:
   breakdown   — retrieval results must carry a full score breakdown
   loop         — read/write loop evidence must be emitted
   structured   — extraction runs via the validated structured path (v0.4)
+  multi_memory — a compound turn yields multiple memories (even in the stub)
   conflict     — a contradicting candidate is flagged by conflict detection (v0.4)
 """
 
@@ -390,6 +391,22 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         ok = outcome.mode == "structured" and len(outcome.memories) >= min_memories
         return CaseResult(
             cid, kind, ok, f"mode={outcome.mode} memories={len(outcome.memories)}"
+        )
+
+    if kind == "multi_memory":
+        # A compound turn must yield multiple memories even from the offline
+        # heuristic stub (the previous stub returned at most one).
+        from ..llm.fallback import heuristic_extract
+
+        mems = heuristic_extract(case["message"])
+        expected = int(case.get("min_memories", 2))
+        contents = [m.content.lower() for m in mems]
+        must = [s.lower() for s in case.get("must_include", [])]
+        have_all = all(any(s in c for c in contents) for s in must)
+        ok = len(mems) >= expected and have_all
+        return CaseResult(
+            cid, kind, ok,
+            f"extracted={len(mems)} expected>={expected} must_include_ok={have_all}",
         )
 
     if kind == "conflict":

@@ -40,7 +40,7 @@ SUITES: dict[str, set[str]] = {
     },
     "tenant_isolation": {"isolation"},
     "context_admission": {"archived", "temporary"},
-    "policy_governance": {"save", "drop", "block", "pending", "structured", "conflict"},
+    "policy_governance": {"save", "drop", "block", "pending", "structured", "conflict", "multi_memory"},
     "retrieval_quality": {"retrieve", "breakdown", "loop"},
 }
 
