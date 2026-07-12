@@ -201,6 +201,18 @@ class Settings(BaseSettings):
     worker_scopes: str = "tenant_demo:user_demo"
     worker_run_history_limit: int = 500
 
+    # Ranker weights (P3.2). The retrieval score is a weighted blend of six [0,1]
+    # signals. These defaults prioritize semantic + keyword relevance; they are the
+    # starting point, not a magic constant — tune per deployment (env now, per-tenant
+    # later). Weights are normalized to sum to 1 at load. See docs/architecture.md.
+    ranker_weight_semantic: float = 0.35
+    ranker_weight_keyword: float = 0.20
+    ranker_weight_importance: float = 0.15
+    ranker_weight_confidence: float = 0.10
+    ranker_weight_recency: float = 0.10
+    ranker_weight_reinforcement: float = 0.10
+    ranker_score_floor: float = 0.05  # drop candidates below this blended score
+
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0
     retrieval_timeout_seconds: float = 3.0
@@ -231,6 +243,18 @@ def get_settings() -> Settings:
         if (val := os.getenv(env_name)) is not None:
             with contextlib.suppress(ValueError):
                 overrides[field_name] = int(val)
+    for env_name, field_name in (
+        ("MEMORYOPS_RANK_W_SEMANTIC", "ranker_weight_semantic"),
+        ("MEMORYOPS_RANK_W_KEYWORD", "ranker_weight_keyword"),
+        ("MEMORYOPS_RANK_W_IMPORTANCE", "ranker_weight_importance"),
+        ("MEMORYOPS_RANK_W_CONFIDENCE", "ranker_weight_confidence"),
+        ("MEMORYOPS_RANK_W_RECENCY", "ranker_weight_recency"),
+        ("MEMORYOPS_RANK_W_REINFORCEMENT", "ranker_weight_reinforcement"),
+        ("MEMORYOPS_RANK_SCORE_FLOOR", "ranker_score_floor"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            with contextlib.suppress(ValueError):
+                overrides[field_name] = float(val)
     if (val := os.getenv("MEMORYOPS_TRACING_ENABLED")) is not None:
         overrides["tracing_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_OTEL_ENABLED")) is not None:

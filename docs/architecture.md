@@ -263,12 +263,21 @@ authoritative. See [memory-control-plane.md](memory-control-plane.md),
   the stub on failure. See [ADR-006](../infra/adr/ADR-006-pgvector-rls-retrieval.md).
 - **Retriever** — hybrid: tenant+user-scoped vector candidates from the repository's
   `search_candidates` (real pgvector cosine on Postgres, in-Python cosine in memory)
-  plus keyword overlap. Filters tenant/user/`status='active'`/`deleted_at is null` at
-  the source; deleted + pending + wrong-tenant memories are excluded.
-- **Ranker** — `0.35·vector_similarity + 0.20·keyword + 0.15·importance + 0.10·confidence +
-  0.10·recency + 0.10·reinforcement`. Emits a per-memory `score_breakdown` of the raw
-  component signals (explainability, invariant #8). *Changing this formula requires a
-  docs/api-contracts.md or docs/architecture.md update — enforced by the PR gate.*
+  plus **BM25** keyword relevance (`app/services/keyword_scoring.py`) over just the
+  returned candidate set — stopword-aware and term-weighted, so discriminative terms
+  ("cardiologist") dominate function words ("the"/"what"/"my"). Pure-Python, no index
+  infra; `rank_bm25` is a drop-in alternative and `websearch_to_tsquery`/`ts_rank` is
+  the large-corpus Postgres upgrade path. Filters tenant/user/`status='active'`/
+  `deleted_at is null` at the source; deleted + pending + wrong-tenant memories are excluded.
+- **Ranker** — `w_semantic·vector_similarity + w_keyword·keyword + w_importance·importance +
+  w_confidence·confidence + w_recency·recency + w_reinforcement·reinforcement`. The
+  weights are **configuration, not magic numbers**: the defaults
+  (`0.35/0.20/0.15/0.10/0.10/0.10`) prioritize semantic + keyword relevance and are the
+  documented starting point, overridable per deployment via `MEMORYOPS_RANK_W_*`
+  (normalized to sum to 1 at load) and a per-tenant surface later. Emits a per-memory
+  `score_breakdown` of the raw component signals (explainability, invariant #8).
+  *Changing this formula requires a docs/api-contracts.md or docs/architecture.md
+  update — enforced by the PR gate.*
 - **Context Composer** — compact context block with internal source IDs; never leaks hidden memory.
 - **Context Compression (v0.2.1, optional)** — after composition and before the LLM, the
   composed *governed* context block may be compressed by an optional `ContextCompressor`
