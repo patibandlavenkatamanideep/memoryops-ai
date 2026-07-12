@@ -46,8 +46,8 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python evals/run_evals.py
 
-  postgres-rls:
-    name: DB — enforced RLS on real Postgres + pgvector
+  api-postgres:
+    name: API — full suite + evals + benchmark + enforced RLS on Postgres + pgvector
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -61,6 +61,7 @@ jobs:
           --health-cmd "pg_isready -U memoryops"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
+      MEMORYOPS_STORAGE: postgres
       DATABASE_URL: postgresql+psycopg://memoryops:memoryops@localhost:5432/memoryops
       PGPASSWORD: memoryops
     steps:
@@ -85,27 +86,29 @@ jobs:
             psql -h localhost -U memoryops -d memoryops -v ON_ERROR_STOP=1 -f "$f"
           done
 
-      # RLS is meaningful only on real Postgres — the in-memory backend simulates
-      # it. These tests apply the migrations, seed two tenants, and prove the
-      # FORCEd row-level security policies (migration 004) block cross-tenant reads
-      # at the database layer. pgvector is exercised via the Vector(1536) columns.
-      - name: Enforced Row-Level Security tests (real Postgres + pgvector)
+      # The full application suite exercises the real Postgres + pgvector write/read
+      # path (chat, memory, audit, loops). The RLS tests additionally provision a
+      # NON-superuser role and prove FORCEd row-level security blocks cross-tenant
+      # reads at the database layer — meaningful only on real Postgres, since
+      # superusers (the image's default role) bypass RLS.
+      - name: Full test suite on Postgres (incl. enforced RLS)
         working-directory: services/api
-        run: pytest -q tests/test_rls.py
+        run: pytest -q
 
       - name: Verify RLS policies are FORCEd on every tenant-scoped table
         run: python scripts/check_rls_policies.py
 
-  # The memory-governance benchmark runs in its own workflow (benchmark.yml) so it
-  # has a dedicated status badge; it is not duplicated here.
-  #
-  # NOTE: the full application test suite + eval harness run on the in-memory backend
-  # (the `api` job above). They do not yet run against Postgres because the ORM types
-  # tenant_id/user_id as String while migration 002 types them as uuid, so the app
-  # path with the string tenant ids used throughout the tests/evals cannot insert into
-  # the migrated schema. Reconciling that (schema + fixtures) is tracked as P1 work;
-  # until then this job proves the database-layer RLS guarantee on the real stack
-  # rather than overclaiming a full Postgres run.
+      # Evals + benchmark honor MEMORYOPS_STORAGE, so these run the governance cases
+      # against the real backend (each case truncates for a fresh stack).
+      - name: Eval harness on Postgres
+        run: python evals/run_evals.py
+
+      - name: Governance benchmark on Postgres
+        run: python benchmark/run_benchmark.py
+
+  # The memory-governance benchmark also runs in its own workflow (benchmark.yml) on
+  # the in-memory backend for a dedicated status badge; the api-postgres job above
+  # additionally proves it passes against the real Postgres + pgvector stack.
 
   sdk:
     name: SDK — tests

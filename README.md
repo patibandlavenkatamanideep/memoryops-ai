@@ -41,17 +41,16 @@ that runs the real MemoryOps pipeline in-process with ephemeral session state.
 
 ## Adapter support level
 
-Honest about what is exercised where. "RLS-tested in CI" means a real
-Postgres + pgvector service runs enforced row-level-security tests in CI (the
-`postgres-rls` job); "fully tested locally" means the full application suite runs
-against that backend on a developer machine, but not yet in CI; "contract-tested"
-means the adapter conforms to a written contract (`assert_vector_index_contract`)
-but a live server isn't a CI dependency; "example integration" is import-guarded
-illustrative glue.
+Honest about what is exercised where. "Fully tested in CI" means the full
+application test suite, eval harness, and governance benchmark run against a real
+service in CI (the `api-postgres` job, which also proves FORCEd row-level security
+with a non-superuser role); "contract-tested" means the adapter conforms to a
+written contract (`assert_vector_index_contract`) but a live server isn't a CI
+dependency; "example integration" is import-guarded illustrative glue.
 
 | Adapter | Support level |
 | --- | --- |
-| Postgres + pgvector | **enforced-RLS tested in CI**, full app suite tested locally |
+| Postgres + pgvector | **fully tested in CI** (suite + evals + benchmark + enforced RLS) |
 | In-memory | **fully tested in CI** (default backend for the app + eval suites) |
 | Qdrant | contract-tested, optional dependency |
 | LanceDB | contract-tested, optional dependency |

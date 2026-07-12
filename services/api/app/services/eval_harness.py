@@ -193,6 +193,8 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         # from context (its ancestry transitively contains a tombstone) and the
         # secret must not surface in the answer — proving lineage blocking is
         # transitive, not just one hop deep.
+        from ..core.embeddings import embed
+        from ..core.reliability import safe_call
         from ..db import lineage
         from ..db.entities import StoredMemory
         from ..schemas.memory import MemoryType, Sensitivity, Source
@@ -218,6 +220,10 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
                 content=content, importance=6, confidence=0.9,
                 sensitivity=Sensitivity.low, status=Status.active,
                 source=Source(kind="reflection"),
+                # Embed like the real write path so the derived artifact is
+                # retrievable on any backend (Postgres vector search skips
+                # NULL-embedding rows; the in-memory backend tolerates them).
+                embedding=safe_call(lambda c=content: embed(c), default=[], label="embed"),
             )
             lineage.set_lineage(node, parent_ids=[parent.id])
             repo.create_memory(node)
@@ -404,12 +410,50 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
     return CaseResult(cid, kind, False, f"unknown case kind: {kind}")
 
 
-def run_evals(cases: list[dict] | None = None) -> EvalReport:
+# Application-written tables truncated between eval cases when running against a real
+# storage backend, so each case gets a fresh isolated stack (mirroring a fresh
+# InMemoryRepository) instead of accumulating rows across cases.
+_EVAL_TABLES = (
+    "memory_records", "memory_audit_logs", "memory_feedback", "memory_settings",
+    "loop_events", "loop_runs", "worker_runs", "worker_leases",
+)
+
+
+def _default_repo_factory():
+    """Return a per-case repo factory honoring MEMORYOPS_STORAGE.
+
+    Default (memory): a fresh InMemoryRepository per case. Postgres: the shared
+    PostgresRepository, truncated before each case for the same per-case isolation.
+    This is what makes the eval harness / benchmark run *genuinely* on the configured
+    backend rather than always in memory.
+    """
+    from ..core.config import get_settings
+
+    if get_settings().storage != "postgres":
+        return InMemoryRepository
+
+    from sqlalchemy import text
+
+    from ..db.factory import get_repository
+
+    repo = get_repository()
+
+    def _postgres_factory():
+        with repo._engine.begin() as conn:  # eval/CI-only: full reset for isolation
+            conn.execute(text("truncate " + ", ".join(_EVAL_TABLES) + " restart identity cascade"))
+        return repo
+
+    return _postgres_factory
+
+
+def run_evals(cases: list[dict] | None = None, repo_factory=None) -> EvalReport:
     cases = cases if cases is not None else _load_cases()
+    make_repo = repo_factory or _default_repo_factory()
     report = EvalReport()
     for case in cases:
-        # Fresh isolated stack per case.
-        repo = InMemoryRepository()
+        # Fresh isolated stack per case (in-memory by default; truncated Postgres
+        # when MEMORYOPS_STORAGE=postgres).
+        repo = make_repo()
         gw = Gateway(repo)
         try:
             result = _run_case(gw, repo, case)
