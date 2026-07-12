@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     # Minimum seconds between cached-result regenerations for GET /api/evals/latest.
     evals_cache_ttl_seconds: int = 300
 
+    # Request hygiene + rate limiting (P2.4). Dependency-free, in-process (fits the
+    # single-instance Railway deploy); protects the public demo from denial-of-wallet
+    # and oversized bodies. All no-throw. Tune per deployment / put a real gateway
+    # limiter in front for multi-instance.
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 120            # per client IP, all /api/* routes
+    rate_limit_chat_per_minute: int = 30        # stricter, per tenant/IP on /api/chat
+    rate_limit_evals_per_minute: int = 6        # stricter still on /api/evals/*
+    max_request_bytes: int = 65536              # 64 KB body cap on /api/* → 413
+    max_message_chars: int = 8000               # ChatRequest.message / memory content
+
     # Observability (v0.13, ADR-015). Process-wide Prometheus metrics exposition at
     # GET /metrics. Content-free, low-cardinality, no new dependency. ON by default;
     # toggle with MEMORYOPS_METRICS_ENABLED. Distinct from the per-tenant business
@@ -205,6 +216,18 @@ def get_settings() -> Settings:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_PUBLIC_EVALS")) is not None:
         overrides["public_evals"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_RATE_LIMIT_ENABLED")) is not None:
+        overrides["rate_limit_enabled"] = val.lower() not in ("0", "false", "no")
+    for env_name, field_name in (
+        ("MEMORYOPS_RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute"),
+        ("MEMORYOPS_RATE_LIMIT_CHAT_PER_MINUTE", "rate_limit_chat_per_minute"),
+        ("MEMORYOPS_RATE_LIMIT_EVALS_PER_MINUTE", "rate_limit_evals_per_minute"),
+        ("MEMORYOPS_MAX_REQUEST_BYTES", "max_request_bytes"),
+        ("MEMORYOPS_MAX_MESSAGE_CHARS", "max_message_chars"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            with contextlib.suppress(ValueError):
+                overrides[field_name] = int(val)
     if (val := os.getenv("MEMORYOPS_TRACING_ENABLED")) is not None:
         overrides["tracing_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_OTEL_ENABLED")) is not None:

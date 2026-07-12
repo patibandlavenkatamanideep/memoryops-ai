@@ -12,6 +12,16 @@ from app.db.memory_repo import InMemoryRepository  # noqa: E402
 from app.services.gateway import Gateway  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Isolate each test's rate-limit budget (the limiter is process-global)."""
+    from app.http_hardening import _limiter
+
+    _limiter.reset()
+    yield
+    _limiter.reset()
+
+
 @pytest.fixture
 def repo() -> InMemoryRepository:
     return InMemoryRepository()

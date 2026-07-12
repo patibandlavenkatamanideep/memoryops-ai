@@ -23,6 +23,12 @@ _API_DIR = _REPO_ROOT / "services" / "api"
 if _API_DIR.is_dir() and str(_API_DIR) not in sys.path:
     sys.path.insert(0, str(_API_DIR))
 
+# These tests exercise the SDK contract, not the server's rate limiter — turn it off
+# so a burst of in-process calls can't trip a 429 (P2.4).
+import os  # noqa: E402
+
+os.environ.setdefault("MEMORYOPS_RATE_LIMIT_ENABLED", "false")
+
 
 @pytest.fixture
 def live_client():
