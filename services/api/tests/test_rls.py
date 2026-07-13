@@ -44,8 +44,16 @@ def _database_url() -> str:
 
 
 def _app_url(admin_url: str) -> str:
-    """Same database as ``admin_url`` but connecting as the non-superuser app role."""
-    return str(make_url(admin_url).set(username=_APP_ROLE, password=_APP_PW))
+    """Same database as ``admin_url`` but connecting as the non-superuser app role.
+
+    Note: ``str(URL)`` / ``render_as_string()`` mask the password as ``***`` by
+    default, which silently connects with the literal password ``***`` — harmless
+    under ``trust`` auth but a hard auth failure under ``scram``/``md5`` (i.e. CI).
+    ``hide_password=False`` keeps the real password in the DSN.
+    """
+    return make_url(admin_url).set(
+        username=_APP_ROLE, password=_APP_PW
+    ).render_as_string(hide_password=False)
 
 
 @pytest.fixture(scope="module")
