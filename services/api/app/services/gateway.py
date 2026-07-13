@@ -485,25 +485,43 @@ class Gateway:
                 "types": [c.type.value for c in candidates],
             },
         )
-        decisions = []
-        audit_ids: list[str] = []
+        # Pass 1 — evaluate the policy broker for every candidate. The loop state
+        # machine models a *single* policy gate per write loop, so POLICY_CHECKED is
+        # emitted exactly once (below), independent of how many memories a single
+        # message extracts. Emitting it per candidate produced an invalid
+        # policy_checked -> policy_checked transition that 500-d any multi-memory
+        # write (reachable since multi-memory extraction, P1.3).
+        outcomes = []
+        policy_decisions = []
         for cand in candidates:
             outcome = self._policy.evaluate(
                 cand, tenant_id=req.tenant_id, user_id=req.user_id, settings=settings
             )
             record_policy_decision(outcome.decision.value)
-            emit_loop_event_sync(
-                self._repo,
-                write_loop,
-                LoopState.POLICY_CHECKED,
-                event_type="memory_write_policy_checked",
-                reason="policy broker decision made",
-                evidence={
+            outcomes.append(outcome)
+            policy_decisions.append(
+                {
                     "decision": outcome.decision.value,
                     "type": cand.type.value,
                     "sensitivity": outcome.candidate.sensitivity.value,
-                },
+                }
             )
+        emit_loop_event_sync(
+            self._repo,
+            write_loop,
+            LoopState.POLICY_CHECKED,
+            event_type="memory_write_policy_checked",
+            reason=(
+                "policy broker decision made"
+                if candidates
+                else "no candidate memory required policy action"
+            ),
+            evidence={"candidate_count": len(candidates), "decisions": policy_decisions},
+        )
+        # Pass 2 — commit each policy outcome.
+        decisions = []
+        audit_ids: list[str] = []
+        for outcome in outcomes:
             with span("memory.write.commit") as _sp:
                 decision_view, ids = self._writer.commit(
                     outcome, tenant_id=req.tenant_id, user_id=req.user_id, trace_id=trace_id
@@ -512,15 +530,6 @@ class Gateway:
                     _sp.attributes.update(decision=outcome.decision.value)
             decisions.append(decision_view)
             audit_ids.extend(ids)
-        if not candidates:
-            emit_loop_event_sync(
-                self._repo,
-                write_loop,
-                LoopState.POLICY_CHECKED,
-                event_type="memory_write_policy_checked",
-                reason="no candidate memory required policy action",
-                evidence={"candidate_count": 0},
-            )
         emit_loop_event_sync(
             self._repo,
             write_loop,
