@@ -17,10 +17,10 @@ jobs:
     name: API — tests + lint + evals
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -65,10 +65,10 @@ jobs:
       DATABASE_URL: postgresql+psycopg://memoryops:memoryops@localhost:5432/memoryops
       PGPASSWORD: memoryops
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -114,10 +114,10 @@ jobs:
     name: SDK — tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -140,10 +140,10 @@ jobs:
     name: Web — build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -156,3 +156,54 @@ jobs:
       - name: Build
         working-directory: apps/web
         run: npm run build
+
+  perf-smoke:
+    name: Perf — HTTP load smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dev deps
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      # Boots the real app (in-memory, stub providers, rate-limit off) and drives a
+      # small concurrency sweep. The strict --max-error-rate 0.02 makes this a
+      # regression gate: e.g. the multi-memory write 500 (PR #42) showed as a ~40%
+      # error rate and would fail here. Keeps benchmark/perf/run_perf.py runnable.
+      - name: Boot API + run load harness
+        working-directory: services/api
+        env:
+          MEMORYOPS_STORAGE: memory
+          MEMORYOPS_EMBEDDING_PROVIDER: stub
+          MEMORYOPS_LLM_PROVIDER: stub
+          MEMORYOPS_RATE_LIMIT_ENABLED: "false"
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8099 --log-level warning &
+          SRV=$!
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8099/healthz >/dev/null && break || sleep 1
+          done
+          python ../../benchmark/perf/run_perf.py \
+            --base-url http://127.0.0.1:8099 \
+            --requests 60 --concurrency 1,5,10 --operations write,retrieval,chat \
+            --max-error-rate 0.02 --out ../../perf-smoke.json
+          RC=$?
+          kill $SRV 2>/dev/null || true
+          exit $RC
+
+      - name: Upload perf-smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke
+          path: perf-smoke.json
+          if-no-files-found: ignore
