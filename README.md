@@ -7,7 +7,7 @@ influenced an answer, and what evidence proves each decision** — treating memo
 governed state, not just a vector database.
 
 [![CI](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml)
-&nbsp;![Benchmark](https://img.shields.io/badge/governance%20benchmark-100%25-brightgreen)
+&nbsp;[![Benchmark](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/benchmark.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/benchmark.yml)
 &nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 &nbsp;![License](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![Release](https://img.shields.io/badge/release-v2.2-blue)
@@ -63,7 +63,7 @@ New to integrating? Start with the **[LangGraph tutorial](docs/tutorials/langgra
 MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
 scores the eval harness into named suites; the two critical suites (deletion/leakage +
 tenant isolation) must be perfect or the benchmark fails. Current scorecard
-([benchmark/SCORECARD.md](benchmark/SCORECARD.md)):
+([benchmark/SCORECARD.md](benchmark/SCORECARD.md)) — **32/32 (100%), critical suites perfect ✅**:
 
 | Suite | Pass rate |
 | --- | --- |

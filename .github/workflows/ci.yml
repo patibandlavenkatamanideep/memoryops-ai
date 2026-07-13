@@ -46,28 +46,8 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python evals/run_evals.py
 
-  benchmark:
-    name: Benchmark — memory-governance scorecard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install API deps
-        working-directory: services/api
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Run public benchmark (critical suites must be perfect)
-        env:
-          MEMORYOPS_STORAGE: memory
-        run: python benchmark/run_benchmark.py
+  # The memory-governance benchmark runs in its own workflow (benchmark.yml) so it
+  # has a dedicated status badge; it is not duplicated here.
 
   sdk:
     name: SDK — tests

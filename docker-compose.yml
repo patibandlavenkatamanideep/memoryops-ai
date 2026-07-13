@@ -70,5 +70,17 @@ services:
     depends_on:
       - api
 
+  # Public memory-governance benchmark. Opt-in via the `benchmark` profile so it
+  # never starts with the default `docker compose up` stack — it's a one-shot,
+  # offline scorecard run, not a long-lived service:
+  #   docker compose --profile benchmark run --rm benchmark
+  benchmark:
+    profiles: ["benchmark"]
+    build:
+      context: .
+      dockerfile: benchmark/Dockerfile
+    environment:
+      MEMORYOPS_STORAGE: memory
+
 volumes:
   pgdata:
