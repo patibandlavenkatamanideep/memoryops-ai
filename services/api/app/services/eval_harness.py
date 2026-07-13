@@ -24,6 +24,7 @@ tenant data. Case types map to invariants:
   breakdown   — retrieval results must carry a full score breakdown
   loop         — read/write loop evidence must be emitted
   structured   — extraction runs via the validated structured path (v0.4)
+  multi_memory — a compound turn yields multiple memories (even in the stub)
   conflict     — a contradicting candidate is flagged by conflict detection (v0.4)
 """
 
@@ -52,7 +53,8 @@ def _load_cases() -> list[dict]:
     evals_dir = _find_evals_dir()
     cases: list[dict] = []
     if evals_dir:
-        for name in ("golden_memory_cases.json", "adversarial_cases.json"):
+        for name in ("golden_memory_cases.json", "adversarial_cases.json",
+                     "tenant_isolation_cases.json"):
             path = evals_dir / name
             if path.exists():
                 cases.extend(json.loads(path.read_text()))
@@ -193,6 +195,8 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         # from context (its ancestry transitively contains a tombstone) and the
         # secret must not surface in the answer — proving lineage blocking is
         # transitive, not just one hop deep.
+        from ..core.embeddings import embed
+        from ..core.reliability import safe_call
         from ..db import lineage
         from ..db.entities import StoredMemory
         from ..schemas.memory import MemoryType, Sensitivity, Source
@@ -218,6 +222,10 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
                 content=content, importance=6, confidence=0.9,
                 sensitivity=Sensitivity.low, status=Status.active,
                 source=Source(kind="reflection"),
+                # Embed like the real write path so the derived artifact is
+                # retrievable on any backend (Postgres vector search skips
+                # NULL-embedding rows; the in-memory backend tolerates them).
+                embedding=safe_call(lambda c=content: embed(c), default=[], label="embed"),
             )
             lineage.set_lineage(node, parent_ids=[parent.id])
             repo.create_memory(node)
@@ -309,13 +317,40 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         )
 
     if kind == "isolation":
-        other_tenant = case.get("other_tenant_id", "tenant_other")
-        other_user = case.get("other_user_id", "user_other")
-        other_msg = case.get("other_message", "Remember I prefer X.")
-        _decisions_for(gw, other_tenant, other_user, other_msg)
-        leaked = repo.retrieve_active(tenant, user)
-        ok = len(leaked) == 0
-        return CaseResult(cid, kind, ok, f"leaked_rows={len(leaked)}")
+        # Plant one or more foreign memories, then prove the probe scope sees none
+        # of them — through the repository AND (optionally) the full gateway read
+        # path. Supports cross-tenant, cross-user, and adversarial/malformed
+        # tenant-id probes (wildcards, injection-looking strings, empty ids).
+        planted = case.get("planted") or [{
+            "tenant_id": case.get("other_tenant_id", "tenant_other"),
+            "user_id": case.get("other_user_id", "user_other"),
+            "message": case.get("other_message", "Remember I prefer X."),
+        }]
+        foreign_ids: set[str] = set()
+        for p in planted:
+            _decisions_for(gw, p["tenant_id"], p["user_id"], p["message"])
+            for m in repo.list_memories(p["tenant_id"], p["user_id"]):
+                foreign_ids.add(m.id)
+
+        probe_tenant = case.get("probe_tenant_id", tenant)
+        probe_user = case.get("probe_user_id", user)
+
+        # 1. Repository-level scoped read must return no foreign rows.
+        repo_leak = [m for m in repo.retrieve_active(probe_tenant, probe_user)
+                     if m.id in foreign_ids]
+        # 2. Full gateway read path (if a probe query is given) must not surface
+        #    any foreign memory into the composed context.
+        gw_leak = []
+        if case.get("probe_query"):
+            resp = _decisions_for(gw, probe_tenant, probe_user, case["probe_query"])
+            gw_leak = [u for u in resp.used_memories if u.memory_id in foreign_ids]
+
+        ok = not repo_leak and not gw_leak
+        return CaseResult(
+            cid, kind, ok,
+            f"probe={probe_tenant!r}/{probe_user!r} repo_leak={len(repo_leak)} "
+            f"gw_leak={len(gw_leak)} planted={len(foreign_ids)}",
+        )
 
     if kind == "archived":
         save_msg = case.get("save_message", msg)
@@ -386,6 +421,22 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
             cid, kind, ok, f"mode={outcome.mode} memories={len(outcome.memories)}"
         )
 
+    if kind == "multi_memory":
+        # A compound turn must yield multiple memories even from the offline
+        # heuristic stub (the previous stub returned at most one).
+        from ..llm.fallback import heuristic_extract
+
+        mems = heuristic_extract(case["message"])
+        expected = int(case.get("min_memories", 2))
+        contents = [m.content.lower() for m in mems]
+        must = [s.lower() for s in case.get("must_include", [])]
+        have_all = all(any(s in c for c in contents) for s in must)
+        ok = len(mems) >= expected and have_all
+        return CaseResult(
+            cid, kind, ok,
+            f"extracted={len(mems)} expected>={expected} must_include_ok={have_all}",
+        )
+
     if kind == "conflict":
         # v0.4: save a memory, then check a contradicting candidate is flagged.
         from ..llm import detect_conflicts, get_llm_provider
@@ -404,12 +455,50 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
     return CaseResult(cid, kind, False, f"unknown case kind: {kind}")
 
 
-def run_evals(cases: list[dict] | None = None) -> EvalReport:
+# Application-written tables truncated between eval cases when running against a real
+# storage backend, so each case gets a fresh isolated stack (mirroring a fresh
+# InMemoryRepository) instead of accumulating rows across cases.
+_EVAL_TABLES = (
+    "memory_records", "memory_audit_logs", "memory_feedback", "memory_settings",
+    "loop_events", "loop_runs", "worker_runs", "worker_leases",
+)
+
+
+def _default_repo_factory():
+    """Return a per-case repo factory honoring MEMORYOPS_STORAGE.
+
+    Default (memory): a fresh InMemoryRepository per case. Postgres: the shared
+    PostgresRepository, truncated before each case for the same per-case isolation.
+    This is what makes the eval harness / benchmark run *genuinely* on the configured
+    backend rather than always in memory.
+    """
+    from ..core.config import get_settings
+
+    if get_settings().storage != "postgres":
+        return InMemoryRepository
+
+    from sqlalchemy import text
+
+    from ..db.factory import get_repository
+
+    repo = get_repository()
+
+    def _postgres_factory():
+        with repo._engine.begin() as conn:  # eval/CI-only: full reset for isolation
+            conn.execute(text("truncate " + ", ".join(_EVAL_TABLES) + " restart identity cascade"))
+        return repo
+
+    return _postgres_factory
+
+
+def run_evals(cases: list[dict] | None = None, repo_factory=None) -> EvalReport:
     cases = cases if cases is not None else _load_cases()
+    make_repo = repo_factory or _default_repo_factory()
     report = EvalReport()
     for case in cases:
-        # Fresh isolated stack per case.
-        repo = InMemoryRepository()
+        # Fresh isolated stack per case (in-memory by default; truncated Postgres
+        # when MEMORYOPS_STORAGE=postgres).
+        repo = make_repo()
         gw = Gateway(repo)
         try:
             result = _run_case(gw, repo, case)

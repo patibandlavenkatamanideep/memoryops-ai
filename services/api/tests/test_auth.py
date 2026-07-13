@@ -67,6 +67,26 @@ def test_decode_checks_audience_and_issuer():
         decode_jwt(tok, key="s", algorithms=["HS256"], audience="other")
 
 
+def test_decode_rejects_alg_none():
+    # An unsigned "alg: none" token must never be accepted (classic JWT attack).
+    header = _b64(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+    body = _b64(json.dumps({"sub": "u1", "tenant_id": "t1"}).encode())
+    tok = f"{header}.{body}."  # empty signature
+    with pytest.raises(JWTError):
+        decode_jwt(tok, key="", algorithms=["HS256"])
+    with pytest.raises(JWTError):
+        decode_jwt(tok, key="", algorithms=["none"])
+
+
+def test_jwks_unreachable_endpoint_raises_jwterror():
+    tok = make_jwt({"sub": "u1"}, secret="s")
+    with pytest.raises(JWTError):
+        decode_jwt(
+            tok, algorithms=["RS256"],
+            jwks_url="http://127.0.0.1:1/.well-known/jwks.json",
+        )
+
+
 # ── provider unit tests ──────────────────────────────────────────────────────────
 class _Headers(dict):
     def get(self, k, default=None):  # case-insensitive like Starlette

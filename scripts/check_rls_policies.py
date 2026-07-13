@@ -21,12 +21,80 @@ from __future__ import annotations
 import os
 
 _PROTECTED = ("memory_records", "memory_audit_logs", "memory_feedback", "memory_settings")
+_PROBE_ROLE = "rls_probe_role"
+_PROBE_PW = "rls_probe_pw"
 
 
 def _database_url() -> str:
     return os.getenv("DATABASE_URL") or os.getenv("MEMORYOPS_DATABASE_URL") or (
         "postgresql+psycopg://memoryops:memoryops@localhost:5432/memoryops"
     )
+
+
+def _probe_url(admin_url: str) -> str:
+    """A non-superuser connection URL for the behavioral probe.
+
+    RLS is bypassed by superusers/BYPASSRLS roles, so probing on the admin
+    connection would be meaningless. Prefer an explicit MEMORYOPS_RLS_PROBE_URL;
+    otherwise derive a non-superuser role on the same database.
+    """
+    if (override := os.getenv("MEMORYOPS_RLS_PROBE_URL")):
+        return override
+    from sqlalchemy.engine import make_url
+
+    return str(make_url(admin_url).set(username=_PROBE_ROLE, password=_PROBE_PW))
+
+
+def _is_superuser(engine) -> bool:
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        return conn.execute(text("select current_setting('is_superuser')")).scalar_one() == "on"
+
+
+def _ensure_probe_engine(engine, url: str, is_super: bool):
+    """Return an engine the RLS probe is meaningful on — i.e. a non-superuser role."""
+    from sqlalchemy import create_engine, text
+
+    if os.getenv("MEMORYOPS_RLS_PROBE_URL"):
+        return create_engine(_probe_url(url), future=True)
+    if not is_super:
+        return engine  # the admin connection is already a non-superuser
+    # Superuser connection: provision a dedicated non-superuser role so RLS applies.
+    with engine.begin() as conn:
+        exists = conn.execute(
+            text("select 1 from pg_roles where rolname = :r"), {"r": _PROBE_ROLE}
+        ).scalar()
+        if not exists:
+            conn.execute(text(f"create role {_PROBE_ROLE} login password '{_PROBE_PW}'"))
+        conn.execute(text(f"grant usage on schema public to {_PROBE_ROLE}"))
+        conn.execute(text(f"grant select, insert on memory_records to {_PROBE_ROLE}"))
+    return create_engine(_probe_url(url), future=True)
+
+
+def _seed_probe_row(engine) -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        conn.execute(text("select set_config('app.tenant_id', 'rls_probe_b', true)"))
+        conn.execute(text("delete from memory_records where tenant_id = 'rls_probe_b'"))
+        conn.execute(
+            text(
+                "insert into memory_records (tenant_id, user_id, memory_type, content, source) "
+                "values ('rls_probe_b', 'probe_user', 'preference', 'probe', '{}'::jsonb)"
+            )
+        )
+
+
+def _cleanup_probe_row(engine) -> None:
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("select set_config('app.tenant_id', 'rls_probe_b', true)"))
+            conn.execute(text("delete from memory_records where tenant_id = 'rls_probe_b'"))
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
 
 
 def main() -> int:
@@ -84,21 +152,29 @@ def main() -> int:
             elif table in policied:
                 print(f"[OK]   {table}: tenant-isolation policy present")
 
-        # 3. Behavioral probe: tenant A must not see tenant B's memory rows.
-        try:
-            conn.execute(text("select set_config('app.tenant_id', 'rls_probe_a', true)"))
-            leaked = conn.execute(
+    # 3. Behavioral probe (must run as a NON-superuser role, or RLS is bypassed).
+    #    Seed a foreign-tenant row as admin, then confirm a probe role scoped to a
+    #    different tenant cannot see it.
+    is_super = _is_superuser(engine)
+    try:
+        _seed_probe_row(engine)
+        probe_engine = _ensure_probe_engine(engine, url, is_super)
+        with probe_engine.connect() as pconn:
+            pconn.execute(text("select set_config('app.tenant_id', 'rls_probe_a', true)"))
+            leaked = pconn.execute(
                 text(
                     "select count(*) from memory_records "
-                    "where tenant_id::text <> current_setting('app.tenant_id', true)"
+                    "where tenant_id <> current_setting('app.tenant_id', true)"
                 )
             ).scalar_one()
-            if leaked and leaked > 0:
-                failures.append(f"cross-tenant leak: {leaked} foreign rows visible under RLS")
-            else:
-                print("[OK]   behavioral probe: no cross-tenant rows visible")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[WARN] behavioral probe skipped ({type(exc).__name__})")
+        if leaked and leaked > 0:
+            failures.append(f"cross-tenant leak: {leaked} foreign rows visible under RLS")
+        else:
+            print("[OK]   behavioral probe: no cross-tenant rows visible (non-superuser role)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] behavioral probe skipped ({type(exc).__name__}: {exc})")
+    finally:
+        _cleanup_probe_row(engine)
 
     print()
     if failures:

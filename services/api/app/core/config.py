@@ -18,6 +18,26 @@ class Settings(BaseSettings):
     service_name: str = "memoryops-api"
     log_level: str = "INFO"
 
+    # Public eval trigger (security). POST /api/evals/run executes the full eval
+    # harness on demand — a denial-of-wallet / compute-abuse vector if exposed
+    # unauthenticated on a public deployment. OFF by default: the trigger returns
+    # 403 unless an operator explicitly opts in with MEMORYOPS_PUBLIC_EVALS=true.
+    # GET /api/evals/latest serves a server-cached result and is always available.
+    public_evals: bool = False
+    # Minimum seconds between cached-result regenerations for GET /api/evals/latest.
+    evals_cache_ttl_seconds: int = 300
+
+    # Request hygiene + rate limiting (P2.4). Dependency-free, in-process (fits the
+    # single-instance Railway deploy); protects the public demo from denial-of-wallet
+    # and oversized bodies. All no-throw. Tune per deployment / put a real gateway
+    # limiter in front for multi-instance.
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 120            # per client IP, all /api/* routes
+    rate_limit_chat_per_minute: int = 30        # stricter, per tenant/IP on /api/chat
+    rate_limit_evals_per_minute: int = 6        # stricter still on /api/evals/*
+    max_request_bytes: int = 65536              # 64 KB body cap on /api/* → 413
+    max_message_chars: int = 8000               # ChatRequest.message / memory content
+
     # Observability (v0.13, ADR-015). Process-wide Prometheus metrics exposition at
     # GET /metrics. Content-free, low-cardinality, no new dependency. ON by default;
     # toggle with MEMORYOPS_METRICS_ENABLED. Distinct from the per-tenant business
@@ -130,6 +150,9 @@ class Settings(BaseSettings):
     auth_jwt_user_claim: str = "sub"
     auth_jwt_audience: str = ""
     auth_jwt_issuer: str = ""
+    # Optional JWKS endpoint (RS*/ES*). When set, the signing key is fetched + cached
+    # from the issuer's JWKS instead of using a static auth_jwt_key. Needs pyjwt[crypto].
+    auth_jwt_jwks_url: str = ""
 
     # Background memory lifecycle workers (v0.6, ADR-010). Workers run outside the
     # chat path; these are policy thresholds, not request knobs. Defaults are
@@ -178,6 +201,18 @@ class Settings(BaseSettings):
     worker_scopes: str = "tenant_demo:user_demo"
     worker_run_history_limit: int = 500
 
+    # Ranker weights (P3.2). The retrieval score is a weighted blend of six [0,1]
+    # signals. These defaults prioritize semantic + keyword relevance; they are the
+    # starting point, not a magic constant — tune per deployment (env now, per-tenant
+    # later). Weights are normalized to sum to 1 at load. See docs/architecture.md.
+    ranker_weight_semantic: float = 0.35
+    ranker_weight_keyword: float = 0.20
+    ranker_weight_importance: float = 0.15
+    ranker_weight_confidence: float = 0.10
+    ranker_weight_recency: float = 0.10
+    ranker_weight_reinforcement: float = 0.10
+    ranker_score_floor: float = 0.05  # drop candidates below this blended score
+
     # Reliability knobs (used by core.reliability).
     llm_timeout_seconds: float = 8.0
     retrieval_timeout_seconds: float = 3.0
@@ -194,6 +229,32 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_PUBLIC_EVALS")) is not None:
+        overrides["public_evals"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_RATE_LIMIT_ENABLED")) is not None:
+        overrides["rate_limit_enabled"] = val.lower() not in ("0", "false", "no")
+    for env_name, field_name in (
+        ("MEMORYOPS_RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute"),
+        ("MEMORYOPS_RATE_LIMIT_CHAT_PER_MINUTE", "rate_limit_chat_per_minute"),
+        ("MEMORYOPS_RATE_LIMIT_EVALS_PER_MINUTE", "rate_limit_evals_per_minute"),
+        ("MEMORYOPS_MAX_REQUEST_BYTES", "max_request_bytes"),
+        ("MEMORYOPS_MAX_MESSAGE_CHARS", "max_message_chars"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            with contextlib.suppress(ValueError):
+                overrides[field_name] = int(val)
+    for env_name, field_name in (
+        ("MEMORYOPS_RANK_W_SEMANTIC", "ranker_weight_semantic"),
+        ("MEMORYOPS_RANK_W_KEYWORD", "ranker_weight_keyword"),
+        ("MEMORYOPS_RANK_W_IMPORTANCE", "ranker_weight_importance"),
+        ("MEMORYOPS_RANK_W_CONFIDENCE", "ranker_weight_confidence"),
+        ("MEMORYOPS_RANK_W_RECENCY", "ranker_weight_recency"),
+        ("MEMORYOPS_RANK_W_REINFORCEMENT", "ranker_weight_reinforcement"),
+        ("MEMORYOPS_RANK_SCORE_FLOOR", "ranker_score_floor"),
+    ):
+        if (val := os.getenv(env_name)) is not None:
+            with contextlib.suppress(ValueError):
+                overrides[field_name] = float(val)
     if (val := os.getenv("MEMORYOPS_TRACING_ENABLED")) is not None:
         overrides["tracing_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_OTEL_ENABLED")) is not None:
@@ -242,6 +303,7 @@ def get_settings() -> Settings:
         ("MEMORYOPS_AUTH_JWT_USER_CLAIM", "auth_jwt_user_claim"),
         ("MEMORYOPS_AUTH_JWT_AUDIENCE", "auth_jwt_audience"),
         ("MEMORYOPS_AUTH_JWT_ISSUER", "auth_jwt_issuer"),
+        ("MEMORYOPS_AUTH_JWT_JWKS_URL", "auth_jwt_jwks_url"),
     ):
         if (val := os.getenv(env_name)) is not None:
             overrides[field_name] = val

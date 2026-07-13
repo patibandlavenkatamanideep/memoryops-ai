@@ -10,6 +10,20 @@
     "message": "I'm building MemoryOps AI, an enterprise memory governance layer for a hackathon."
   },
   {
+    "id": "golden-multi-explicit-3",
+    "kind": "multi_memory",
+    "message": "Remember I live in Boston, I'm allergic to shellfish, and my anniversary is May 3.",
+    "min_memories": 3,
+    "must_include": ["boston", "shellfish", "anniversary"]
+  },
+  {
+    "id": "golden-multi-inferred-2",
+    "kind": "multi_memory",
+    "message": "I love hiking on weekends and my project is a Next.js dashboard.",
+    "min_memories": 2,
+    "must_include": ["hiking", "next.js"]
+  },
+  {
     "id": "golden-pending-sensitive",
     "kind": "pending",
     "message": "Remember that my personal email is jane.doe@example.com for follow-ups."

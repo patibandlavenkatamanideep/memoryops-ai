@@ -4,11 +4,29 @@ As of **v1.0**, the public HTTP API and the Python SDK surface are **stable**:
 within the `1.x` line they are additive-compatible. This document is the contract
 for what "stable" means and how changes are governed.
 
+## Two version tracks
+
+MemoryOps AI intentionally versions on two separate axes. They answer different
+questions and move independently, so a single number would be misleading:
+
+| Track | Where it lives | Current | Meaning |
+|-------|----------------|---------|---------|
+| **Platform release** | git tags `vX.Y`, the README release badge, `CHANGELOG.md` | **v2.2** | "What shipped" — the feature-set milestone of the whole repo (API + workers + SDK + docs + demos). |
+| **Public API + SDK contract** | `app.__version__`, `packages/memoryops-sdk` `version` | **1.0.0** | The compatibility promise of the public HTTP API and Python SDK. Stays `1.x` as long as the surface is additive-compatible. |
+
+So platform **v2.2** ships the **1.0.0** API/SDK contract: the milestone counter has
+advanced through many feature phases while the *public surface* has only grown
+additively and so remains `1.x`. `app.__version__` and the SDK package version are
+kept in lock-step; the platform milestone is independent.
+
 ## Versioning
 
-- Releases are git tags `vMAJOR.MINOR[.PATCH]` (see [RELEASING.md](../RELEASING.md));
-  the tag + GitHub Release are the source of truth for "what shipped".
-- Package versions (`services/api`, `packages/memoryops-sdk`) are **1.0.0** at v1.0.
+- Platform releases are git tags `vMAJOR.MINOR[.PATCH]` (see
+  [RELEASING.md](../RELEASING.md)); the tag + GitHub Release are the source of truth
+  for "what shipped".
+- The API/SDK contract version (`app.__version__`, `packages/memoryops-sdk`) is
+  **1.0.0** and is released to PyPI under `sdk-vX.Y.Z` tags. CI asserts an `sdk-v*`
+  tag matches the SDK's `pyproject.toml` version (see `.github/workflows/publish-sdk.yml`).
 - Within `1.x`: **MINOR** adds backward-compatible capability, **PATCH** is
   fixes/hardening. A breaking change to the stable surface requires a **MAJOR**
   bump (`2.0`) and a deprecation window.

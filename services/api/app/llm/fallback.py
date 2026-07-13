@@ -65,12 +65,47 @@ def _strip_remember_prefix(text: str) -> str:
     return cleaned.strip().rstrip(".") + "." if cleaned.strip() else text.strip()
 
 
-def heuristic_extract(message: str) -> list[ExtractedMemory]:
+# Split a message into independent memory-bearing clauses. We break on sentence
+# terminators, and on a comma / "and" that introduces a *new first-person clause*
+# ("…, I'm allergic…", "…and my anniversary…") — but NOT on a comma that merely
+# continues a thought ("window seats, especially long-haul"), so single statements
+# stay whole.
+_CLAUSE_SPLIT = re.compile(
+    r"[.!?;]\s+"
+    r"|\s*,\s+(?=(?:and\s+|but\s+)?(?:i\b|i'|my\b|we\b|we'|our\b))"
+    r"|\s+and\s+(?=(?:i\b|i'|my\b|we\b|we'|our\b))",
+    re.IGNORECASE,
+)
+
+
+_LEADING_CONJ = re.compile(r"^(and|but|also)\s+", re.IGNORECASE)
+
+
+def _split_clauses(text: str) -> list[str]:
+    parts = (_LEADING_CONJ.sub("", c.strip()) for c in _CLAUSE_SPLIT.split(text) if c)
+    return [c for c in parts if c.strip()]
+
+
+def _as_memory(clause: str, *, explicit: bool) -> ExtractedMemory:
+    return ExtractedMemory(
+        content=clause.rstrip(".") + ".",
+        type=_classify(clause),
+        # Explicit "remember" → higher importance/confidence than an inferred one.
+        importance=8 if explicit else 6,
+        confidence=0.92 if explicit else 0.7,
+        sensitivity=Sensitivity.low,
+        rationale="heuristic: explicit cue" if explicit else "heuristic: inferred statement",
+    )
+
+
+def heuristic_extract(message: str, *, max_memories: int = 5) -> list[ExtractedMemory]:
     """Deterministic extraction: recognize explicit/implicit memory statements.
 
-    Returns zero or one ``ExtractedMemory``. Identical in behavior to the pre-v0.4
-    extractor so golden evals remain stable; sensitivity is left ``low`` and the
-    policy broker assigns the final value.
+    Handles compound turns: an explicit "remember A, B and C" or a message with
+    several first-person preference/project clauses yields multiple memories (up to
+    ``max_memories``). A single statement still yields exactly one memory with the
+    whole message as content, so the golden evals remain stable. Sensitivity is left
+    ``low`` and the policy broker assigns the final value.
     """
     text = message.strip()
     if not text:
@@ -82,21 +117,36 @@ def heuristic_extract(message: str) -> list[ExtractedMemory]:
         # Pure questions / chit-chat don't produce memory candidates.
         return []
 
-    content = _strip_remember_prefix(text) if explicit else text.rstrip(".") + "."
-    mem_type = _classify(text)
-    # Explicit "remember" → higher importance/confidence than an inferred one.
-    importance = 8 if explicit else 6
-    confidence = 0.92 if explicit else 0.7
-    return [
-        ExtractedMemory(
-            content=content,
-            type=mem_type,
-            importance=importance,
-            confidence=confidence,
-            sensitivity=Sensitivity.low,
-            rationale="heuristic: explicit cue" if explicit else "heuristic: inferred statement",
-        )
-    ]
+    body = _strip_remember_prefix(text) if explicit else text
+    clauses = _split_clauses(body)
+
+    if explicit:
+        # The user asked to store the whole list — every non-trivial clause counts.
+        candidates = [c for c in clauses if len(c) >= 3]
+    else:
+        # Inferred: only clauses that themselves state a preference/project.
+        candidates = [
+            c for c in clauses
+            if len(c) >= 3 and (_PREFERENCE_CUES.search(c) or _PROJECT_CUES.search(c))
+        ]
+
+    # Single-memory turns keep the pre-v0.4 behavior exactly: one memory whose
+    # content is the whole (prefix-stripped) message.
+    if len(candidates) <= 1:
+        content = _strip_remember_prefix(text) if explicit else text.rstrip(".") + "."
+        return [_as_memory(content, explicit=explicit)]
+
+    out: list[ExtractedMemory] = []
+    seen: set[str] = set()
+    for clause in candidates:
+        mem = _as_memory(clause, explicit=explicit)
+        if mem.content.lower() in seen:
+            continue
+        seen.add(mem.content.lower())
+        out.append(mem)
+        if len(out) >= max_memories:
+            break
+    return out
 
 
 def heuristic_evaluate(memory: ExtractedMemory) -> MemoryEvaluationResult:

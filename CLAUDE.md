@@ -60,8 +60,8 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
   `MEMORYOPS_EMBEDDING_PROVIDER=stub|openai`. `app/core/embeddings.py` is a back-compat shim.
 - `services/api/app/auth` — identity-neutral auth + authorization adapters (v1.6).
   **Off by default** (`MEMORYOPS_AUTH_MODE=none|trusted_header|jwt`). Verifies an
-  externally-minted identity (trusted upstream header, or a dependency-free bearer-JWT
-  verify — HS\* stdlib, RS\* needs `cryptography`) and enforces every op is scoped to
+  externally-minted identity (trusted upstream header, or a bearer-JWT verify via
+  **PyJWT** — HS\* out of the box, RS\*/ES\*/JWKS need `pyjwt[crypto]`) and enforces every op is scoped to
   the authenticated tenant/user: a scope-validation middleware checks query-string
   `tenant_id`/`user_id`; body routes call `enforce_scope()`. 401 on missing/invalid
   creds, 403 on scope mismatch, never 500. Not an auth product — Clerk/Auth0/Supabase/

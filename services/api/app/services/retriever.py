@@ -11,21 +11,15 @@ reports ``retrieval_mode="fallback"`` (invariant #4, graceful degradation).
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from ..core.logging import get_logger
 from ..db.entities import StoredMemory
 from ..db.repository import Repository
 from ..embeddings import embed
+from .keyword_scoring import bm25_scores
 
 logger = get_logger("memoryops.retriever")
-
-_WORD = re.compile(r"[a-z0-9]+")
-
-
-def _keywords(text: str) -> set[str]:
-    return set(_WORD.findall(text.lower()))
 
 
 @dataclass
@@ -62,11 +56,11 @@ class Retriever:
         if not pairs:
             return RetrievalResult(candidates=[], mode=mode)
 
-        q_words = _keywords(query)
-        scored: list[ScoredCandidate] = []
-        for memory, similarity in pairs:
-            m_words = _keywords(memory.content)
-            overlap = len(q_words & m_words)
-            keyword = overlap / len(q_words) if q_words else 0.0
-            scored.append(ScoredCandidate(memory=memory, semantic=similarity, keyword=keyword))
+        # BM25 keyword relevance over the candidate set (stopword-aware, term-weighted),
+        # normalized to [0, 1] so it blends with the [0, 1] semantic score in the ranker.
+        keyword_scores = bm25_scores(query, [m.content for m, _ in pairs])
+        scored = [
+            ScoredCandidate(memory=memory, semantic=similarity, keyword=keyword_scores[i])
+            for i, (memory, similarity) in enumerate(pairs)
+        ]
         return RetrievalResult(candidates=scored, mode=mode)

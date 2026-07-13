@@ -11,6 +11,12 @@ governed state, not just a vector database.
 &nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 &nbsp;![License](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![Release](https://img.shields.io/badge/release-v2.2-blue)
+&nbsp;![API](https://img.shields.io/badge/API%20%2B%20SDK-1.x%20stable-green)
+
+> **Two version tracks:** the **platform release** (`v2.2`, the feature milestone of
+> the whole repo) is separate from the **public API + SDK contract** (`1.x`, the
+> additive-compatibility promise). v2.2 ships the 1.0.0 contract — see
+> [docs/api-stability.md](docs/api-stability.md#two-version-tracks).
 
 ## Live demo
 
@@ -22,7 +28,8 @@ that runs the real MemoryOps pipeline in-process with ephemeral session state.
 > **v2.2 (current).** The public HTTP API and Python SDK are stable under a `1.x`
 > additive-compatibility promise ([docs/api-stability.md](docs/api-stability.md)).
 > See the [CHANGELOG](CHANGELOG.md), [production-readiness](docs/production-readiness.md),
-> and [known limitations](docs/limitations.md).
+> [known limitations](docs/limitations.md), and the
+> [design decisions](docs/design-decisions.md) (the hard calls + rejected alternatives).
 
 ## Current capabilities (all shipped)
 
@@ -41,15 +48,17 @@ that runs the real MemoryOps pipeline in-process with ephemeral session state.
 
 ## Adapter support level
 
-Honest about what is exercised where. "Fully tested locally" runs in CI against the real
-stack; "contract-tested" means the adapter conforms to a written contract
-(`assert_vector_index_contract`) but a live server isn't a CI dependency; "example
-integration" is import-guarded illustrative glue.
+Honest about what is exercised where. "Fully tested in CI" means the full
+application test suite, eval harness, and governance benchmark run against a real
+service in CI (the `api-postgres` job, which also proves FORCEd row-level security
+with a non-superuser role); "contract-tested" means the adapter conforms to a
+written contract (`assert_vector_index_contract`) but a live server isn't a CI
+dependency; "example integration" is import-guarded illustrative glue.
 
 | Adapter | Support level |
 | --- | --- |
-| Postgres + pgvector | **fully tested locally** |
-| In-memory | **fully tested locally** |
+| Postgres + pgvector | **fully tested in CI** (suite + evals + benchmark + enforced RLS) |
+| In-memory | **fully tested in CI** (default backend for the app + eval suites) |
 | Qdrant | contract-tested, optional dependency |
 | LanceDB | contract-tested, optional dependency |
 | Weaviate | contract-tested, optional dependency |
@@ -63,17 +72,18 @@ New to integrating? Start with the **[LangGraph tutorial](docs/tutorials/langgra
 MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
 scores the eval harness into named suites; the two critical suites (deletion/leakage +
 tenant isolation) must be perfect or the benchmark fails. Current scorecard
-([benchmark/SCORECARD.md](benchmark/SCORECARD.md)) — **32/32 (100%), critical suites perfect ✅**:
+([benchmark/SCORECARD.md](benchmark/SCORECARD.md)) — **50/50 (100%), critical suites perfect ✅**:
 
 | Suite | Pass rate |
 | --- | --- |
 | deletion_and_leakage ★ | 100% (12/12) |
-| tenant_isolation ★ | 100% (1/1) |
+| tenant_isolation ★ | 100% (17/17) |
 | context_admission | 100% (2/2) |
-| policy_governance | 100% (13/13) |
+| policy_governance | 100% (15/15) |
 | retrieval_quality | 100% (4/4) |
 
-★ critical — must be 100%. Reproducible + offline (no API keys).
+★ critical — must be 100%. Reproducible + offline (no API keys); the same suites
+also run against real Postgres + pgvector in CI (the `api-postgres` job).
 
 ---
 

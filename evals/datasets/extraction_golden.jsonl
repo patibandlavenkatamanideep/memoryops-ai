@@ -1,0 +1,25 @@
+{"id": "single-pref-darkmode", "message": "Remember I prefer dark mode in all my apps.", "expected_facts": ["dark mode"]}
+{"id": "single-pref-seat", "message": "I always take the window seat on flights.", "expected_facts": ["window seat"]}
+{"id": "single-project", "message": "I'm building a Next.js analytics dashboard for my startup.", "expected_facts": ["next.js"]}
+{"id": "single-constraint-emoji", "message": "Never use emojis when you answer me.", "expected_facts": ["emojis"]}
+{"id": "compound-2-food", "message": "I'm vegetarian and my sister Mia is allergic to peanuts.", "expected_facts": ["vegetarian", "peanut"]}
+{"id": "compound-3-life", "message": "Remember I live in Boston, I'm allergic to shellfish, and my anniversary is May 3.", "expected_facts": ["boston", "shellfish", "anniversary"]}
+{"id": "compound-2-work", "message": "I usually work late on weekdays and I prefer async standups.", "expected_facts": ["work late", "async standup"]}
+{"id": "compound-3-travel", "message": "Remember I fly out of SFO, I hate red-eye flights, and I always pack carry-on only.", "expected_facts": ["sfo", "red-eye", "carry-on"]}
+{"id": "single-pref-tone", "message": "Please answer me in a concise, formal tone.", "expected_facts": ["concise", "formal"]}
+{"id": "single-fact-role", "message": "For context, I'm a staff data engineer at a fintech company.", "expected_facts": ["data engineer"]}
+{"id": "negation-switch", "message": "I no longer use Postgres; I switched to Snowflake for the warehouse.", "expected_facts": ["snowflake"]}
+{"id": "compound-2-tools", "message": "My editor is Neovim and I deploy everything on Railway.", "expected_facts": ["neovim", "railway"]}
+{"id": "single-pref-language", "message": "I want all code examples in TypeScript, not JavaScript.", "expected_facts": ["typescript"]}
+{"id": "compound-2-family", "message": "My daughter's name is Ada and she turns 5 in October.", "expected_facts": ["ada", "october"]}
+{"id": "single-constraint-nolinks", "message": "Don't include external links in your answers.", "expected_facts": ["links"]}
+{"id": "question-noop-1", "message": "What did I say my favorite food was?", "expected_facts": []}
+{"id": "question-noop-2", "message": "Can you summarize the last quarter's revenue?", "expected_facts": []}
+{"id": "chitchat-noop", "message": "Good morning! How are you doing today?", "expected_facts": []}
+{"id": "single-pref-units", "message": "I prefer metric units for everything.", "expected_facts": ["metric"]}
+{"id": "compound-3-diet", "message": "Remember I'm lactose intolerant, I don't drink alcohol, and I love spicy food.", "expected_facts": ["lactose", "alcohol", "spicy"]}
+{"id": "single-project-detail", "message": "We're building MemoryOps, a governed memory layer for AI assistants.", "expected_facts": ["memoryops"]}
+{"id": "single-pref-meeting", "message": "I like meetings scheduled in the morning, before 11am.", "expected_facts": ["morning"]}
+{"id": "compound-2-location", "message": "I split my time between Austin and Denver.", "expected_facts": ["austin", "denver"]}
+{"id": "single-constraint-privacy", "message": "Always redact my home address if it ever comes up.", "expected_facts": ["home address"]}
+{"id": "implicit-fact-hard", "message": "Ugh, my commute on the 101 was brutal again this morning.", "expected_facts": ["101"]}

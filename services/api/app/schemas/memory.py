@@ -141,9 +141,11 @@ class MemoryUsageTrace(BaseModel):
 
 # ── API contracts ────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
-    tenant_id: str
-    user_id: str
-    message: str
+    # max_length caps bound abuse / oversized payloads (P2.4). No min_length so odd
+    # ids (empty, wildcard) are handled by scoping, not rejected with 422.
+    tenant_id: str = Field(max_length=200)
+    user_id: str = Field(max_length=200)
+    message: str = Field(max_length=8000)
     temporary_chat: bool = False
     conversation_id: str | None = None
     # Audience/clearance for this session (v1.9, ADR-023). The Recall Gate admits a
@@ -225,9 +227,9 @@ class ChatResponse(BaseModel):
 
 
 class MemoryPatch(BaseModel):
-    tenant_id: str
-    user_id: str
-    content: str | None = None
+    tenant_id: str = Field(max_length=200)
+    user_id: str = Field(max_length=200)
+    content: str | None = Field(default=None, max_length=8000)
     importance: int | None = Field(None, ge=0, le=10)
     confidence: float | None = Field(None, ge=0.0, le=1.0)
     status: Status | None = None  # approve→active, reject→rejected, archive→archived

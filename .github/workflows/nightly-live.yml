@@ -1,0 +1,64 @@
+name: Nightly live-provider smoke
+
+# Validates the extraction pipeline against a REAL provider once a day so the README
+# can honestly say "validated nightly against live providers". Cheap (a couple dozen
+# short prompts). Skips cleanly when the API key secret is absent (forks / no secret),
+# and opens a tracking issue on failure.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live-smoke:
+    name: OpenAI extraction smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Detect API key secret
+        id: check
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY not set — skipping the live smoke."
+          fi
+
+      - name: Install API deps
+        if: steps.check.outputs.has_key == 'true'
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Extraction quality vs OpenAI (recall gate)
+        if: steps.check.outputs.has_key == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MEMORYOPS_LLM_PROVIDER: openai
+        run: python evals/run_extraction_quality.py --provider openai --min-recall 0.7
+
+      - name: Open an issue on failure
+        if: failure() && steps.check.outputs.has_key == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "Nightly live-provider smoke failed ($(date -u +%Y-%m-%d))" \
+            --body "The nightly OpenAI extraction smoke failed. See the run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label "nightly-smoke" || echo "could not open issue (label may not exist)"

@@ -60,6 +60,13 @@ re-deriving their own caveats.
   the production roadmap, not in the box.
 - Workers run on a thin lease/scheduler runtime, not Celery/Temporal; there is no
   external queue/broker.
+- **Write + audit are not yet a single transaction.** On the Postgres backend the
+  memory write (`create_memory`) and its audit event (`add_audit`) commit separately,
+  so a process crash *between* them could leave a stored memory without its audit row
+  (an invariant #7 gap under partial failure — surfaced by `tests/test_chaos.py`). The
+  happy path always audits; the fix is a repository unit-of-work that spans both
+  writes, tracked for a future release. Retrieval/degradation and the deletion
+  guarantee are already proven under injected failure (`tests/test_chaos.py`).
 
 ## Demo surfaces
 

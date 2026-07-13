@@ -21,6 +21,22 @@ Send identity as headers (`X-MemoryOps-Tenant`/`X-MemoryOps-User`) or a bearer J
 (`Authorization: Bearer <token>`). Additive: no request/response *shape* changes, only
 these status codes when auth is on. See [auth-adapters.md](auth-adapters.md).
 
+## Rate limits & request hygiene (P2.4)
+
+In-process, dependency-free protection for the public deployment (toggle with
+`MEMORYOPS_RATE_LIMIT_ENABLED`, on by default). For multi-instance deployments put a
+gateway/Redis limiter in front.
+
+| Limit | Default | Env | Response |
+|-------|---------|-----|----------|
+| Per client IP, all `/api/*` | 120 / min | `MEMORYOPS_RATE_LIMIT_PER_MINUTE` | `429` + `Retry-After` |
+| `POST /api/chat`, per tenant/IP | 30 / min | `MEMORYOPS_RATE_LIMIT_CHAT_PER_MINUTE` | `429` + `Retry-After` |
+| `/api/evals/*`, per IP | 6 / min | `MEMORYOPS_RATE_LIMIT_EVALS_PER_MINUTE` | `429` + `Retry-After` |
+| Request body on `/api/*` | 64 KB | `MEMORYOPS_MAX_REQUEST_BYTES` | `413` |
+| `message` / memory `content` length | 8000 chars | (schema `max_length`) | `422` |
+
+Client IP is read from `X-Forwarded-For` (first hop) when present, else the socket peer.
+
 ## POST /api/chat
 Write + read path for a turn.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from ..auth import enforce_scope
 from ..db import governance as gov
 from ..db import lineage
 from ..db.entities import StoredAudit
@@ -199,6 +200,9 @@ def get_memory_provenance(
 
 @router.patch("/{memory_id}", response_model=MemoryRecord)
 def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> MemoryRecord:
+    # Scope lives in the body, so the query-string middleware can't guard it —
+    # enforce it here (invariant #1). No-op when auth is disabled.
+    enforce_scope(request, patch.tenant_id, patch.user_id)
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
     loop = start_loop_run_sync(
@@ -295,6 +299,9 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
 
 @router.delete("/{memory_id}")
 def delete_memory(memory_id: str, body: DeleteRequest, request: Request) -> dict:
+    # Scope lives in the body, so the query-string middleware can't guard it —
+    # enforce it here (invariant #1). No-op when auth is disabled.
+    enforce_scope(request, body.tenant_id, body.user_id)
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
     loop = start_loop_run_sync(

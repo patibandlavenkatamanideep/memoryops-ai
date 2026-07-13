@@ -1,112 +1,90 @@
-"""Dependency-free JWT verification (HS256/384/512).
+"""JWT verification via PyJWT, with optional JWKS.
 
-MemoryOps does not ship an auth *product* — it verifies the identity an upstream
-issuer already minted. HMAC verification needs only the stdlib, so the default path
-adds no dependency and tests need no external keys. RS256/ES256 (asymmetric / JWKS)
-is supported *iff* `cryptography` is installed; otherwise a clear error tells the
-operator to install it. See `docs/auth-adapters.md`.
+MemoryOps does not ship an auth *product* — it verifies an identity an upstream
+issuer already minted. We delegate the token crypto to **PyJWT** rather than
+hand-rolling signature/again parsing (JWTs have a long history of subtle parser CVEs;
+"dependency-free" buys nothing here). HS* works with PyJWT alone; RS*/ES* and JWKS
+additionally need the `cryptography` package (`pip install "pyjwt[crypto]"`).
+
+PyJWT is imported lazily so the app stays importable when auth is off (the default);
+callers get a clear ``JWTError`` if the token can't be verified. The public
+``decode_jwt`` signature and the ``JWTError`` wrapper are unchanged, so existing
+callers/tests keep working.
 """
 
 from __future__ import annotations
-
-import base64
-import hashlib
-import hmac
-import json
-import time
-
-_HMAC_ALGS = {"HS256": hashlib.sha256, "HS384": hashlib.sha384, "HS512": hashlib.sha512}
 
 
 class JWTError(ValueError):
     """Raised when a token is malformed, has a bad signature, or is expired."""
 
 
-def _b64url_decode(segment: str) -> bytes:
-    padding = "=" * (-len(segment) % 4)
-    return base64.urlsafe_b64decode(segment + padding)
+# Cache one PyJWKClient per JWKS URL — it fetches + caches the issuer's signing keys.
+_JWKS_CLIENTS: dict[str, object] = {}
 
 
-def _verify_hmac(alg: str, signing_input: bytes, signature: bytes, secret: str) -> bool:
-    digest = _HMAC_ALGS[alg]
-    expected = hmac.new(secret.encode("utf-8"), signing_input, digest).digest()
-    return hmac.compare_digest(expected, signature)
-
-
-def _verify_rsa(alg: str, signing_input: bytes, signature: bytes, public_key: str) -> bool:
-    try:  # optional: only needed for asymmetric algorithms
-        from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise JWTError(
-            f"algorithm {alg} needs the 'cryptography' package; "
-            "install it or use an HS* algorithm"
-        ) from exc
-
-    hash_alg = {"RS256": hashes.SHA256(), "RS384": hashes.SHA384(), "RS512": hashes.SHA512()}[alg]
-    key = serialization.load_pem_public_key(public_key.encode("utf-8"))
+def _require_pyjwt():
     try:
-        key.verify(signature, signing_input, padding.PKCS1v15(), hash_alg)
-        return True
-    except InvalidSignature:
-        return False
+        import jwt as pyjwt
+    except ImportError as exc:  # pragma: no cover — PyJWT ships in requirements
+        raise JWTError(
+            "JWT verification needs the 'PyJWT' package; install it "
+            "(or 'pyjwt[crypto]' for RS*/ES*/JWKS)"
+        ) from exc
+    return pyjwt
+
+
+def _jwks_signing_key(token: str, jwks_url: str):
+    _require_pyjwt()
+    try:
+        from jwt import PyJWKClient
+    except ImportError as exc:  # pragma: no cover
+        raise JWTError("JWKS needs 'pyjwt[crypto]' (cryptography)") from exc
+    client = _JWKS_CLIENTS.get(jwks_url)
+    if client is None:
+        client = PyJWKClient(jwks_url, cache_keys=True)
+        _JWKS_CLIENTS[jwks_url] = client
+    try:
+        return client.get_signing_key_from_jwt(token).key
+    except Exception as exc:  # noqa: BLE001 — surface any JWKS failure as JWTError
+        raise JWTError(f"could not resolve JWKS signing key: {exc}") from exc
 
 
 def decode_jwt(
     token: str,
     *,
-    key: str,
+    key: str = "",
     algorithms: list[str],
     audience: str | None = None,
     issuer: str | None = None,
     leeway: int = 60,
-    now: float | None = None,
+    now: float | None = None,  # kept for signature compatibility; PyJWT uses the clock
+    jwks_url: str | None = None,
 ) -> dict:
     """Verify signature + standard claims and return the payload.
 
-    `key` is the shared secret (HS*) or PEM public key (RS*). Raises `JWTError` on
-    any failure — a caller should treat that as 401, never as a server error.
+    `key` is the shared secret (HS*) or PEM public key (RS*/ES*). When `jwks_url` is
+    given, the signing key is resolved from the issuer's JWKS instead. Raises
+    `JWTError` on any failure — a caller should treat that as 401, never as a 500.
     """
     if not token or token.count(".") != 2:
         raise JWTError("token is not a well-formed JWT")
-    header_b64, payload_b64, sig_b64 = token.split(".")
+
+    pyjwt = _require_pyjwt()
+    signing_key = _jwks_signing_key(token, jwks_url) if jwks_url else key
     try:
-        header = json.loads(_b64url_decode(header_b64))
-        payload = json.loads(_b64url_decode(payload_b64))
-        signature = _b64url_decode(sig_b64)
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise JWTError("token segments are not valid base64url/JSON") from exc
-
-    alg = header.get("alg")
-    if alg not in algorithms:
-        raise JWTError(f"algorithm '{alg}' is not in the allowed set {algorithms}")
-
-    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-    if alg in _HMAC_ALGS:
-        valid = _verify_hmac(alg, signing_input, signature, key)
-    elif alg in ("RS256", "RS384", "RS512"):
-        valid = _verify_rsa(alg, signing_input, signature, key)
-    else:
-        raise JWTError(f"unsupported algorithm '{alg}'")
-    if not valid:
-        raise JWTError("signature verification failed")
-
-    now = time.time() if now is None else now
-    exp = payload.get("exp")
-    if exp is not None and now > float(exp) + leeway:
-        raise JWTError("token has expired")
-    nbf = payload.get("nbf")
-    if nbf is not None and now < float(nbf) - leeway:
-        raise JWTError("token is not yet valid (nbf)")
-    if audience is not None:
-        aud = payload.get("aud")
-        aud_set = set(aud) if isinstance(aud, list) else {aud}
-        if audience not in aud_set:
-            raise JWTError("token audience mismatch")
-    if issuer is not None and payload.get("iss") != issuer:
-        raise JWTError("token issuer mismatch")
-    return payload
+        return pyjwt.decode(
+            token,
+            signing_key,
+            algorithms=list(algorithms),
+            audience=audience,
+            issuer=issuer,
+            leeway=leeway,
+            # Match the previous behavior: only check aud/iss when the caller asks.
+            options={"verify_aud": audience is not None, "verify_iss": issuer is not None},
+        )
+    except pyjwt.PyJWTError as exc:
+        raise JWTError(str(exc)) from exc
 
 
 def claim_path(payload: dict, dotted: str) -> str | None:

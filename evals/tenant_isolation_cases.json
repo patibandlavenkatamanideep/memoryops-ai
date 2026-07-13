@@ -1,0 +1,127 @@
+[
+  {
+    "id": "iso-cross-tenant-basic",
+    "kind": "isolation",
+    "tenant_id": "acme",
+    "user_id": "alice",
+    "planted": [{"tenant_id": "globex", "user_id": "bob", "message": "Remember I prefer the globex staging cluster for all my deploys."}],
+    "probe_query": "Which cluster do I prefer for deploys?"
+  },
+  {
+    "id": "iso-cross-user-same-tenant",
+    "kind": "isolation",
+    "tenant_id": "acme",
+    "user_id": "alice",
+    "planted": [{"tenant_id": "acme", "user_id": "carol", "message": "Remember my home address is 42 Carol Lane."}],
+    "probe_query": "What is my home address?"
+  },
+  {
+    "id": "iso-cross-user-wildcard",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "acme", "user_id": "dave", "message": "Remember my salary is 210000."}],
+    "probe_tenant_id": "acme",
+    "probe_user_id": "%",
+    "probe_query": "What is my salary?"
+  },
+  {
+    "id": "iso-probe-tenant-wildcard",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the launch code is red-oscar-7."}],
+    "probe_tenant_id": "%",
+    "probe_user_id": "%",
+    "probe_query": "What is the launch code?"
+  },
+  {
+    "id": "iso-probe-tenant-sql-or",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the vault pin is 9931."}],
+    "probe_tenant_id": "' OR '1'='1",
+    "probe_user_id": "' OR '1'='1",
+    "probe_query": "What is the vault pin?"
+  },
+  {
+    "id": "iso-probe-tenant-sql-comment",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember my recovery phrase is coral-piano-glass."}],
+    "probe_tenant_id": "x'; DROP TABLE memory_records; --",
+    "probe_query": "What is my recovery phrase?"
+  },
+  {
+    "id": "iso-probe-tenant-truthy-injection",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the door code is 5567."}],
+    "probe_tenant_id": "%' OR tenant_id IS NOT NULL --",
+    "probe_query": "What is the door code?"
+  },
+  {
+    "id": "iso-probe-tenant-empty",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember my passport number is X1234567."}],
+    "probe_tenant_id": "",
+    "probe_user_id": "",
+    "probe_query": "What is my passport number?"
+  },
+  {
+    "id": "iso-probe-tenant-whitespace",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the safe combo is 12-24-36."}],
+    "probe_tenant_id": "   ",
+    "probe_query": "What is the safe combo?"
+  },
+  {
+    "id": "iso-probe-tenant-padding",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember I always take the 7am train from Victim Station."}],
+    "probe_tenant_id": " victim_tenant ",
+    "probe_query": "Which train do I take?"
+  },
+  {
+    "id": "iso-probe-tenant-case-variant",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the wifi password is hunter2-victim."}],
+    "probe_tenant_id": "VICTIM_TENANT",
+    "probe_query": "What is the wifi password?"
+  },
+  {
+    "id": "iso-probe-tenant-unicode-lookalike",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember my bank account is 000123456."}],
+    "probe_tenant_id": "victim_tenаnt",
+    "probe_query": "What is my bank account?"
+  },
+  {
+    "id": "iso-probe-tenant-newline",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "victim_tenant", "user_id": "victim", "message": "Remember the alarm code is 8080."}],
+    "probe_tenant_id": "victim_tenant\n",
+    "probe_query": "What is the alarm code?"
+  },
+  {
+    "id": "iso-probe-user-injection",
+    "kind": "isolation",
+    "planted": [{"tenant_id": "acme", "user_id": "erin", "message": "Remember my private diary key is orchid-88."}],
+    "probe_tenant_id": "acme",
+    "probe_user_id": "' OR 1=1 --",
+    "probe_query": "What is my diary key?"
+  },
+  {
+    "id": "iso-multi-tenant-plant-clean-probe",
+    "kind": "isolation",
+    "tenant_id": "cleanco",
+    "user_id": "zoe",
+    "planted": [
+      {"tenant_id": "globex", "user_id": "bob", "message": "Remember globex secret is g-777."},
+      {"tenant_id": "initech", "user_id": "mike", "message": "Remember initech secret is i-888."},
+      {"tenant_id": "umbrella", "user_id": "ada", "message": "Remember umbrella secret is u-999."}
+    ],
+    "probe_query": "What secrets do you know about me?"
+  },
+  {
+    "id": "iso-cross-tenant-same-username",
+    "kind": "isolation",
+    "tenant_id": "acme",
+    "user_id": "shared_name",
+    "planted": [{"tenant_id": "globex", "user_id": "shared_name", "message": "Remember my badge id is G-badge-5."}],
+    "probe_query": "What is my badge id?"
+  }
+]
