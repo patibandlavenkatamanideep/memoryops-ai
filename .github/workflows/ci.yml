@@ -202,7 +202,7 @@ jobs:
 
       - name: Upload perf-smoke results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: perf-smoke
           path: perf-smoke.json
