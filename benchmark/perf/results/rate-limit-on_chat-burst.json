@@ -1,0 +1,32 @@
+{
+  "label": "rate-limit-ON chat burst",
+  "base_url": "http://127.0.0.1:8098",
+  "requests_per_scenario": 100,
+  "seed": 0,
+  "server_rss_mb": {
+    "before": null,
+    "after": null
+  },
+  "generated_at": "2026-07-13T06:06:50Z",
+  "scenarios": [
+    {
+      "operation": "chat",
+      "concurrency": 10,
+      "n": 100,
+      "errors": 70,
+      "error_rate": 0.7,
+      "wall_s": 1.8926,
+      "rps": 52.8,
+      "p50_ms": 4.96,
+      "p95_ms": 1040.047,
+      "p99_ms": 1788.137,
+      "min_ms": 1.497,
+      "mean_ms": 183.948,
+      "max_ms": 1789.391,
+      "status_counts": {
+        "200": 30,
+        "429": 70
+      }
+    }
+  ]
+}

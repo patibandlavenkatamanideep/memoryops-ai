@@ -1,0 +1,283 @@
+{
+  "label": "in-memory/stub/ratelimit-off/hybrid",
+  "base_url": "http://127.0.0.1:8099",
+  "requests_per_scenario": 400,
+  "seed": 0,
+  "server_rss_mb": {
+    "before": 37.2,
+    "after": 233.7
+  },
+  "generated_at": "2026-07-13T06:03:44Z",
+  "scenarios": [
+    {
+      "operation": "write",
+      "concurrency": 1,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 6.4256,
+      "rps": 62.3,
+      "p50_ms": 13.595,
+      "p95_ms": 23.417,
+      "p99_ms": 24.93,
+      "min_ms": 2.135,
+      "mean_ms": 13.553,
+      "max_ms": 26.811,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "write",
+      "concurrency": 5,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 10.3037,
+      "rps": 38.8,
+      "p50_ms": 124.951,
+      "p95_ms": 133.163,
+      "p99_ms": 145.353,
+      "min_ms": 53.926,
+      "mean_ms": 125.177,
+      "max_ms": 146.942,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "write",
+      "concurrency": 10,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 11.2751,
+      "rps": 35.5,
+      "p50_ms": 279.948,
+      "p95_ms": 346.835,
+      "p99_ms": 374.682,
+      "min_ms": 40.715,
+      "mean_ms": 277.817,
+      "max_ms": 412.741,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "write",
+      "concurrency": 25,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 12.4362,
+      "rps": 32.2,
+      "p50_ms": 820.035,
+      "p95_ms": 973.839,
+      "p99_ms": 1005.582,
+      "min_ms": 119.642,
+      "mean_ms": 761.495,
+      "max_ms": 1079.299,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "write",
+      "concurrency": 50,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 13.9844,
+      "rps": 28.6,
+      "p50_ms": 1717.213,
+      "p95_ms": 2104.136,
+      "p99_ms": 2169.663,
+      "min_ms": 260.57,
+      "mean_ms": 1697.666,
+      "max_ms": 2271.807,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 1,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 16.5123,
+      "rps": 24.2,
+      "p50_ms": 37.967,
+      "p95_ms": 42.605,
+      "p99_ms": 46.651,
+      "min_ms": 35.077,
+      "mean_ms": 38.448,
+      "max_ms": 73.758,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 5,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 16.3369,
+      "rps": 24.5,
+      "p50_ms": 200.159,
+      "p95_ms": 246.128,
+      "p99_ms": 300.06,
+      "min_ms": 73.887,
+      "mean_ms": 200.337,
+      "max_ms": 344.711,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 10,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 17.5138,
+      "rps": 22.8,
+      "p50_ms": 448.348,
+      "p95_ms": 533.983,
+      "p99_ms": 576.857,
+      "min_ms": 78.158,
+      "mean_ms": 433.768,
+      "max_ms": 590.803,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 25,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 19.7967,
+      "rps": 20.2,
+      "p50_ms": 1301.304,
+      "p95_ms": 1553.067,
+      "p99_ms": 1605.891,
+      "min_ms": 181.139,
+      "mean_ms": 1213.546,
+      "max_ms": 1648.19,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 50,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 22.8011,
+      "rps": 17.5,
+      "p50_ms": 2740.46,
+      "p95_ms": 3413.665,
+      "p99_ms": 3858.544,
+      "min_ms": 141.698,
+      "mean_ms": 2749.065,
+      "max_ms": 4002.233,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "chat",
+      "concurrency": 1,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 26.5476,
+      "rps": 15.1,
+      "p50_ms": 62.188,
+      "p95_ms": 72.781,
+      "p99_ms": 87.706,
+      "min_ms": 54.266,
+      "mean_ms": 63.477,
+      "max_ms": 98.767,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "chat",
+      "concurrency": 5,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 27.229,
+      "rps": 14.7,
+      "p50_ms": 337.615,
+      "p95_ms": 416.862,
+      "p99_ms": 486.054,
+      "min_ms": 106.916,
+      "mean_ms": 336.358,
+      "max_ms": 556.206,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "chat",
+      "concurrency": 10,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 29.5945,
+      "rps": 13.5,
+      "p50_ms": 760.233,
+      "p95_ms": 942.226,
+      "p99_ms": 1005.653,
+      "min_ms": 243.467,
+      "mean_ms": 735.176,
+      "max_ms": 1103.389,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "chat",
+      "concurrency": 25,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 32.1044,
+      "rps": 12.5,
+      "p50_ms": 2001.859,
+      "p95_ms": 2327.326,
+      "p99_ms": 2653.653,
+      "min_ms": 401.555,
+      "mean_ms": 1973.343,
+      "max_ms": 2669.816,
+      "status_counts": {
+        "200": 400
+      }
+    },
+    {
+      "operation": "chat",
+      "concurrency": 50,
+      "n": 400,
+      "errors": 0,
+      "error_rate": 0.0,
+      "wall_s": 34.4358,
+      "rps": 11.6,
+      "p50_ms": 4175.492,
+      "p95_ms": 4985.633,
+      "p99_ms": 5276.944,
+      "min_ms": 2132.727,
+      "mean_ms": 4177.134,
+      "max_ms": 5604.171,
+      "status_counts": {
+        "200": 400
+      }
+    }
+  ]
+}

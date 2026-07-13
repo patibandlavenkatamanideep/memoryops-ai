@@ -1,0 +1,8 @@
+{
+  "label": "retrieval latency vs store size (in-memory, linear scan)",
+  "note": "Seeding beyond ~1k is O(n^2) via the HTTP write path and was not run to 5k/10k locally; the O(n) trend is already visible. The production answer is the pgvector ANN path (follow-up).",
+  "points": [
+    {"store_size_approx": 100,  "retrieval_p50_ms": 75.81,  "retrieval_p95_ms": 99.33},
+    {"store_size_approx": 1000, "retrieval_p50_ms": 193.16, "retrieval_p95_ms": 321.93}
+  ]
+}
