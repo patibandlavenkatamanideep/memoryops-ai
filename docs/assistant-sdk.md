@@ -1,4 +1,4 @@
-# Assistant SDK + Integration Examples (v0.11)
+# Assistant SDK + Integration Examples (1.0.0)
 
 > Makes MemoryOps easy to adopt: a typed Python client over the governed HTTP API,
 > plus runnable integration examples. The SDK adds **no** governance of its own —
@@ -8,10 +8,11 @@
 
 ## Why
 
-Through v0.10 MemoryOps was a deep, governed backend, but adopting it meant
+Before the stable SDK, MemoryOps was a deep, governed backend, but adopting it meant
 hand-writing HTTP calls and remembering to inject the tenant/user scope on every
-request. v0.11 closes that gap with `memoryops-sdk`: construct a client once with
-your scope, then call `mo.chat(...)`, `mo.list_memories()`, `mo.set_legal_hold(...)`.
+request. The `memoryops-sdk` 1.0.0 contract closes that gap: construct a client once
+with your scope, then call `mo.chat(...)`, `mo.list_memories()`,
+`mo.set_legal_hold(...)`.
 
 ```text
 memoryops-sdk (this) = thin typed client over the governed API

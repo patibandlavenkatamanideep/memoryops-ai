@@ -32,6 +32,28 @@ There are **two independent tracks** (see
    gh release create v0.1 --title "MemoryOps AI v0.1 — <summary>" --notes-file notes.md
    ```
 
+## SDK release checklist
+
+The Python SDK publishes through PyPI Trusted Publishing, not a long-lived API
+token. Configure PyPI once with:
+
+- project: `memoryops-sdk`
+- owner/repository: `patibandlavenkatamanideep/memoryops-ai`
+- workflow: `.github/workflows/publish-sdk.yml`
+- environment: `pypi`
+
+Then release the SDK:
+
+```bash
+gh workflow run publish-sdk.yml -f publish=false
+git tag -a sdk-v1.0.0 -m "memoryops-sdk 1.0.0"
+git push origin sdk-v1.0.0
+python3 -m venv /tmp/memoryops-pypi-check
+source /tmp/memoryops-pypi-check/bin/activate
+pip install memoryops-sdk==1.0.0
+python3 -c "import memoryops; print(memoryops.__version__)"
+```
+
 ## Release notes template
 
 ```md

@@ -16,7 +16,7 @@ user message ─▶ recall (governed) ─▶ agent (LLM) ─▶ remember (govern
 
 ```bash
 pip install langgraph langchain-core
-pip install -e packages/memoryops-sdk            # the MemoryOps SDK
+pip install memoryops-sdk                        # the MemoryOps SDK
 
 # Run a MemoryOps API in another terminal (no infra, no keys):
 cd services/api && MEMORYOPS_STORAGE=memory uvicorn app.main:app

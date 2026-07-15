@@ -9,8 +9,10 @@ into a public, reproducible artifact. A new **benchmark** (`benchmark/run_benchm
 reuses the real eval harness (no new eval logic) and scores every case into named
 governance suites — **deletion_and_leakage**, **tenant_isolation**, **context_admission**,
 **policy_governance**, **retrieval_quality** — emitting a human scorecard/leaderboard, a
-`--json` machine format, and a committed `benchmark/SCORECARD.md` (currently **32/32,
-100%, critical suites perfect**). The two **critical** suites (deletion/leakage +
+`--json` machine format, and a committed `benchmark/SCORECARD.md`. The **v2.2
+release** benchmark was **32/32 (100%), critical suites perfect**; **current main**
+is **50/50 (100%)** after the tenant-isolation and policy-governance suites were
+expanded. The two **critical** suites (deletion/leakage +
 tenant isolation) must be perfect or the benchmark exits non-zero, and a test asserts
 **every eval kind maps to a suite** so coverage can't silently drop. Suites are defined
 by outcome, so another memory system can implement the same case kinds and fill in the

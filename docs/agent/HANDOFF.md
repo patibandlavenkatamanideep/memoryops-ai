@@ -1,6 +1,6 @@
 # Agent Handoff — MemoryOps AI
 
-_Last updated: 2026-06-22 (end of v1.0 build; PR #12 open). v0.11 + v0.12 merged + tagged._
+_Last updated: 2026-06-22 (end of v1.0 build; PR #12 open). SDK 1.0.0 + playground merged + tagged._
 
 ## Current state (verified)
 
@@ -12,7 +12,7 @@ _Last updated: 2026-06-22 (end of v1.0 build; PR #12 open). v0.11 + v0.12 merged
 - **Working tree:** clean except this untracked HANDOFF.
 
 ### Milestone status — ALL FEATURE MILESTONES SHIPPED
-- v0.9 dashboard, v0.10 retention, v0.11 SDK (PR #10), v0.12 playground (PR #11) —
+- v0.9 dashboard, v0.10 retention, SDK 1.0.0 (PR #10), v0.12 playground (PR #11) —
   all **merged + tagged**.
 - v1.0 production-ready runtime — **PR #12 open** (the last milestone).
 
@@ -68,6 +68,6 @@ None. Everything green first pass.
 
 ## Pointers
 - v1.0 docs: `CHANGELOG.md`, `docs/api-stability.md`, `docs/production-readiness.md`, `docs/limitations.md`.
-- Surfaces: `apps/web` (official UI), `apps/results-dashboard` (v0.9 evidence), `apps/playground` (v0.12 demo), `packages/memoryops-sdk` (v0.11 SDK).
+- Surfaces: `apps/web` (official UI), `apps/results-dashboard` (v0.9 evidence), `apps/playground` (v0.12 demo), `packages/memoryops-sdk` (SDK 1.0.0).
 - Roadmap/phases: `docs/rollout.md`. PR-gate: `scripts/pr_invariant_gate.py`. Invariants: `CLAUDE.md`.
 - Tooling: no `python`/`pytest` on PATH — use `services/api/.venv/bin/python` (Python 3.14); SDK tests need `PYTHONPATH="$PWD"` from the package dir.

@@ -7,10 +7,10 @@
 
 ## Why v0.12
 
-By v0.11 MemoryOps had the full governed runtime (capture → policy → retrieval →
-lifecycle workers → retention → legal hold → consent → deletion compaction →
-audit) plus a typed SDK. What was still missing was a way to **understand it
-without cloning the repo**.
+By the time the SDK stabilized as `memoryops-sdk` 1.0.0, MemoryOps had the full
+governed runtime (capture → policy → retrieval → lifecycle workers → retention →
+legal hold → consent → deletion compaction → audit). What was still missing was a
+way to **understand it without cloning the repo**.
 
 v0.12 adds two public surfaces:
 
@@ -80,7 +80,7 @@ flowchart LR
 - **Production-capable in the real product:** Postgres + pgvector with enforced
   RLS, the worker runtime (leases/retries/dead-letter), provider LLM/embedding
   adapters, the governance UI, and the typed SDK — all already shipped in
-  v0.3–v0.11. The playground is a *window* onto that behavior, not a reduced
+  the earlier milestones through the 1.0.0 SDK. The playground is a *window* onto that behavior, not a reduced
   reimplementation of it.
 
 ## Honest limitations

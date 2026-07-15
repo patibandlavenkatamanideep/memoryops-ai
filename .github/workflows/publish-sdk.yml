@@ -2,9 +2,9 @@ name: Publish memoryops-sdk
 
 # Publishes the Python SDK (packages/memoryops-sdk) to PyPI.
 #
-# Setup (one time): add a PyPI API token as the repo secret `PYPI_API_TOKEN`
-# (Settings → Secrets and variables → Actions). Then either:
-#   * push a tag like `sdk-v1.0.1`, or
+# Setup (one time): configure PyPI Trusted Publishing for this repository,
+# workflow file, and the `pypi` GitHub environment. Then either:
+#   * push a tag like `sdk-v1.0.0`, or
 #   * run this workflow manually (Actions → Publish memoryops-sdk → Run workflow).
 #
 # A dry run (build only, no upload) happens on manual dispatch with publish=false.
@@ -23,8 +23,8 @@ permissions:
   contents: read
 
 jobs:
-  build-and-publish:
-    name: Build + publish
+  build:
+    name: Build + check + clean install
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -55,15 +55,45 @@ jobs:
           python -m build
           python -m twine check dist/*
 
-      - name: Publish to PyPI
-        if: startsWith(github.ref, 'refs/tags/sdk-v') || inputs.publish
+      - name: Test wheel in a clean environment
         working-directory: packages/memoryops-sdk
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          if [ -z "$TWINE_PASSWORD" ]; then
-            echo "::error::PYPI_API_TOKEN secret is not set — add it in repo settings."
-            exit 1
-          fi
-          python -m twine upload dist/*
+          python -m venv /tmp/memoryops-sdk-wheel-test
+          /tmp/memoryops-sdk-wheel-test/bin/python -m pip install --upgrade pip
+          /tmp/memoryops-sdk-wheel-test/bin/python -m pip install dist/*.whl
+          /tmp/memoryops-sdk-wheel-test/bin/python - <<'PY'
+          import memoryops
+          from memoryops import MemoryOpsClient
+
+          assert memoryops.__version__ == "1.0.0"
+          assert MemoryOpsClient
+          print("memoryops-sdk clean wheel import ok")
+          PY
+
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: memoryops-sdk-dist
+          path: packages/memoryops-sdk/dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/sdk-v') || inputs.publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download distribution artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: memoryops-sdk-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1
+        with:
+          packages-dir: dist
