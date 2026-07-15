@@ -101,7 +101,7 @@ legal hold is a *preservation* control, not crypto-shred. See
 [phase-gates/phase-15-governance.md](phase-gates/phase-15-governance.md),
 [ADR-013](../infra/adr/ADR-013-retention-legal-hold-consent.md).
 
-## Phase 8 — Assistant SDK + integration examples ✅ (v0.11)
+## Phase 8 — Assistant SDK + integration examples ✅ (SDK 1.0.0)
 A typed Python SDK ([`packages/memoryops-sdk/`](../packages/memoryops-sdk)) wraps
 the governed HTTP API (chat, memories, retention/legal-hold/consent, audit,
 metrics, loops, health) and injects the tenant/user scope on every call. The
@@ -147,7 +147,7 @@ changes vs v0.12**.
 | v0.8 | Worker runtime + scheduled lifecycle orchestration | ✅ Done |
 | v0.9 | Public results dashboard + evidence explorer | ✅ Done |
 | v0.10 | Retention policies + legal hold + consent-aware memory | ✅ Done |
-| v0.11 | Assistant SDK + integration examples | ✅ Done |
+| SDK 1.0.0 | Assistant SDK + integration examples | ✅ Done |
 | v0.12 | Interactive playground + hosted demo + public screenshots | ✅ Done |
 | v1.0 | Production-ready governed memory runtime | ✅ Done |
 

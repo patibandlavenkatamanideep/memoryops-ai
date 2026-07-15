@@ -1,4 +1,4 @@
-# MemoryOps AI — Python SDK (v0.11)
+# MemoryOps AI — Python SDK (1.0.0)
 
 A small, typed Python client for the [MemoryOps AI](../../README.md) API. It makes
 the governed memory lifecycle — capture, retrieve, govern, forget, audit — a few
@@ -12,7 +12,7 @@ policy-before-storage, the deletion guarantee, legal hold, consent, and audit.
 ## Install
 
 ```bash
-pip install memoryops-sdk          # from PyPI (once published)
+pip install memoryops-sdk
 # or, from this repo:
 pip install -e packages/memoryops-sdk
 ```

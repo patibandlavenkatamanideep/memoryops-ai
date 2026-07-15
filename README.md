@@ -25,6 +25,8 @@ governed state, not just a vector database.
 Try the MemoryOps Playground — an interactive, demo-safe governed memory runtime
 that runs the real MemoryOps pipeline in-process with ephemeral session state.
 
+![MemoryOps lifecycle demo](docs/images/playground/demo.gif)
+
 > **v2.2 (current).** The public HTTP API and Python SDK are stable under a `1.x`
 > additive-compatibility promise ([docs/api-stability.md](docs/api-stability.md)).
 > See the [CHANGELOG](CHANGELOG.md), [production-readiness](docs/production-readiness.md),
@@ -67,6 +69,38 @@ dependency; "example integration" is import-guarded illustrative glue.
 Full detail (pip extras, env, live-validation): **[docs/adapters/](docs/adapters/README.md)**.
 New to integrating? Start with the **[LangGraph tutorial](docs/tutorials/langgraph.md)**.
 
+## Try MemoryOps
+
+The shortest developer path is: run the governed API locally, install the public
+SDK from PyPI, then make one scoped chat call that captures and later uses memory.
+
+Terminal 1:
+
+```bash
+cd services/api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+MEMORYOPS_STORAGE=memory uvicorn app.main:app --port 8000
+```
+
+Terminal 2:
+
+```bash
+python3 -m venv /tmp/memoryops-try
+source /tmp/memoryops-try/bin/activate
+pip install memoryops-sdk
+python3 - <<'PY'
+from memoryops import MemoryOpsClient
+
+with MemoryOpsClient("http://127.0.0.1:8000", "demo_tenant", "demo_user") as mo:
+    mo.chat("Remember that I prefer metric units.")
+    reply = mo.chat("Which units should I use for distances?")
+    print(reply.assistant_message)
+    print([m.content for m in reply.used_memories])
+PY
+```
+
 ## Benchmark
 
 MemoryOps **measures** governance rather than claiming it. `python benchmark/run_benchmark.py`
@@ -84,6 +118,12 @@ tenant isolation) must be perfect or the benchmark fails. Current scorecard
 
 ★ critical — must be 100%. Reproducible + offline (no API keys); the same suites
 also run against real Postgres + pgvector in CI (the `api-postgres` job).
+The live badge at the top of this README is powered by
+`.github/workflows/benchmark.yml`; run the same check locally with
+`python benchmark/run_benchmark.py`. If it fails, start with the critical suite
+reported in the scorecard, regenerate [benchmark/SCORECARD.md](benchmark/SCORECARD.md)
+with `python benchmark/run_benchmark.py --md benchmark/SCORECARD.md`, and keep
+deletion/leakage plus tenant isolation at 100%.
 
 ---
 
@@ -161,7 +201,7 @@ memoryops-ai/
   apps/playground/     Interactive Streamlit playground over the real pipeline (demo-only, in-memory; v0.12)
   services/api/        FastAPI backend (gateway, extractor, policy broker, write/read path, audit)
   services/worker/     Background jobs (decay, reflection, conflict resolution, compression)
-  packages/memoryops-sdk/ Python SDK + integration examples (quickstart, FastAPI, RAG, agent) (v0.11)
+  packages/memoryops-sdk/ Python SDK 1.0.0 + integration examples (quickstart, FastAPI, RAG, agent)
   packages/shared/     Shared types
   infra/db/            Postgres + pgvector migrations and seed
   infra/adr/           Architecture Decision Records
@@ -505,6 +545,6 @@ Overview: [docs/integrations/README.md](docs/integrations/README.md).
 - [docs/rollout.md](docs/rollout.md) — phased delivery and production roadmap.
 - [docs/results-dashboard.md](docs/results-dashboard.md) — public read-only results/evidence dashboard (v0.9; demo-only, not production UI).
 - [docs/playground.md](docs/playground.md) — interactive public playground + hosted demo (v0.12; demo-only, in-memory, not production UI).
-- [docs/assistant-sdk.md](docs/assistant-sdk.md) — Python SDK + integration examples (v0.11).
+- [docs/assistant-sdk.md](docs/assistant-sdk.md) — Python SDK 1.0.0 + integration examples.
 - [docs/demo-script.md](docs/demo-script.md) — the 6-step demo.
 - [infra/adr/](infra/adr/) — storage, retrieval, policy broker, observability, deletion ADRs.

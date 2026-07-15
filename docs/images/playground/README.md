@@ -1,9 +1,10 @@
 # Playground screenshots — capture guide
 
 This folder holds the public screenshots + demo GIF referenced by the main
-`README.md` hero section. They are produced from a **running** playground, so they
-are an operator step (a live browser is required); this guide makes them
-reproducible.
+`README.md` hero section. Screenshots should be produced from a **running**
+playground, so they are an operator step (a live browser is required); this guide
+makes them reproducible. The checked-in `demo.gif` is a short lifecycle explainer
+asset for the README.
 
 ## Capture
 
