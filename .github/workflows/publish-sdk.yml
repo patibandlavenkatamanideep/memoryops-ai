@@ -116,7 +116,11 @@ jobs:
           PY
 
       - name: Upload distribution artifact
-        uses: actions/upload-artifact@v7
+        # Pinned to match the publish job's download-artifact major exactly — the
+        # artifact actions must share a major to transfer between jobs. v5 is the
+        # pair proven to transfer in this workflow; keep upload/download in lockstep
+        # when Dependabot bumps them (it bumped them to a mismatched v7/v8).
+        uses: actions/upload-artifact@v5
         with:
           name: memoryops-sdk-dist
           path: packages/memoryops-sdk/dist/*
@@ -134,14 +138,36 @@ jobs:
       id-token: write
     steps:
       - name: Download distribution artifact
-        uses: actions/download-artifact@v8
+        # Must match the build job's upload-artifact major (see note there).
+        uses: actions/download-artifact@v5
         with:
           name: memoryops-sdk-dist
           path: dist
 
-      - name: Publish to PyPI
-        # `release/v1` is the action's maintained v1 ref (there is no `v1` tag —
-        # `@v1` fails to resolve). Dependabot (github-actions) tracks updates.
+      # Prefer an API token when PYPI_API_TOKEN is configured; otherwise fall back to
+      # PyPI Trusted Publishing (OIDC, no secret). Reading the secret into an env var
+      # and exporting a plain output avoids referencing secrets in `if:` directly.
+      - name: Select publish auth
+        id: auth
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$PYPI_API_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `release/v1` is the action's maintained v1 ref (there is no `v1` tag).
+      - name: Publish to PyPI (API token)
+        if: steps.auth.outputs.mode == 'token'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI (Trusted Publishing)
+        if: steps.auth.outputs.mode == 'oidc'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
