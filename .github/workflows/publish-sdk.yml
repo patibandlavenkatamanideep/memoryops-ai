@@ -24,7 +24,7 @@ jobs:
     name: Build + check + clean install
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -116,7 +116,7 @@ jobs:
           PY
 
       - name: Upload distribution artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: memoryops-sdk-dist
           path: packages/memoryops-sdk/dist/*
@@ -134,12 +134,14 @@ jobs:
       id-token: write
     steps:
       - name: Download distribution artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: memoryops-sdk-dist
           path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1
+        # `release/v1` is the action's maintained v1 ref (there is no `v1` tag —
+        # `@v1` fails to resolve). Dependabot (github-actions) tracks updates.
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
