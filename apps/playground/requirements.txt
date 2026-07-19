@@ -2,4 +2,4 @@
 # so it needs the API's runtime deps plus Streamlit. No DB / no secrets required
 # (MEMORYOPS_STORAGE defaults to the in-memory store).
 -r ../../services/api/requirements.txt
-streamlit>=1.36,<2
+streamlit>=1.59.2,<2
