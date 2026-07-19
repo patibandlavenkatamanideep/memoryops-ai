@@ -1,6 +1,9 @@
 # Runtime deps — exact pins, mirror of pyproject [project].dependencies.
 # Postgres extras are optional; install with: pip install -r requirements.txt -r requirements-postgres.txt
-fastapi==0.118.0
+fastapi==0.139.2
+# Pinned explicitly (not just transitively via fastapi) so a patched Starlette can't
+# silently regress: <1.0.1 carries the PYSEC-2026-161/248/249/1942/2280/2281 advisories.
+starlette==1.3.1
 uvicorn[standard]==0.37.0
 pydantic==2.13.4
 pydantic-settings==2.6.1

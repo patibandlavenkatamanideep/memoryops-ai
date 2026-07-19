@@ -46,12 +46,10 @@ re-deriving their own caveats.
   (JWT/JWKS via PyJWT, or a trusted upstream header) and enforce tenant/user scope.
   MemoryOps verifies identity and enforces scope; it does not *issue* identity — that
   stays with your IdP. See [auth-adapters.md](auth-adapters.md), [security.md](security.md).
-- **Known dependency debt:** `pip-audit` (in `security-scan.yml`) flags advisories in
-  `starlette` (pulled in transitively by `fastapi==0.118.0`). The fixes require
-  `starlette >=0.49.1`/1.x, which `fastapi 0.118.0` does not permit, so clearing them
-  needs a validated FastAPI upgrade. Until then the specific advisory IDs are an
-  explicit, documented `--ignore-vuln` allowlist in the workflow (the audit still
-  blocks on any *new* advisory). Tracked as a near-term follow-up.
+- **Dependency scanning is clean and unignored.** `pip-audit` (in `security-scan.yml`)
+  runs as a blocking gate with **no `--ignore-vuln` allowlist**. The earlier
+  `starlette` advisories (transitive via `fastapi==0.118.0`) were resolved by upgrading
+  to `fastapi==0.139.2` + a pinned `starlette==1.3.1`, not accepted as debt.
 
 ## Models & retrieval
 

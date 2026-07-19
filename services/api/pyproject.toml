@@ -14,7 +14,9 @@ license = "MIT"
 # pins mean a new version only reaches us via an intentional bump here. Smaller
 # dependency set = smaller blast radius for the next supply-chain attack.
 dependencies = [
-  "fastapi==0.118.0",
+  "fastapi==0.139.2",
+  # Explicit patched pin — <1.0.1 carries the PYSEC-2026 Starlette advisories.
+  "starlette==1.3.1",
   "uvicorn[standard]==0.37.0",
   "pydantic==2.13.4",
   "pydantic-settings==2.6.1",
