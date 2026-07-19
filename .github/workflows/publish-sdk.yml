@@ -120,7 +120,7 @@ jobs:
         # artifact actions must share a major to transfer between jobs. v5 is the
         # pair proven to transfer in this workflow; keep upload/download in lockstep
         # when Dependabot bumps them (it bumped them to a mismatched v7/v8).
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: memoryops-sdk-dist
           path: packages/memoryops-sdk/dist/*
