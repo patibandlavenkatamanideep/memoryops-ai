@@ -84,7 +84,12 @@ async def emit_loop_event(
 ) -> LoopEvent:
     previous = state_from
     if previous is None:
-        prior = repo.list_loop_events(loop_run_id=run.id, limit=1)
+        prior = repo.list_loop_events(
+            loop_run_id=run.id,
+            tenant_id=run.tenant_id,
+            user_id=run.user_id,
+            limit=1,
+        )
         previous = prior[0].state_to if prior else None
     validate_transition(previous, state_to)
     event = LoopEvent(
@@ -100,7 +105,7 @@ async def emit_loop_event(
         audit_event_id=audit_event_id,
         created_at=_now(),
     )
-    repo.add_loop_event(event)
+    repo.add_loop_event(event, tenant_id=run.tenant_id, user_id=run.user_id)
     logger.info(
         reason,
         extra={
@@ -173,7 +178,12 @@ def emit_loop_event_sync(
     evidence: dict[str, Any] | None = None,
     audit_event_id: str | None = None,
 ) -> LoopEvent:
-    prior = repo.list_loop_events(loop_run_id=run.id, limit=1)
+    prior = repo.list_loop_events(
+        loop_run_id=run.id,
+        tenant_id=run.tenant_id,
+        user_id=run.user_id,
+        limit=1,
+    )
     state_from = prior[0].state_to if prior else None
     validate_transition(state_from, state_to)
     event = LoopEvent(
@@ -189,7 +199,7 @@ def emit_loop_event_sync(
         audit_event_id=audit_event_id,
         created_at=_now(),
     )
-    repo.add_loop_event(event)
+    repo.add_loop_event(event, tenant_id=run.tenant_id, user_id=run.user_id)
     return event
 
 

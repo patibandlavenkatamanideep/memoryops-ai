@@ -20,7 +20,7 @@ def list_loops() -> list[LoopDefinition]:
 def list_loop_runs(
     loop_id: str | None = Query(None),
     trace_id: str | None = Query(None),
-    tenant_id: str | None = Query(None),
+    tenant_id: str = Query(...),
     user_id: str | None = Query(None),
     status: str | None = Query(None),
     limit: int = Query(200, le=1000),
@@ -40,6 +40,8 @@ def list_loop_events(
     loop_run_id: str | None = Query(None),
     loop_id: str | None = Query(None),
     trace_id: str | None = Query(None),
+    tenant_id: str = Query(...),
+    user_id: str | None = Query(None),
     event_type: str | None = Query(None),
     limit: int = Query(500, le=2000),
 ) -> list[LoopEvent]:
@@ -47,18 +49,24 @@ def list_loop_events(
         loop_run_id=loop_run_id,
         loop_id=loop_id,
         trace_id=trace_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
         event_type=event_type,
         limit=limit,
     )
 
 
 @router.get("/trace/{trace_id}", response_model=LoopTrace)
-def loop_trace(trace_id: str) -> LoopTrace:
+def loop_trace(
+    trace_id: str,
+    tenant_id: str = Query(...),
+    user_id: str | None = Query(None),
+) -> LoopTrace:
     repo = get_repository()
     return LoopTrace(
         trace_id=trace_id,
-        runs=repo.list_loop_runs(trace_id=trace_id),
-        events=repo.list_loop_events(trace_id=trace_id),
+        runs=repo.list_loop_runs(trace_id=trace_id, tenant_id=tenant_id, user_id=user_id),
+        events=repo.list_loop_events(trace_id=trace_id, tenant_id=tenant_id, user_id=user_id),
     )
 
 

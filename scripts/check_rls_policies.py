@@ -20,7 +20,15 @@ from __future__ import annotations
 
 import os
 
-_PROTECTED = ("memory_records", "memory_audit_logs", "memory_feedback", "memory_settings")
+_PROTECTED = (
+    "memory_records",
+    "memory_audit_logs",
+    "memory_feedback",
+    "memory_settings",
+    "loop_runs",
+    "loop_events",
+    "worker_runs",
+)
 _PROBE_ROLE = "rls_probe_role"
 _PROBE_PW = "rls_probe_pw"
 
@@ -68,7 +76,8 @@ def _ensure_probe_engine(engine, url: str, is_super: bool):
         if not exists:
             conn.execute(text(f"create role {_PROBE_ROLE} login password '{_PROBE_PW}'"))
         conn.execute(text(f"grant usage on schema public to {_PROBE_ROLE}"))
-        conn.execute(text(f"grant select, insert on memory_records to {_PROBE_ROLE}"))
+        for table in _PROTECTED:
+            conn.execute(text(f"grant select, insert on {table} to {_PROBE_ROLE}"))
     return create_engine(_probe_url(url), future=True)
 
 
@@ -78,10 +87,35 @@ def _seed_probe_row(engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("select set_config('app.tenant_id', 'rls_probe_b', true)"))
         conn.execute(text("delete from memory_records where tenant_id = 'rls_probe_b'"))
+        conn.execute(text("delete from loop_events where trace_id = 'rls_probe_trace'"))
+        conn.execute(text("delete from loop_runs where tenant_id = 'rls_probe_b'"))
+        conn.execute(text("delete from worker_runs where tenant_id = 'rls_probe_b'"))
         conn.execute(
             text(
                 "insert into memory_records (tenant_id, user_id, memory_type, content, source) "
                 "values ('rls_probe_b', 'probe_user', 'preference', 'probe', '{}'::jsonb)"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into loop_runs "
+                "(id, loop_id, trace_id, tenant_id, user_id, status) "
+                "values ('rls_probe_loop_b', 'memory.write', 'rls_probe_trace', "
+                "'rls_probe_b', 'probe_user', 'running')"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into loop_events "
+                "(id, loop_run_id, loop_id, trace_id, state_to, event_type, reason) "
+                "values ('rls_probe_event_b', 'rls_probe_loop_b', 'memory.write', "
+                "'rls_probe_trace', 'observed', 'probe', 'probe')"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into worker_runs (id, tenant_id, user_id, status) "
+                "values ('rls_probe_worker_b', 'rls_probe_b', 'probe_user', 'completed')"
             )
         )
 
@@ -93,6 +127,9 @@ def _cleanup_probe_row(engine) -> None:
         with engine.begin() as conn:
             conn.execute(text("select set_config('app.tenant_id', 'rls_probe_b', true)"))
             conn.execute(text("delete from memory_records where tenant_id = 'rls_probe_b'"))
+            conn.execute(text("delete from loop_events where trace_id = 'rls_probe_trace'"))
+            conn.execute(text("delete from loop_runs where tenant_id = 'rls_probe_b'"))
+            conn.execute(text("delete from worker_runs where tenant_id = 'rls_probe_b'"))
     except Exception:  # noqa: BLE001 — best-effort cleanup
         pass
 
@@ -161,14 +198,23 @@ def main() -> int:
         probe_engine = _ensure_probe_engine(engine, url, is_super)
         with probe_engine.connect() as pconn:
             pconn.execute(text("select set_config('app.tenant_id', 'rls_probe_a', true)"))
-            leaked = pconn.execute(
-                text(
-                    "select count(*) from memory_records "
-                    "where tenant_id <> current_setting('app.tenant_id', true)"
-                )
-            ).scalar_one()
-        if leaked and leaked > 0:
-            failures.append(f"cross-tenant leak: {leaked} foreign rows visible under RLS")
+            leak_checks = {
+                "memory_records": pconn.execute(
+                    text("select count(*) from memory_records where tenant_id = 'rls_probe_b'")
+                ).scalar_one(),
+                "loop_runs": pconn.execute(
+                    text("select count(*) from loop_runs where tenant_id = 'rls_probe_b'")
+                ).scalar_one(),
+                "loop_events": pconn.execute(
+                    text("select count(*) from loop_events where id = 'rls_probe_event_b'")
+                ).scalar_one(),
+                "worker_runs": pconn.execute(
+                    text("select count(*) from worker_runs where tenant_id = 'rls_probe_b'")
+                ).scalar_one(),
+            }
+        leaked = {table: count for table, count in leak_checks.items() if count}
+        if leaked:
+            failures.append(f"cross-tenant leak under RLS: {leaked}")
         else:
             print("[OK]   behavioral probe: no cross-tenant rows visible (non-superuser role)")
     except Exception as exc:  # noqa: BLE001

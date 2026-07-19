@@ -8,6 +8,8 @@ isolation and deletion guarantees are enforced for all callers.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 
 from ..loops.types import LoopEvent, LoopRun
@@ -15,6 +17,16 @@ from .entities import StoredAudit, StoredMemory, StoredSettings, WorkerLease, Wo
 
 
 class Repository(ABC):
+    @contextmanager
+    def transaction(self, tenant_id: str, user_id: str = "") -> Iterator[None]:
+        """Atomic unit of work for lifecycle mutations plus evidence.
+
+        Backends that do not need an explicit transaction can inherit this
+        no-op context. Postgres overrides it so nested repository writes share
+        one session and one commit.
+        """
+        yield
+
     # ── memory ───────────────────────────────────────────────────────────────
     @abstractmethod
     def create_memory(self, memory: StoredMemory) -> StoredMemory: ...
@@ -183,7 +195,13 @@ class Repository(ABC):
     ) -> list[LoopRun]: ...
 
     @abstractmethod
-    def add_loop_event(self, event: LoopEvent) -> LoopEvent: ...
+    def add_loop_event(
+        self,
+        event: LoopEvent,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> LoopEvent: ...
 
     @abstractmethod
     def list_loop_events(
@@ -192,6 +210,8 @@ class Repository(ABC):
         loop_run_id: str | None = None,
         loop_id: str | None = None,
         trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
         event_type: str | None = None,
         limit: int = 500,
     ) -> list[LoopEvent]: ...

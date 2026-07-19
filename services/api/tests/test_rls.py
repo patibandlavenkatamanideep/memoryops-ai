@@ -88,9 +88,16 @@ def app_engine(admin_engine):
             text(f"grant select, insert, update, delete on all tables in schema public to {_APP_ROLE}")
         )
 
-    # 3. Seed one memory row per tenant (as owner — inserts satisfy the schema; the
-    #    FKs to tenants/users were dropped in migration 008 to match the app repo).
+    # 3. Seed one memory/evidence row per tenant (as owner — inserts satisfy the
+    #    schema; the FKs to tenants/users were dropped in migration 008 to match
+    #    the app repo).
     with admin_engine.begin() as conn:
+        conn.execute(text("delete from loop_events where trace_id = any(:traces)"),
+                     {"traces": ["rls_trace_a", "rls_trace_b"]})
+        conn.execute(text("delete from loop_runs where tenant_id = any(:t)"),
+                     {"t": [_TENANT_A, _TENANT_B]})
+        conn.execute(text("delete from worker_runs where tenant_id = any(:t)"),
+                     {"t": [_TENANT_A, _TENANT_B]})
         conn.execute(text("delete from memory_records where tenant_id = any(:t)"),
                      {"t": [_TENANT_A, _TENANT_B]})
         for tid in (_TENANT_A, _TENANT_B):
@@ -101,11 +108,50 @@ def app_engine(admin_engine):
                 ),
                 {"t": tid, "u": f"user_of_{tid}", "c": f"secret for {tid}"},
             )
+            suffix = "a" if tid == _TENANT_A else "b"
+            conn.execute(
+                text(
+                    "insert into loop_runs "
+                    "(id, loop_id, trace_id, tenant_id, user_id, status) "
+                    "values (:id, 'memory.write', :trace, :t, :u, 'running')"
+                ),
+                {
+                    "id": f"rls_loop_{suffix}",
+                    "trace": f"rls_trace_{suffix}",
+                    "t": tid,
+                    "u": f"user_of_{tid}",
+                },
+            )
+            conn.execute(
+                text(
+                    "insert into loop_events "
+                    "(id, loop_run_id, loop_id, trace_id, state_to, event_type, reason) "
+                    "values (:id, :run, 'memory.write', :trace, 'observed', 'probe', 'probe')"
+                ),
+                {
+                    "id": f"rls_event_{suffix}",
+                    "run": f"rls_loop_{suffix}",
+                    "trace": f"rls_trace_{suffix}",
+                },
+            )
+            conn.execute(
+                text(
+                    "insert into worker_runs (id, tenant_id, user_id, status) "
+                    "values (:id, :t, :u, 'completed')"
+                ),
+                {"id": f"rls_worker_{suffix}", "t": tid, "u": f"user_of_{tid}"},
+            )
 
     app_eng = create_engine(_app_url(_database_url()), future=True)
     yield app_eng
     app_eng.dispose()
     with admin_engine.begin() as conn:
+        conn.execute(text("delete from loop_events where trace_id = any(:traces)"),
+                     {"traces": ["rls_trace_a", "rls_trace_b"]})
+        conn.execute(text("delete from loop_runs where tenant_id = any(:t)"),
+                     {"t": [_TENANT_A, _TENANT_B]})
+        conn.execute(text("delete from worker_runs where tenant_id = any(:t)"),
+                     {"t": [_TENANT_A, _TENANT_B]})
         conn.execute(text("delete from memory_records where tenant_id = any(:t)"),
                      {"t": [_TENANT_A, _TENANT_B]})
 
@@ -142,12 +188,69 @@ def test_rls_write_check_blocks_foreign_tenant(app_engine):
             )
 
 
+def test_operational_evidence_rls_blocks_cross_tenant_reads(app_engine):
+    with app_engine.begin() as conn:
+        conn.execute(text("select set_config('app.tenant_id', :t, true)"), {"t": _TENANT_A})
+        loop_tenants = conn.execute(text("select tenant_id from loop_runs")).scalars().all()
+        worker_tenants = conn.execute(text("select tenant_id from worker_runs")).scalars().all()
+        event_ids = conn.execute(text("select id from loop_events")).scalars().all()
+
+    assert loop_tenants == [_TENANT_A]
+    assert worker_tenants == [_TENANT_A]
+    assert event_ids == ["rls_event_a"]
+
+
+def test_operational_evidence_rls_blocks_foreign_writes(app_engine):
+    import sqlalchemy
+
+    with pytest.raises(sqlalchemy.exc.DBAPIError):
+        with app_engine.begin() as conn:
+            conn.execute(text("select set_config('app.tenant_id', :t, true)"), {"t": _TENANT_A})
+            conn.execute(
+                text(
+                    "insert into worker_runs (id, tenant_id, user_id, status) "
+                    "values ('rls_worker_forbidden', :t, 'u', 'completed')"
+                ),
+                {"t": _TENANT_B},
+            )
+
+
+def test_loop_event_rls_resolves_scope_through_parent_run(app_engine):
+    import sqlalchemy
+
+    with pytest.raises(sqlalchemy.exc.DBAPIError):
+        with app_engine.begin() as conn:
+            conn.execute(text("select set_config('app.tenant_id', :t, true)"), {"t": _TENANT_A})
+            conn.execute(
+                text(
+                    "insert into loop_events "
+                    "(id, loop_run_id, loop_id, trace_id, state_to, event_type, reason) "
+                    "values ('rls_event_forbidden', 'rls_loop_b', 'memory.write', "
+                    "'rls_trace_forbidden', 'observed', 'probe', 'probe')"
+                )
+            )
+
+
 def test_rls_enabled_and_forced(admin_engine):
     with admin_engine.begin() as conn:
-        enabled, forced = conn.execute(
-            text(
-                "select relrowsecurity, relforcerowsecurity from pg_class "
-                "where relname = 'memory_records'"
+        rows = dict(
+            conn.execute(
+                text(
+                    "select relname, (relrowsecurity and relforcerowsecurity) "
+                    "from pg_class where relname = any(:tables)"
+                ),
+                {
+                    "tables": [
+                        "memory_records",
+                        "memory_audit_logs",
+                        "memory_feedback",
+                        "memory_settings",
+                        "loop_runs",
+                        "loop_events",
+                        "worker_runs",
+                    ]
+                },
             )
-        ).one()
-    assert enabled and forced
+        )
+    assert rows
+    assert all(rows.values())

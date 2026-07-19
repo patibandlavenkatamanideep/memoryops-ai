@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, select, text
@@ -18,7 +19,6 @@ from ..loops.metrics import summarize_loop_runs
 from ..loops.types import LoopEvent, LoopId, LoopRun, LoopState, LoopStatus
 from ..models.sqlalchemy_models import (
     AuditLogORM,
-    Base,
     LoopEventORM,
     LoopRunORM,
     MemoryRecordORM,
@@ -40,6 +40,7 @@ from .repository import Repository
 
 _DELETED = "deleted"
 _ACTIVE = "active"
+_CURRENT_SCHEMA_VERSION = "010_transactional_audit_chain"
 
 
 def _norm(text: str) -> str:
@@ -111,8 +112,84 @@ class PostgresRepository(Repository):
         settings = get_settings()
         self._engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
         self._Session: sessionmaker[Session] = sessionmaker(self._engine, expire_on_commit=False)
-        # Migrations own the canonical schema; create_all is a dev convenience.
-        Base.metadata.create_all(self._engine)
+        self._active_session: ContextVar[Session | None] = ContextVar(
+            "memoryops_pg_session", default=None
+        )
+        self._active_tenant: ContextVar[str] = ContextVar("memoryops_pg_tenant", default="")
+        self._active_user: ContextVar[str] = ContextVar("memoryops_pg_user", default="")
+        self._assert_current_schema()
+
+    def _assert_current_schema(self) -> None:
+        """Fail clearly when the database has not been migrated."""
+        with self._engine.connect() as conn:
+            has_marker = conn.execute(
+                text(
+                    """
+                    select exists (
+                      select 1
+                      from information_schema.tables
+                      where table_schema = 'public'
+                        and table_name = 'memoryops_schema_migrations'
+                    )
+                    """
+                )
+            ).scalar_one()
+            if not has_marker:
+                raise RuntimeError(
+                    "Postgres schema is not migrated: missing "
+                    "memoryops_schema_migrations. Apply infra/db/migrations before startup."
+                )
+            applied = conn.execute(
+                text(
+                    "select 1 from memoryops_schema_migrations "
+                    "where version = :version"
+                ),
+                {"version": _CURRENT_SCHEMA_VERSION},
+            ).scalar()
+            if not applied:
+                raise RuntimeError(
+                    "Postgres schema is outdated: missing migration "
+                    f"{_CURRENT_SCHEMA_VERSION}."
+                )
+
+    @contextmanager
+    def transaction(self, tenant_id: str, user_id: str = "") -> Iterator[None]:
+        active = self._active_session.get()
+        if active is not None:
+            self._validate_active_scope(tenant_id, user_id)
+            yield
+            return
+        with self._Session() as s:
+            self._set_scope(s, tenant_id, user_id)
+            session_token = self._active_session.set(s)
+            tenant_token = self._active_tenant.set(tenant_id or "")
+            user_token = self._active_user.set(user_id or "")
+            try:
+                yield
+                s.commit()
+            except Exception:
+                s.rollback()
+                raise
+            finally:
+                self._active_session.reset(session_token)
+                self._active_tenant.reset(tenant_token)
+                self._active_user.reset(user_token)
+
+    def _set_scope(self, s: Session, tenant_id: str, user_id: str = "") -> None:
+        s.execute(text("select set_config('app.tenant_id', :t, true)"), {"t": tenant_id or ""})
+        s.execute(text("select set_config('app.user_id', :u, true)"), {"u": user_id or ""})
+
+    def _validate_active_scope(self, tenant_id: str, user_id: str = "") -> None:
+        active_tenant = self._active_tenant.get()
+        active_user = self._active_user.get()
+        if tenant_id and active_tenant and tenant_id != active_tenant:
+            raise ValueError("cross-tenant repository call inside active transaction")
+        if user_id and active_user and user_id != active_user:
+            raise ValueError("cross-user repository call inside active transaction")
+
+    def _commit(self, s: Session) -> None:
+        if self._active_session.get() is None:
+            s.commit()
 
     @contextmanager
     def _scoped(self, tenant_id: str, user_id: str = "") -> Iterator[Session]:
@@ -122,13 +199,13 @@ class PostgresRepository(Repository):
         the Row-Level Security policies in migration 004 enforce tenant isolation
         at the database, not just in application code (defense in depth).
         """
+        active = self._active_session.get()
+        if active is not None:
+            self._validate_active_scope(tenant_id, user_id)
+            yield active
+            return
         with self._Session() as s:
-            s.execute(
-                text("select set_config('app.tenant_id', :t, true)"), {"t": tenant_id or ""}
-            )
-            s.execute(
-                text("select set_config('app.user_id', :u, true)"), {"u": user_id or ""}
-            )
+            self._set_scope(s, tenant_id, user_id)
             yield s
 
     # ── memory ───────────────────────────────────────────────────────────────
@@ -154,7 +231,7 @@ class PostgresRepository(Repository):
                 reinforcement_count=memory.reinforcement_count,
             )
             s.add(row)
-            s.commit()
+            self._commit(s)
             return _to_stored(row)
 
     def get_memory(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
@@ -203,7 +280,7 @@ class PostgresRepository(Repository):
             row.weight = memory.weight
             row.reinforcement_count = memory.reinforcement_count
             row.updated_at = datetime.now(UTC)
-            s.commit()
+            self._commit(s)
             return _to_stored(row)
 
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
@@ -215,7 +292,7 @@ class PostgresRepository(Repository):
             now = datetime.now(UTC)
             row.deleted_at = now
             row.updated_at = now
-            s.commit()
+            self._commit(s)
             return _to_stored(row)
 
     def list_deleted_for_compaction(
@@ -264,7 +341,7 @@ class PostgresRepository(Repository):
             row.source = stored.source.model_dump()
             row.extra_metadata = stored.metadata
             row.updated_at = stored.updated_at
-            s.commit()
+            self._commit(s)
             return _to_stored(row)
 
     def find_similar_active(
@@ -318,6 +395,19 @@ class PostgresRepository(Repository):
     # ── audit ────────────────────────────────────────────────────────────────
     def add_audit(self, event: StoredAudit) -> StoredAudit:
         with self._scoped(event.tenant_id, event.user_id or "") as s:
+            from ..evidence.hashchain import GENESIS, compute_entry_hash
+
+            prev_hash = s.scalars(
+                select(AuditLogORM.entry_hash)
+                .where(
+                    AuditLogORM.tenant_id == event.tenant_id,
+                    AuditLogORM.entry_hash != "",
+                )
+                .order_by(AuditLogORM.created_at.desc())
+                .limit(1)
+            ).first() or GENESIS
+            event.prev_hash = prev_hash
+            event.entry_hash = compute_entry_hash(event, prev_hash)
             row = AuditLogORM(
                 id=event.id,
                 tenant_id=event.tenant_id,
@@ -327,9 +417,12 @@ class PostgresRepository(Repository):
                 reason=event.reason,
                 trace_id=event.trace_id,
                 extra_metadata=event.metadata,
+                created_at=event.created_at,
+                prev_hash=event.prev_hash,
+                entry_hash=event.entry_hash,
             )
             s.add(row)
-            s.commit()
+            self._commit(s)
             return event
 
     def list_audit(
@@ -358,6 +451,8 @@ class PostgresRepository(Repository):
                     trace_id=r.trace_id,
                     metadata=r.extra_metadata or {},
                     created_at=r.created_at,
+                    prev_hash=r.prev_hash or "",
+                    entry_hash=r.entry_hash or "",
                 )
                 for r in s.scalars(stmt)
             ]
@@ -384,7 +479,7 @@ class PostgresRepository(Repository):
             row = s.execute(
                 sql, {"key": key, "owner": owner, "now": now, "exp": expires_at}
             ).first()
-            s.commit()
+            self._commit(s)
             return bool(row and row[0] == owner)
 
     def renew_lease(self, key: str, owner: str, *, expires_at: datetime) -> bool:
@@ -393,7 +488,7 @@ class PostgresRepository(Repository):
             if not row or row.owner != owner:
                 return False
             row.expires_at = expires_at
-            s.commit()
+            self._commit(s)
             return True
 
     def release_lease(self, key: str, owner: str) -> None:
@@ -401,7 +496,7 @@ class PostgresRepository(Repository):
             row = s.get(WorkerLeaseORM, key)
             if row and row.owner == owner:
                 s.delete(row)
-                s.commit()
+                self._commit(s)
 
     def get_lease(self, key: str) -> WorkerLease | None:
         with self._Session() as s:
@@ -416,7 +511,7 @@ class PostgresRepository(Repository):
             )
 
     def add_worker_run(self, record: WorkerRunRecord) -> WorkerRunRecord:
-        with self._Session() as s:
+        with self._scoped(record.tenant_id, record.user_id) as s:
             s.add(
                 WorkerRunORM(
                     id=record.id,
@@ -437,7 +532,7 @@ class PostgresRepository(Repository):
                     completed_at=record.completed_at,
                 )
             )
-            s.commit()
+            self._commit(s)
             return record
 
     def list_worker_runs(
@@ -448,10 +543,10 @@ class PostgresRepository(Repository):
         status: str | None = None,
         limit: int = 200,
     ) -> list[WorkerRunRecord]:
-        with self._Session() as s:
-            stmt = select(WorkerRunORM)
-            if tenant_id:
-                stmt = stmt.where(WorkerRunORM.tenant_id == tenant_id)
+        if not tenant_id:
+            raise ValueError("tenant_id is required when listing worker run evidence")
+        with self._scoped(tenant_id, user_id or "") as s:
+            stmt = select(WorkerRunORM).where(WorkerRunORM.tenant_id == tenant_id)
             if user_id:
                 stmt = stmt.where(WorkerRunORM.user_id == user_id)
             if status:
@@ -510,7 +605,7 @@ class PostgresRepository(Repository):
             row.require_approval_for_sensitive = settings.require_approval_for_sensitive
             row.temporary_chat = settings.temporary_chat
             row.updated_at = datetime.now(UTC)
-            s.commit()
+            self._commit(s)
             return settings
 
     # ── metrics ──────────────────────────────────────────────────────────────
@@ -540,7 +635,9 @@ class PostgresRepository(Repository):
 
     # ── loops ────────────────────────────────────────────────────────────────
     def add_loop_run(self, run: LoopRun) -> LoopRun:
-        with self._scoped(run.tenant_id or "", run.user_id or "") as s:
+        if not run.tenant_id:
+            raise ValueError("tenant_id is required for loop run evidence")
+        with self._scoped(run.tenant_id, run.user_id or "") as s:
             row = LoopRunORM(
                 id=run.id,
                 loop_id=run.loop_id.value,
@@ -551,18 +648,20 @@ class PostgresRepository(Repository):
                 extra_metadata=run.metadata,
             )
             s.add(row)
-            s.commit()
+            self._commit(s)
             return run
 
     def update_loop_run(self, run: LoopRun) -> LoopRun:
-        with self._scoped(run.tenant_id or "", run.user_id or "") as s:
+        if not run.tenant_id:
+            raise ValueError("tenant_id is required for loop run evidence")
+        with self._scoped(run.tenant_id, run.user_id or "") as s:
             row = s.get(LoopRunORM, run.id)
             if not row:
                 raise ValueError("loop run not found")
             row.status = run.status.value
             row.ended_at = datetime.fromisoformat(run.ended_at) if run.ended_at else None
             row.extra_metadata = run.metadata
-            s.commit()
+            self._commit(s)
             return run
 
     def list_loop_runs(
@@ -575,14 +674,14 @@ class PostgresRepository(Repository):
         status: str | None = None,
         limit: int = 200,
     ) -> list[LoopRun]:
-        with self._scoped(tenant_id or "", user_id or "") as s:
-            stmt = select(LoopRunORM)
+        if not tenant_id:
+            raise ValueError("tenant_id is required when listing loop run evidence")
+        with self._scoped(tenant_id, user_id or "") as s:
+            stmt = select(LoopRunORM).where(LoopRunORM.tenant_id == tenant_id)
             if loop_id:
                 stmt = stmt.where(LoopRunORM.loop_id == loop_id)
             if trace_id:
                 stmt = stmt.where(LoopRunORM.trace_id == trace_id)
-            if tenant_id:
-                stmt = stmt.where(LoopRunORM.tenant_id == tenant_id)
             if user_id:
                 stmt = stmt.where(LoopRunORM.user_id == user_id)
             if status:
@@ -590,8 +689,21 @@ class PostgresRepository(Repository):
             stmt = stmt.order_by(LoopRunORM.started_at.desc()).limit(limit)
             return [_loop_run_from_row(r) for r in s.scalars(stmt)]
 
-    def add_loop_event(self, event: LoopEvent) -> LoopEvent:
-        with self._scoped("", "") as s:
+    def add_loop_event(
+        self,
+        event: LoopEvent,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> LoopEvent:
+        if not tenant_id:
+            raise ValueError("tenant_id is required for loop event evidence")
+        with self._scoped(tenant_id, user_id or "") as s:
+            parent = s.get(LoopRunORM, event.loop_run_id)
+            if not parent or parent.tenant_id != tenant_id:
+                raise ValueError("loop event parent run not found in tenant scope")
+            if user_id and parent.user_id != user_id:
+                raise ValueError("loop event parent run not found in user scope")
             row = LoopEventORM(
                 id=event.id,
                 loop_run_id=event.loop_run_id,
@@ -605,7 +717,7 @@ class PostgresRepository(Repository):
                 audit_event_id=event.audit_event_id,
             )
             s.add(row)
-            s.commit()
+            self._commit(s)
             return event
 
     def list_loop_events(
@@ -614,17 +726,25 @@ class PostgresRepository(Repository):
         loop_run_id: str | None = None,
         loop_id: str | None = None,
         trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
         event_type: str | None = None,
         limit: int = 500,
     ) -> list[LoopEvent]:
-        with self._scoped("", "") as s:
-            stmt = select(LoopEventORM)
+        if not tenant_id:
+            raise ValueError("tenant_id is required when listing loop event evidence")
+        with self._scoped(tenant_id, user_id or "") as s:
+            stmt = select(LoopEventORM).join(
+                LoopRunORM, LoopRunORM.id == LoopEventORM.loop_run_id
+            ).where(LoopRunORM.tenant_id == tenant_id)
             if loop_run_id:
                 stmt = stmt.where(LoopEventORM.loop_run_id == loop_run_id)
             if loop_id:
                 stmt = stmt.where(LoopEventORM.loop_id == loop_id)
             if trace_id:
                 stmt = stmt.where(LoopEventORM.trace_id == trace_id)
+            if user_id:
+                stmt = stmt.where(LoopRunORM.user_id == user_id)
             if event_type:
                 stmt = stmt.where(LoopEventORM.event_type == event_type)
             stmt = stmt.order_by(LoopEventORM.created_at.desc()).limit(limit)

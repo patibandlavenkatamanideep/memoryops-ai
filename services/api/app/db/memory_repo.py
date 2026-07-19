@@ -6,6 +6,9 @@ scoping on every read, deleted rows excluded from retrieval, append-only audit.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from ..loops.metrics import summarize_loop_runs
@@ -43,6 +46,47 @@ class InMemoryRepository(Repository):
         # The pluggable vector-search seam (v1.7, ADR-021). Defaults to the
         # dependency-free cosine index; an operator can inject an external backend.
         self._vectors: VectorIndex = vector_index or InMemoryVectorIndex()
+        self._transaction_depth = 0
+
+    @contextmanager
+    def transaction(self, tenant_id: str, user_id: str = "") -> Iterator[None]:
+        """Rollback-capable unit of work for the in-memory backend."""
+        if self._transaction_depth:
+            self._transaction_depth += 1
+            try:
+                yield
+            finally:
+                self._transaction_depth -= 1
+            return
+        snapshot = (
+            deepcopy(self._memories),
+            deepcopy(self._audit),
+            deepcopy(self._audit_head),
+            deepcopy(self._settings),
+            deepcopy(self._loop_runs),
+            deepcopy(self._loop_events),
+            deepcopy(self._leases),
+            deepcopy(self._worker_runs),
+            deepcopy(self._vectors),
+        )
+        self._transaction_depth = 1
+        try:
+            yield
+        except Exception:
+            (
+                self._memories,
+                self._audit,
+                self._audit_head,
+                self._settings,
+                self._loop_runs,
+                self._loop_events,
+                self._leases,
+                self._worker_runs,
+                self._vectors,
+            ) = snapshot
+            raise
+        finally:
+            self._transaction_depth = 0
 
     # ── memory ───────────────────────────────────────────────────────────────
     def create_memory(self, memory: StoredMemory) -> StoredMemory:
@@ -310,7 +354,13 @@ class InMemoryRepository(Repository):
             rows = [r for r in rows if r.status.value == status]
         return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
 
-    def add_loop_event(self, event: LoopEvent) -> LoopEvent:
+    def add_loop_event(
+        self,
+        event: LoopEvent,
+        *,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
+    ) -> LoopEvent:
         self._loop_events.append(event)
         return event
 
@@ -320,6 +370,8 @@ class InMemoryRepository(Repository):
         loop_run_id: str | None = None,
         loop_id: str | None = None,
         trace_id: str | None = None,
+        tenant_id: str | None = None,
+        user_id: str | None = None,
         event_type: str | None = None,
         limit: int = 500,
     ) -> list[LoopEvent]:
@@ -330,6 +382,16 @@ class InMemoryRepository(Repository):
             rows = [e for e in rows if e.loop_id.value == loop_id]
         if trace_id:
             rows = [e for e in rows if e.trace_id == trace_id]
+        if tenant_id:
+            allowed_run_ids = {
+                r.id
+                for r in self._loop_runs.values()
+                if r.tenant_id == tenant_id and (user_id is None or r.user_id == user_id)
+            }
+            rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
+        elif user_id:
+            allowed_run_ids = {r.id for r in self._loop_runs.values() if r.user_id == user_id}
+            rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
         if event_type:
             rows = [e for e in rows if e.event_type == event_type]
         return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]
