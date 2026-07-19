@@ -1,9 +1,9 @@
 # Runtime deps — exact pins, mirror of pyproject [project].dependencies.
 # Postgres extras are optional; install with: pip install -r requirements.txt -r requirements-postgres.txt
-fastapi==0.118.0
-uvicorn[standard]==0.37.0
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
 pydantic==2.13.4
-pydantic-settings==2.6.1
+pydantic-settings==2.14.2
 tenacity==9.1.4
 python-dotenv==1.2.2
 # JWT verification (auth adapters, off by default). The [crypto] extra ships the
