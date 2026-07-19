@@ -1,6 +1,6 @@
 # Runtime deps — exact pins, mirror of pyproject [project].dependencies.
 # Postgres extras are optional; install with: pip install -r requirements.txt -r requirements-postgres.txt
-fastapi==0.118.0
+fastapi==0.139.2
 uvicorn[standard]==0.37.0
 pydantic==2.13.4
 pydantic-settings==2.6.1
