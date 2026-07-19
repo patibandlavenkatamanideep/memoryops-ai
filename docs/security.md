@@ -121,8 +121,13 @@ The most dangerous failures for an AI memory system are:
 - Detail may return a soft-deleted row for forensics, but it always carries
   `status=deleted`; it is never listed as active or rendered as active
   (`test_deletion.py`, `test_governance_api.py`).
-- Demo identity (`tenant_demo`/`user_demo`) still comes from `apps/web/lib/api.ts`;
-  real auth/session and RBAC remain on the hardening roadmap below.
+- Identity **verification** and scope enforcement ship as off-by-default auth
+  adapters (`MEMORYOPS_AUTH_MODE=none|trusted_header|jwt`): a JWT/JWKS or trusted-
+  header adapter verifies an externally-minted identity and enforces that every op is
+  scoped to the authenticated tenant/user (401/403, never 500). See
+  [auth-adapters.md](auth-adapters.md), ADR-020. The demo identity
+  (`tenant_demo`/`user_demo`) in `apps/web/lib/api.ts` is the `none`-mode default;
+  identity **issuance** (session/SSO) and **RBAC** remain on the hardening roadmap below.
 
 ### Background lifecycle workers (v0.6)
 - Workers (`services/api/app/workers/`) run **off the chat path** and are tenant +

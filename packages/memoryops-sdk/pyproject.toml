@@ -12,7 +12,14 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "MemoryOps AI" }]
 keywords = ["memoryops", "ai", "memory", "governance", "llm", "agents", "rag"]
-classifiers = ["Development Status :: 5 - Production/Stable"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
 dependencies = ["httpx>=0.24,<1"]
 
 [project.urls]
@@ -24,6 +31,10 @@ dev = ["pytest>=7", "ruff>=0.4"]
 
 [tool.setuptools]
 packages = ["memoryops"]
+
+# Ship the PEP 561 marker so downstream type checkers trust the package's annotations.
+[tool.setuptools.package-data]
+memoryops = ["py.typed"]
 
 [tool.ruff]
 line-length = 100

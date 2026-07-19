@@ -128,3 +128,71 @@ def test_generic_api_error_surfaces_status() -> None:
         with pytest.raises(APIError) as exc:
             mo.metrics()
     assert exc.value.status_code == 500
+
+
+# ── authentication ─────────────────────────────────────────────────────────────
+def _auth_client(handler, **auth_kwargs) -> MemoryOpsClient:
+    transport = httpx.MockTransport(handler)
+    http = httpx.Client(transport=transport, base_url="http://test")
+    return MemoryOpsClient("http://test", "t1", "u1", http_client=http, **auth_kwargs)
+
+
+def test_token_sets_bearer_authorization_on_every_request() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json=[])
+
+    with _auth_client(handler, token="jwt-abc") as mo:
+        mo.list_memories()
+    assert seen["auth"] == "Bearer jwt-abc"
+
+
+def test_custom_headers_are_sent() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["hdr"] = request.headers.get("x-memoryops-user")
+        return httpx.Response(200, json=[])
+
+    with _auth_client(handler, headers={"X-MemoryOps-User": "user_demo"}) as mo:
+        mo.list_memories()
+    assert seen["hdr"] == "user_demo"
+
+
+def test_token_and_authorization_header_conflict_raises() -> None:
+    with pytest.raises(ValueError):
+        MemoryOpsClient(
+            "http://test", "t1", "u1",
+            token="x", headers={"Authorization": "Bearer y"},
+        )
+
+
+def test_httpx_auth_is_applied() -> None:
+    seen = {}
+
+    class _StaticAuth(httpx.Auth):
+        def auth_flow(self, request):
+            request.headers["Authorization"] = "Custom sig"
+            yield request
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json=[])
+
+    with _auth_client(handler, auth=_StaticAuth()) as mo:
+        mo.list_memories()
+    assert seen["auth"] == "Custom sig"
+
+
+def test_no_auth_sends_no_authorization_header() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json=[])
+
+    with _client(handler) as mo:
+        mo.list_memories()
+    assert seen["auth"] is None

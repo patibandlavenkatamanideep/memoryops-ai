@@ -6,6 +6,8 @@ pydantic==2.13.4
 pydantic-settings==2.6.1
 tenacity==9.1.4
 python-dotenv==1.2.2
-# JWT verification (auth adapters, off by default). HS* works with this alone;
-# RS*/ES*/JWKS additionally need the 'cryptography' extra: pip install "PyJWT[crypto]".
-PyJWT==2.10.1
+# JWT verification (auth adapters, off by default). The [crypto] extra ships the
+# 'cryptography' backend so RS*/ES*/JWKS (advertised in docs/auth-adapters.md) work
+# out of the box, not just HS*. Pinned >=2.13.0: releases before 2.12.0 are affected
+# by a high-severity JWT critical-header validation vulnerability.
+PyJWT[crypto]==2.13.0

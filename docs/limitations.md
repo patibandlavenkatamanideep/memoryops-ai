@@ -39,9 +39,19 @@ re-deriving their own caveats.
   encryption** for high-sensitivity rows is not implemented.
 - Tenant isolation is enforced in code + tests on every scoped read; the
   in-memory backend mirrors the Postgres semantics but is for dev/demo only.
-- No built-in end-user **authentication/authorization** layer ships in v1.0 — the
-  API trusts the `tenant_id`/`user_id` scope the caller provides; deploy it behind
-  your own auth. See [security.md](security.md).
+- **Authentication/authorization adapters ship but are off by default.** With
+  `MEMORYOPS_AUTH_MODE=none` (the default) the API trusts the caller-supplied
+  `tenant_id`/`user_id` scope, so you must front it with your own auth. Set
+  `trusted_header` or `jwt` to have MemoryOps verify an externally-minted identity
+  (JWT/JWKS via PyJWT, or a trusted upstream header) and enforce tenant/user scope.
+  MemoryOps verifies identity and enforces scope; it does not *issue* identity — that
+  stays with your IdP. See [auth-adapters.md](auth-adapters.md), [security.md](security.md).
+- **Known dependency debt:** `pip-audit` (in `security-scan.yml`) flags advisories in
+  `starlette` (pulled in transitively by `fastapi==0.118.0`). The fixes require
+  `starlette >=0.49.1`/1.x, which `fastapi 0.118.0` does not permit, so clearing them
+  needs a validated FastAPI upgrade. Until then the specific advisory IDs are an
+  explicit, documented `--ignore-vuln` allowlist in the workflow (the audit still
+  blocks on any *new* advisory). Tracked as a near-term follow-up.
 
 ## Models & retrieval
 
@@ -55,9 +65,12 @@ re-deriving their own caveats.
 
 ## Observability & operations
 
-- Structured logs, audit events, worker run history, and `GET /healthz/workers`
-  ship; full **OpenTelemetry traces / Prometheus metrics / Langfuse** wiring is on
-  the production roadmap, not in the box.
+- Structured logs, audit events, worker run history, `GET /healthz/workers`,
+  **Prometheus metrics** (`GET /metrics`, content-free + low-cardinality — ADR-015),
+  and **distributed tracing** (span façade with an optional OpenTelemetry bridge,
+  spans at `GET /api/traces`; `MEMORYOPS_TRACING_ENABLED` / `MEMORYOPS_OTEL_ENABLED` —
+  ADR-022) all ship. Deeper wiring (an exporter/collector deployment, dashboards,
+  **Langfuse** LLM-trace integration) is left to the operator, not in the box.
 - Workers run on a thin lease/scheduler runtime, not Celery/Temporal; there is no
   external queue/broker.
 - **Write + audit are not yet a single transaction.** On the Postgres backend the

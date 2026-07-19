@@ -18,9 +18,19 @@ A useful report includes:
 ## 2. Trust model
 
 MemoryOps AI is a memory governance layer. It assumes:
-- The gateway is the entry point; `tenant_id`/`user_id` are attached by a trusted
-  auth layer in front of it (out of scope for this repo's heuristic demo).
-- The Postgres/in-memory store is trusted infrastructure.
+- The gateway is the entry point. `tenant_id`/`user_id` identify the caller and are
+  either attached by a trusted auth layer in front of the API, or verified by the
+  built-in identity-neutral auth adapters (`MEMORYOPS_AUTH_MODE=none|trusted_header|jwt`,
+  **off by default** — `none`). The adapters verify an externally-minted identity
+  (trusted upstream header, or a bearer JWT via PyJWT — HS\* out of the box, RS\*/ES\*/JWKS
+  with the `[crypto]` extra) and enforce that every op is scoped to the authenticated
+  tenant/user (401 on missing/invalid creds, 403 on scope mismatch). MemoryOps is not
+  an auth *product* — it verifies identity and enforces scope; issuing identity stays
+  upstream (Clerk/Auth0/Supabase/BYO). See [docs/auth-adapters.md](docs/auth-adapters.md), ADR-020.
+- The Postgres/in-memory store is trusted infrastructure. On Postgres, tenant
+  isolation is additionally enforced by **forced row-level security** (`FORCE ROW LEVEL
+  SECURITY` + a tenant policy in `infra/db/migrations/004_rls_policies.sql`), verified in
+  CI against a non-superuser role (`scripts/check_rls_policies.py`). See ADR-006.
 - LLM/embedding providers are semi-trusted; their failure must never break safety.
 
 ## 3. Load-bearing security boundaries
@@ -41,9 +51,15 @@ load-bearing ones.
 
 ## 4. Non-goals (current phase)
 
-- Authentication/authorization (assumed upstream).
+- **Identity issuance** — MemoryOps verifies an externally-minted identity and
+  enforces tenant/user scope (see §2); it does not mint sessions, manage password/
+  social login, or replace an IdP. Issue identity upstream (Clerk/Auth0/Supabase/BYO).
+- Rate limiting / DoS protection (assumed at the edge — reverse proxy / API gateway).
 - Encryption at rest / KMS (roadmap — see [docs/security.md](docs/security.md)).
-- Enforced Postgres RLS (schema is RLS-ready; enforcement is Phase 4).
+
+Previously listed here and now **shipped** (no longer non-goals): built-in auth
+adapters (JWT/JWKS + trusted-header, off by default — §2, ADR-020) and enforced
+Postgres RLS (`FORCE`, CI-verified against a non-superuser — §2, ADR-006).
 
 ## 5. Defensive posture
 

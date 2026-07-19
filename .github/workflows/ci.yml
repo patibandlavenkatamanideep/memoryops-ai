@@ -111,15 +111,20 @@ jobs:
   # additionally proves it passes against the real Postgres + pgvector stack.
 
   sdk:
-    name: SDK — tests
+    name: SDK — tests (py ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The SDK declares requires-python >=3.10; test every supported minor.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install deps (API for the in-process e2e fixture + SDK)
@@ -151,7 +156,9 @@ jobs:
 
       - name: Install
         working-directory: apps/web
-        run: npm ci || npm install
+        # Strict: fail if package-lock.json is out of sync rather than silently
+        # regenerating it (the old `|| npm install` fallback masked lockfile drift).
+        run: npm ci
 
       - name: Build
         working-directory: apps/web
@@ -176,9 +183,11 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       # Boots the real app (in-memory, stub providers, rate-limit off) and drives a
-      # small concurrency sweep. The strict --max-error-rate 0.02 makes this a
-      # regression gate: e.g. the multi-memory write 500 (PR #42) showed as a ~40%
-      # error rate and would fail here. Keeps benchmark/perf/run_perf.py runnable.
+      # small concurrency sweep. --max-error-rate 0 makes this a zero-tolerance
+      # regression gate: a single unexpected HTTP 500 fails it. (At 60 requests the
+      # old 0.02 threshold silently tolerated one failure — ~1.67% < 2%.) e.g. the
+      # multi-memory write 500 (PR #42) showed as a ~40% error rate and fails here.
+      # Keeps benchmark/perf/run_perf.py runnable.
       - name: Boot API + run load harness
         working-directory: services/api
         env:
@@ -195,7 +204,8 @@ jobs:
           python ../../benchmark/perf/run_perf.py \
             --base-url http://127.0.0.1:8099 \
             --requests 60 --concurrency 1,5,10 --operations write,retrieval,chat \
-            --max-error-rate 0.02 --out ../../perf-smoke.json
+            --repetitions 2 --seed-per-scenario 10 --warmup 10 \
+            --max-error-rate 0 --out ../../perf-smoke.json
           RC=$?
           kill $SRV 2>/dev/null || true
           exit $RC

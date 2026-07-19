@@ -31,7 +31,9 @@ For the inverse (what is *not* claimed), see [limitations.md](limitations.md).
   dead-letter, persisted run history, `GET /healthz/workers`. See
   [worker-runtime.md](worker-runtime.md).
 - **Observability** — structured logs, audit events, worker run history, loop
-  timelines (`/api/loops`). Full OTel/Prometheus/Langfuse is roadmap.
+  timelines (`/api/loops`), Prometheus metrics (`GET /metrics`), and distributed
+  tracing with an optional OpenTelemetry bridge (`GET /api/traces`). Collector/
+  dashboard deployment and Langfuse LLM-trace wiring are left to the operator.
 - **Evaluation** — golden + adversarial eval suite (`evals/run_evals.py`) plus the
   invariant test suite and the deterministic PR Invariant Evidence Gate.
 
@@ -48,9 +50,13 @@ For the inverse (what is *not* claimed), see [limitations.md](limitations.md).
 ## Deploying
 
 Railway-only: one project, five core services (web/api/worker + Postgres + Redis).
-Run migrations from `infra/db/migrations`; set `MEMORYOPS_STORAGE=postgres`. Put
-the API behind your own authentication — v1.0 trusts the caller-supplied
-`tenant_id`/`user_id` scope. See [deployment/railway.md](deployment/railway.md).
+Run migrations from `infra/db/migrations`; set `MEMORYOPS_STORAGE=postgres`.
+Configure authentication: either enable a built-in auth adapter
+(`MEMORYOPS_AUTH_MODE=jwt` or `trusted_header`, which verify identity and enforce
+tenant/user scope — see [auth-adapters.md](auth-adapters.md)), or, with the default
+`MEMORYOPS_AUTH_MODE=none`, front the API with your own auth (it then trusts the
+caller-supplied `tenant_id`/`user_id` scope). Either way, identity issuance stays
+with your IdP. See [deployment/railway.md](deployment/railway.md).
 
 ## Release gate (must be green to ship)
 
