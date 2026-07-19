@@ -2,9 +2,11 @@
 
 It wraps the HTTP surface (chat, memories, retention/legal-hold/consent, audit,
 metrics, loops, health) and injects the ``tenant_id`` / ``user_id`` scope on every
-call so application code never hand-builds request bodies. Tenant isolation,
-the deletion guarantee, policy-before-storage, and auditability are enforced by
-the server — the SDK is a thin, faithful client over that governed API.
+**scope-bearing** call so application code never hand-builds request bodies. (Global
+endpoints — :meth:`loops`, :meth:`loop_trace`, :meth:`health`, :meth:`workers_health`
+— carry no per-tenant scope by design.) Tenant isolation, the deletion guarantee,
+policy-before-storage, and auditability are enforced by the server — the SDK is a
+thin, faithful client over that governed API.
 
 Example::
 
@@ -16,9 +18,26 @@ Example::
         for m in mo.list_memories():
             print(m.memory_type, m.content)
 
+When the API runs with an auth adapter (``MEMORYOPS_AUTH_MODE=jwt`` or
+``trusted_header``), attach credentials on construction — they are sent on every
+request::
+
+    # Bearer JWT (MEMORYOPS_AUTH_MODE=jwt):
+    MemoryOpsClient(base_url, tenant_id, user_id, token=my_jwt)
+
+    # Trusted upstream header, an API key, or any custom default headers:
+    MemoryOpsClient(base_url, tenant_id, user_id,
+                    headers={"X-MemoryOps-User": "user_demo"})
+
+    # Anything more dynamic (refreshing tokens, signing): pass an httpx.Auth:
+    MemoryOpsClient(base_url, tenant_id, user_id, auth=my_httpx_auth)
+
+The server still authorizes independently: credentials must resolve to the same
+``tenant_id``/``user_id`` scope, or the API returns 401/403.
+
 The client is synchronous and built on ``httpx``. For tests or in-process use you
 can pass a pre-built ``httpx.Client`` (e.g. one bound to an ASGI app) via
-``http_client``.
+``http_client``; ``token``/``headers``/``auth`` are still applied to it.
 """
 
 from __future__ import annotations
@@ -40,13 +59,50 @@ class MemoryOpsClient:
         tenant_id: str,
         user_id: str,
         *,
+        token: str | None = None,
+        headers: dict[str, str] | None = None,
+        auth: httpx.Auth | None = None,
         timeout: float = 30.0,
         http_client: httpx.Client | None = None,
     ) -> None:
+        """Construct a client scoped to ``tenant_id`` / ``user_id``.
+
+        Auth (all optional; needed only when the API enforces an auth adapter):
+
+        * ``token`` — convenience for a bearer JWT; sends ``Authorization: Bearer <token>``.
+        * ``headers`` — default headers applied to every request (trusted-header auth,
+          an API key, etc.). Passing both ``token`` and an ``Authorization`` header is
+          an error.
+        * ``auth`` — an :class:`httpx.Auth` for dynamic/refreshing credentials.
+
+        These are applied whether the client is created here or supplied via
+        ``http_client``.
+        """
         self.tenant_id = tenant_id
         self.user_id = user_id
+
+        default_headers = {str(k): str(v) for k, v in (headers or {}).items()}
+        if token is not None:
+            if any(k.lower() == "authorization" for k in default_headers):
+                raise ValueError(
+                    "pass either token= or an Authorization header, not both"
+                )
+            default_headers["Authorization"] = f"Bearer {token}"
+
         self._owns_client = http_client is None
-        self._http = http_client or httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
+        if http_client is None:
+            self._http = httpx.Client(
+                base_url=base_url.rstrip("/"),
+                timeout=timeout,
+                headers=default_headers or None,
+                auth=auth,
+            )
+        else:
+            self._http = http_client
+            if default_headers:
+                self._http.headers.update(default_headers)
+            if auth is not None:
+                self._http.auth = auth
 
     # ── lifecycle ──────────────────────────────────────────────────────────────
     def close(self) -> None:

@@ -13,8 +13,11 @@ There are **two independent tracks** (see
   fixes/hardening. The tag + GitHub Release are the source of truth for "what shipped".
 - **API + SDK contract** — `app.__version__` and `packages/memoryops-sdk`
   `pyproject.toml`, released under `sdk-vX.Y.Z` tags. These two **must always move
-  together**; bump both in the same PR. CI (`publish-sdk.yml`) fails a release whose
-  `sdk-v*` tag does not match the SDK `pyproject.toml` version.
+  together**; bump both in the same PR. CI (`publish-sdk.yml`) derives the expected
+  version from the SDK `pyproject.toml` and fails the release unless the `sdk-v*` tag,
+  `memoryops.__version__`, **and** `app.__version__` all match it. Publication is
+  **tag-only** — a manual `workflow_dispatch` run builds and verifies but never
+  uploads.
 
 ## Release checklist
 
@@ -22,14 +25,14 @@ There are **two independent tracks** (see
    `npm run build`. See [docs/release-loop.md](docs/release-loop.md) for the
    `release.gate` loop contract.
 2. Decide the version and a one-line summary.
-3. Tag and push:
+3. Tag and push (use the next platform version — `v2.2` shipped most recently):
    ```bash
-   git tag -a v0.1 -m "MemoryOps AI v0.1 — <summary>"
-   git push origin v0.1
+   git tag -a v2.3 -m "MemoryOps AI v2.3 — <summary>"
+   git push origin v2.3
    ```
 4. Create the GitHub Release with the body template below:
    ```bash
-   gh release create v0.1 --title "MemoryOps AI v0.1 — <summary>" --notes-file notes.md
+   gh release create v2.3 --title "MemoryOps AI v2.3 — <summary>" --notes-file notes.md
    ```
 
 ## SDK release checklist
@@ -42,12 +45,16 @@ token. Configure PyPI once with:
 - workflow: `.github/workflows/publish-sdk.yml`
 - environment: `pypi`
 
-Then release the SDK:
+Then release the SDK (publication is **tag-only**; the manual dispatch is a
+build-and-verify dry run that never uploads):
 
 ```bash
-gh workflow run publish-sdk.yml -f publish=false
+# 1. Dry run: build + twine check + clean-wheel install + version agreement, no upload.
+gh workflow run publish-sdk.yml
+# 2. Publish by pushing the tag (must equal the SDK pyproject / app.__version__).
 git tag -a sdk-v1.0.0 -m "memoryops-sdk 1.0.0"
 git push origin sdk-v1.0.0
+# 3. Verify from a clean environment.
 python3 -m venv /tmp/memoryops-pypi-check
 source /tmp/memoryops-pypi-check/bin/activate
 pip install memoryops-sdk==1.0.0
@@ -73,10 +80,21 @@ python3 -c "import memoryops; print(memoryops.__version__)"
 * `npm run build` (apps/web)
 ```
 
-## Planned milestones
+## Remaining roadmap
 
-- **v0.1** — Phase 0 + Phase 1: design spine, write path, policy broker, audit,
-  dashboard, eval harness, invariant tests.
-- **v0.2** — Phase 2/3: retrieval wired into chat, governance UI actions complete.
-- **v0.3** — Phase 4: pgvector embeddings, enforced RLS, expanded evals.
-- **v0.4** — Phase 5: decay/reflection/conflict workers on a real scheduler.
+The v0.1–v2.2 milestones have all shipped (see `CHANGELOG.md` and the GitHub
+Releases). The remaining, forward-looking work:
+
+- **Atomic write + audit persistence** — commit the memory row and its audit event
+  in one transaction (or via a transactional outbox with durable delivery), closing
+  the crash window where a stored memory can lack its audit record.
+- **Live-provider validation** — real OpenAI/Anthropic/Gemini latency, fallback
+  frequency, and correctness in the hot path (beyond the offline stub replay).
+- **Retrieval-quality comparison** — vector-only vs BM25-only vs hybrid
+  (Recall@k / MRR / nDCG) on a labelled set.
+- **Distributed rate limiting** — a shared (Redis-backed) limiter to replace the
+  per-process counter, for a real multi-replica limit.
+- **External baseline** — benchmark against a comparable external memory system.
+- **Performance remeasurement** — re-run the corrected load harness (and the
+  Postgres/pgvector sweep) to replace the confounded first-pass numbers in
+  `docs/performance.md`.

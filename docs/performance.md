@@ -1,23 +1,39 @@
 # Performance (P4.3)
 
 > **Status: first pass — in-memory + stub providers, single process.**
-> This is the honest baseline the async decision (ADR / P2.1) should be made
-> *from*, not a claim that MemoryOps is tuned. Postgres, real providers, and
-> per-stage CPU/pool instrumentation are explicit follow-ups (see the end).
+> This is a starting observation, not a tuned result and not a root-cause analysis.
+> Postgres/pgvector, real providers, and per-stage CPU/pool instrumentation are the
+> follow-ups that would let us attribute *cause* (see the end).
+
+> **⚠️ Read the numbers below as observations, not proofs.** The tables in this
+> document were produced by an **earlier version of the harness** that created a
+> fresh, unclosed `httpx.Client` per request and reused a single tenant/user across
+> the whole sweep — so client/connection setup cost and a monotonically growing store
+> were confounded with concurrency. The harness has since been corrected (reused
+> bounded clients, a **fresh scope per scenario**, a **fixed identical seed count**,
+> **≥3 repetitions**, **randomized scenario order**, and **actual before/after memory
+> counts** — see [`run_perf.py`](../benchmark/perf/run_perf.py)). Re-running the sweep
+> with the corrected harness is a tracked follow-up; until then, treat the specific
+> figures here as indicative only.
 
 ## TL;DR
 
-- **The API does not scale with concurrency in a single process.** Throughput is
-  flat-to-declining from 1→50 concurrent clients while p50 latency grows roughly
-  linearly. That is the signature of **serialized request handling**.
-- Under the **stub provider + in-memory store**, that serialization is
-  **CPU/GIL-bound** (pure-Python embedding, cosine scan, ranking, policy) — work
-  that an async rewrite **would not** speed up.
-- Therefore **the current evidence does not justify the async rewrite (P2.1).**
-  The immediate scaling lever is **horizontal** (more uvicorn workers / replicas).
-  The I/O-bound case that async actually addresses (real LLM/embedding network
-  calls, Postgres round-trips) has **not been measured yet** and is the gate for
-  reopening that decision.
+- **In the tested single-process configuration, throughput is flat and latency grows
+  with concurrency** — added concurrent clients queue rather than run in parallel.
+  Error rate is 0% throughout; nothing falls over, it simply does not speed up.
+- **What this does *not* establish.** These runs do **not isolate** the cause. Flat
+  throughput here is consistent with several non-exclusive explanations —
+  per-request client/connection overhead (the old harness rebuilt a client every
+  call), Starlette thread-pool limits, CPU/GIL-bound Python work in the sync
+  handlers, and repository growth over the shared store — and this data cannot
+  separate them. Earlier drafts asserted the effect was **CPU/GIL-bound** and that
+  the fix was **horizontal scaling**; that was over-stated for what a stub +
+  in-memory + confounded-harness run can show, and has been removed.
+- **Implication for the async decision (P2.1): still undecided, not "rejected."**
+  The I/O-bound scenario that `asyncio` actually addresses (real LLM/embedding
+  network calls, Postgres round-trips) has not been measured, and the confounds
+  above have not been controlled. The decision stays open pending the corrected-
+  harness re-run and the Postgres/real-provider follow-ups.
 - The **per-process rate limiter** works exactly as specified (30/min chat →
   fail-fast 429) and is, as the review noted, **per-replica** — not a distributed
   limit.
@@ -39,10 +55,11 @@ MEMORYOPS_STORAGE=memory MEMORYOPS_EMBEDDING_PROVIDER=stub MEMORYOPS_LLM_PROVIDE
   MEMORYOPS_RATE_LIMIT_ENABLED=false \
   uvicorn app.main:app --host 127.0.0.1 --port 8099 --log-level warning
 
-# 2. drive load
+# 2. drive load (corrected harness: reused clients, fresh scope + fixed seed per
+#    scenario, repetitions, randomized order, real memory counts)
 python benchmark/perf/run_perf.py --base-url http://127.0.0.1:8099 \
   --requests 400 --concurrency 1,5,10,25,50 --operations write,retrieval,chat \
-  --out results.json
+  --repetitions 3 --seed-per-scenario 50 --out results.json
 ```
 
 Operations map to the three user-facing paths:
@@ -101,8 +118,12 @@ Raw JSON for every run below lives in
 - p50 latency rises **~linearly** with concurrency (chat 62 ms → 4175 ms ≈ 67× for
   50× the clients).
 
-That is a single serialized service: added concurrency just queues. Error rate is
-**0%** everywhere — nothing is falling over, it simply isn't parallel.
+Added concurrency queues rather than parallelizing, and error rate is **0%**
+everywhere — nothing falls over, it simply does not get faster. **Why** it queues is
+not settled by this run: the old harness rebuilt an HTTP client per request (setup
+cost charged to every latency sample) and let the store grow across the sweep, so
+client overhead, thread-pool limits, CPU work, and store growth are all still on the
+table. See the caveat at the top.
 
 ### 2. Latency vs store size — retrieval, in-memory (linear scan)
 
@@ -120,10 +141,14 @@ above already shows the shape. The in-memory repository scans **O(n)** candidate
 per query, so retrieval cost grows with the store. This is a property of the **dev/default** backend, not of
 MemoryOps as designed: on Postgres, retrieval goes through the **pgvector ANN
 index** (and the `VectorIndex` abstraction, ADR-021), which is sub-linear.
-Quantifying that is a follow-up (needs pgvector; see below). Store **memory** also
-grows with the row count — RSS rose from **37 MB → 234 MB** over the ~6 k writes in
-the concurrency sweep (~33 KB/memory incl. embedding), another reason the in-memory
-store is dev-only.
+Postgres + pgvector **is** available and is exercised locally and in CI (the
+`api-postgres` job); quantifying the ANN-vs-linear retrieval curve on it is the
+tracked follow-up below. Store **memory** also grows with row count — RSS rose from
+**37 MB → 234 MB** over the concurrency sweep — but the harness did not record the
+exact memory count for those runs, so **no reliable per-memory byte figure can be
+derived** from them. (An earlier draft's "~33 KB/memory" divided RSS by an *assumed*
+row count and has been removed.) The corrected harness now records actual before/
+after memory counts, so a defensible per-memory figure can be measured on the re-run.
 
 ### 3. Rate limiter — per-process, fail-fast
 
@@ -141,7 +166,7 @@ Each replica has its own 30/min budget, and a restart resets it. It is **local
 process protection, not distributed rate enforcement.** A Redis-backed limiter is
 the fix for a real multi-replica limit (follow-up).
 
-## The async decision (P2.1) — verdict: **not yet justified**
+## The async decision (P2.1) — verdict: **undecided (insufficient evidence)**
 
 The review's rule: proceed with the async rewrite only when measurements show
 thread-pool / connection-pool saturation, severe p95 degradation under moderate
@@ -150,34 +175,42 @@ realistic target.
 
 What the data actually shows:
 
-1. **Yes**, there is severe p95 degradation and flat throughput under concurrency.
-2. **But** the cause here is **CPU/GIL-bound** work (stub embeddings, in-memory
-   cosine scan, ranking, policy) — all synchronous Python compute. `asyncio`
-   parallelizes **I/O waits**, not CPU. Rewriting these sync routes as `async def`
-   would **not** raise throughput; it could lower it (event-loop overhead on
-   CPU-bound handlers).
-3. The place async *does* pay off — a route thread parked on a **network** LLM /
-   embedding call, or a **Postgres** round-trip, while other requests wait — is
-   **exactly what the stub + in-memory config removes from the measurement.** We
-   have not measured it.
+1. **Observed:** p95 degradation and flat throughput under concurrency, at 0% errors.
+2. **Not isolated:** this configuration cannot tell us *why*. A plausible contributor
+   is CPU/GIL-bound Python work in the sync handlers (stub embeddings, in-memory
+   cosine scan, ranking, policy) — which `asyncio` would **not** speed up — but
+   per-request client/connection overhead (old harness), the fixed Starlette
+   thread-pool, and store growth are equally unexcluded. The earlier version of this
+   doc named CPU/GIL as *the* cause; that conclusion is not supported and has been
+   withdrawn.
+3. The scenario async *does* address — a route thread parked on a **network** LLM /
+   embedding call or a **Postgres** round-trip while other requests wait — is
+   **exactly what the stub + in-memory config removes from the measurement.** It has
+   not been measured.
 
-**Conclusion.** On this evidence the correct next scaling step is **horizontal**:
-run multiple uvicorn workers / replicas (each a separate process, side-stepping the
-GIL) behind the load balancer we already deploy on Railway. The async rewrite
-should stay **deferred** until the I/O-bound numbers exist:
+**Conclusion.** The decision **stays open.** This run neither justifies the async
+rewrite nor rules it out; horizontal scaling (multiple uvicorn workers/replicas
+behind the Railway load balancer) is a reasonable operational lever regardless, but
+is **not** established here as *the* fix. Reopen P2.1 with evidence once the gating
+numbers exist:
 
+- the **corrected-harness** re-run (isolating client overhead and store growth),
 - retrieval / write / chat latency + throughput with a **real** embedding + LLM
   provider (network I/O in the hot path), and
 - the same against **Postgres** (connection-pool behaviour under concurrency).
 
-If *those* show threadpool or pool saturation, reopen P2.1 — and stage it as the
-review prescribed (async provider clients + gateway → async Postgres repo + pooling
-→ async routes/workers, each with before/after numbers).
+If *those* show threadpool or pool saturation, stage the rewrite as the review
+prescribed (async provider clients + gateway → async Postgres repo + pooling →
+async routes/workers, each with before/after numbers).
 
 ## Follow-ups (measured next, tracked separately)
 
-- [ ] **Postgres + pgvector** run of the same sweep (needs pgvector; not installable
-      in the authoring env). In-memory-vs-Postgres and ANN-vs-linear retrieval.
+- [ ] **Corrected-harness re-run** of the full sweep (reused clients, fresh scope +
+      fixed seed per scenario, repetitions, randomized order) to replace the
+      confounded tables above with numbers that isolate concurrency.
+- [ ] **Postgres + pgvector** run of the same sweep. pgvector is available and
+      CI-exercised (`api-postgres`); this run quantifies In-memory-vs-Postgres and
+      ANN-vs-linear retrieval.
 - [ ] **Real providers** (OpenAI / Anthropic) latency + fallback frequency in the
       hot path — the I/O-bound numbers that gate the async decision.
 - [ ] **Retrieval quality** comparison vector-only vs BM25-only vs hybrid

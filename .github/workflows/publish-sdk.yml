@@ -1,23 +1,20 @@
 name: Publish memoryops-sdk
 
-# Publishes the Python SDK (packages/memoryops-sdk) to PyPI.
+# Publishes the Python SDK (packages/memoryops-sdk) to PyPI via Trusted Publishing.
 #
-# Setup (one time): configure PyPI Trusted Publishing for this repository,
-# workflow file, and the `pypi` GitHub environment. Then either:
-#   * push a tag like `sdk-v1.0.0`, or
-#   * run this workflow manually (Actions → Publish memoryops-sdk → Run workflow).
+# Setup (one time): configure PyPI Trusted Publishing for this repository, this
+# workflow file, and the `pypi` GitHub environment.
 #
-# A dry run (build only, no upload) happens on manual dispatch with publish=false.
+# Publishing is TAG-ONLY: push a tag like `sdk-v1.0.0`. The tag version, the SDK
+# pyproject/package version, and the API `app.__version__` must all agree (release
+# policy: the API and SDK contract versions move together — see RELEASING.md /
+# docs/api-stability.md). A manual dispatch is build-and-verify ONLY; it never
+# uploads, so it is a safe dry run.
 
 on:
   push:
     tags: ["sdk-v*"]
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: "Upload to PyPI (false = build + check only)"
-        type: boolean
-        default: false
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -34,19 +31,61 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The git tag (sdk-vX.Y.Z) and the SDK's pyproject version must agree, so a
-      # release can never ship a package whose version does not match its tag.
-      - name: Assert tag matches pyproject version
-        if: startsWith(github.ref, 'refs/tags/sdk-v')
-        working-directory: packages/memoryops-sdk
+      # Single source of truth: the SDK pyproject version. Every other version
+      # (git tag, SDK package, API app) must equal it, so a release can never ship
+      # a package whose version disagrees with its tag or with the API it targets.
+      - name: Assert versions agree (pyproject == tag == SDK package == API app)
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          tag_version="${GITHUB_REF_NAME#sdk-v}"
-          pkg_version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
-          echo "tag=$tag_version pyproject=$pkg_version"
-          if [ "$tag_version" != "$pkg_version" ]; then
-            echo "::error::tag sdk-v$tag_version does not match pyproject version $pkg_version"
-            exit 1
-          fi
+          expected="$(python - <<'PY'
+          import ast, os, sys, tomllib
+
+          def module_version(path):
+              tree = ast.parse(open(path, encoding="utf-8").read())
+              for node in tree.body:
+                  if isinstance(node, ast.Assign) and any(
+                      isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets
+                  ):
+                      return ast.literal_eval(node.value)
+              raise SystemExit(f"::error::no __version__ found in {path}")
+
+          # Single source of truth.
+          expected = tomllib.load(
+              open("packages/memoryops-sdk/pyproject.toml", "rb")
+          )["project"]["version"]
+
+          sources = {
+              "SDK package (memoryops.__version__)":
+                  module_version("packages/memoryops-sdk/memoryops/__init__.py"),
+              "API app (app.__version__)":
+                  module_version("services/api/app/__init__.py"),
+          }
+
+          # Git tag is only present on tag pushes.
+          if os.environ.get("REF_TYPE") == "tag":
+              sources["git tag"] = os.environ["REF_NAME"].removeprefix("sdk-v")
+
+          fail = False
+          print(f"expected (SDK pyproject): {expected}", file=sys.stderr)
+          for label, value in sources.items():
+              ok = value == expected
+              print(f"  {'ok ' if ok else 'MISMATCH'} {label}: {value}", file=sys.stderr)
+              if not ok:
+                  print(
+                      f"::error::{label} ({value}) does not match SDK pyproject "
+                      f"version {expected} (API + SDK versions must move together)",
+                      file=sys.stderr,
+                  )
+                  fail = True
+          if fail:
+              raise SystemExit(1)
+          print(expected)
+          PY
+          )"
+          echo "expected=$expected" >> "$GITHUB_OUTPUT"
 
       - name: Build sdist + wheel
         working-directory: packages/memoryops-sdk
@@ -57,17 +96,23 @@ jobs:
 
       - name: Test wheel in a clean environment
         working-directory: packages/memoryops-sdk
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.expected }}
         run: |
           python -m venv /tmp/memoryops-sdk-wheel-test
           /tmp/memoryops-sdk-wheel-test/bin/python -m pip install --upgrade pip
           /tmp/memoryops-sdk-wheel-test/bin/python -m pip install dist/*.whl
           /tmp/memoryops-sdk-wheel-test/bin/python - <<'PY'
+          import os
           import memoryops
           from memoryops import MemoryOpsClient
 
-          assert memoryops.__version__ == "1.0.0"
+          expected = os.environ["EXPECTED_VERSION"]
+          assert memoryops.__version__ == expected, (
+              f"clean wheel version {memoryops.__version__!r} != expected {expected!r}"
+          )
           assert MemoryOpsClient
-          print("memoryops-sdk clean wheel import ok")
+          print(f"memoryops-sdk clean wheel import ok (version {expected})")
           PY
 
       - name: Upload distribution artifact
@@ -79,7 +124,8 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    if: startsWith(github.ref, 'refs/tags/sdk-v') || inputs.publish
+    # TAG-ONLY. Manual dispatch runs `build` above as a dry run and stops here.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/sdk-v')
     needs: build
     runs-on: ubuntu-latest
     environment: pypi

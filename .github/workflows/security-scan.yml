@@ -1,0 +1,96 @@
+name: Security scan
+
+# Supply-chain + secret + misconfiguration scanning. Complements ci.yml (tests) and
+# the PR invariant gate (governance evidence). Runs on PRs, pushes to main, and
+# weekly so newly-disclosed advisories are caught even without a code change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 6 * * 1" # Mondays 06:27 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Python dependency vulnerabilities (pip-audit / OSV) ───────────────────────
+  pip-audit:
+    name: pip-audit (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: api
+            req: services/api/requirements.txt
+          - label: api-postgres
+            req: services/api/requirements-postgres.txt
+          - label: sdk
+            # No `req`: the SDK declares deps in pyproject, so we audit the package
+            # directory instead of a requirements file (empty `req` selects that path).
+            req: ""
+          - label: worker
+            req: services/worker/requirements.txt
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pip-audit
+      - name: Audit ${{ matrix.label }}
+        # Blocking gate: any *new* advisory fails CI. The --ignore-vuln entries below
+        # are a documented, temporary allowlist for advisories in `starlette` (pulled
+        # in transitively by fastapi==0.118.0). Their fixes live in starlette >=0.49.1
+        # / 1.x, which fastapi 0.118.0 does not allow — clearing them requires a
+        # validated FastAPI upgrade, tracked separately (see docs/limitations.md).
+        # Remove each ID here as that upgrade lands. Do NOT add ignores casually.
+        env:
+          # starlette (via fastapi 0.118.0) — remove when fastapi/starlette is bumped:
+          IGNORES: >-
+            --ignore-vuln PYSEC-2026-161
+            --ignore-vuln PYSEC-2026-248
+            --ignore-vuln PYSEC-2026-249
+            --ignore-vuln PYSEC-2026-1942
+            --ignore-vuln PYSEC-2026-2280
+            --ignore-vuln PYSEC-2026-2281
+        run: |
+          if [ -n "${{ matrix.req }}" ]; then
+            pip-audit --strict --progress-spinner off $IGNORES -r "${{ matrix.req }}"
+          else
+            pip-audit --strict --progress-spinner off $IGNORES ./packages/memoryops-sdk
+          fi
+
+  # ── Secret scanning (committed credentials) ───────────────────────────────────
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history so pushes scan new commits, not just the tip
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Filesystem + IaC/Dockerfile misconfiguration + dependency scan (Trivy) ─────
+  # Report-only for now: it surfaces vulnerabilities and Dockerfile/compose
+  # misconfigurations in the job log without blocking the PR (base-image CVEs are
+  # triaged, not launch-blockers). Promote to `--exit-code 1` once the baseline is
+  # clean. The CLI is installed directly (version-stable) rather than via a pinned
+  # marketplace action tag.
+  trivy:
+    name: Trivy (fs + config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Trivy filesystem + misconfig scan (report-only)
+        run: |
+          trivy fs --scanners vuln,secret,misconfig \
+            --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 0 --no-progress .
