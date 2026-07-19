@@ -140,6 +140,8 @@ jobs:
           path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1
+        # `release/v1` is the action's maintained v1 ref (there is no `v1` tag —
+        # `@v1` fails to resolve). Dependabot (github-actions) tracks updates.
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
