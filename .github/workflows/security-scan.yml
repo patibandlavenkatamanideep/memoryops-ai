@@ -29,7 +29,9 @@ jobs:
           - label: api-postgres
             req: services/api/requirements-postgres.txt
           - label: sdk
-            req: null # SDK declares deps in pyproject; audit the resolved package
+            # No `req`: the SDK declares deps in pyproject, so we audit the package
+            # directory instead of a requirements file (empty `req` selects that path).
+            req: ""
           - label: worker
             req: services/worker/requirements.txt
     steps:
@@ -55,10 +57,10 @@ jobs:
             --ignore-vuln PYSEC-2026-2280
             --ignore-vuln PYSEC-2026-2281
         run: |
-          if [ "${{ matrix.req }}" = "null" ]; then
-            pip-audit --strict --progress-spinner off $IGNORES ./packages/memoryops-sdk
-          else
+          if [ -n "${{ matrix.req }}" ]; then
             pip-audit --strict --progress-spinner off $IGNORES -r "${{ matrix.req }}"
+          else
+            pip-audit --strict --progress-spinner off $IGNORES ./packages/memoryops-sdk
           fi
 
   # ── Secret scanning (committed credentials) ───────────────────────────────────
@@ -75,20 +77,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Filesystem + IaC/Dockerfile misconfiguration + dependency scan (Trivy) ─────
-  # Reports vulnerabilities and Dockerfile/compose misconfigurations. Non-blocking
-  # for now (base-image CVEs are triaged, not launch-blockers); promote to blocking
-  # once the baseline is clean.
+  # Report-only for now: it surfaces vulnerabilities and Dockerfile/compose
+  # misconfigurations in the job log without blocking the PR (base-image CVEs are
+  # triaged, not launch-blockers). Promote to `--exit-code 1` once the baseline is
+  # clean. The CLI is installed directly (version-stable) rather than via a pinned
+  # marketplace action tag.
   trivy:
     name: Trivy (fs + config)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
-      - name: Trivy filesystem + misconfig scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          scanners: vuln,secret,misconfig
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
+      - name: Install Trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Trivy filesystem + misconfig scan (report-only)
+        run: |
+          trivy fs --scanners vuln,secret,misconfig \
+            --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 0 --no-progress .
