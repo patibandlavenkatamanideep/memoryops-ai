@@ -139,7 +139,7 @@ jobs:
     steps:
       - name: Download distribution artifact
         # Must match the build job's upload-artifact major (see note there).
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: memoryops-sdk-dist
           path: dist
