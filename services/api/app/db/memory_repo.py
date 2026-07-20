@@ -97,10 +97,12 @@ class InMemoryRepository(Repository):
         return memory
 
     def _scoped(self, tenant_id: str, user_id: str) -> list[StoredMemory]:
-        # Tenant + user isolation enforced here (invariant #1).
+        # Tenant + user isolation enforced here (invariant #1). Snapshot the dict
+        # first: concurrent writes mutate it in the threadpool, and iterating a live
+        # dict raises "dictionary changed size during iteration" under load.
         return [
             m
-            for m in self._memories.values()
+            for m in list(self._memories.values())
             if m.tenant_id == tenant_id and m.user_id == user_id
         ]
 
@@ -304,7 +306,7 @@ class InMemoryRepository(Repository):
 
     # ── metrics ──────────────────────────────────────────────────────────────
     def metrics(self, tenant_id: str) -> dict:
-        rows = [m for m in self._memories.values() if m.tenant_id == tenant_id]
+        rows = [m for m in list(self._memories.values()) if m.tenant_id == tenant_id]
         by_status: dict[str, int] = {}
         for m in rows:
             by_status[m.status.value] = by_status.get(m.status.value, 0) + 1
@@ -318,7 +320,7 @@ class InMemoryRepository(Repository):
             "audit_events": len(audit),
             "by_action": by_action,
             "loops": summarize_loop_runs(
-                [r for r in self._loop_runs.values() if r.tenant_id in (tenant_id, None)]
+                [r for r in list(self._loop_runs.values()) if r.tenant_id in (tenant_id, None)]
             ),
         }
 
@@ -375,7 +377,10 @@ class InMemoryRepository(Repository):
         event_type: str | None = None,
         limit: int = 500,
     ) -> list[LoopEvent]:
-        rows = self._loop_events
+        # Snapshot shared collections before iterating: concurrent requests mutate
+        # these dicts/lists in the threadpool, and iterating a live dict raises
+        # "dictionary changed size during iteration" under load.
+        rows = list(self._loop_events)
         if loop_run_id:
             rows = [e for e in rows if e.loop_run_id == loop_run_id]
         if loop_id:
@@ -385,12 +390,12 @@ class InMemoryRepository(Repository):
         if tenant_id:
             allowed_run_ids = {
                 r.id
-                for r in self._loop_runs.values()
+                for r in list(self._loop_runs.values())
                 if r.tenant_id == tenant_id and (user_id is None or r.user_id == user_id)
             }
             rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
         elif user_id:
-            allowed_run_ids = {r.id for r in self._loop_runs.values() if r.user_id == user_id}
+            allowed_run_ids = {r.id for r in list(self._loop_runs.values()) if r.user_id == user_id}
             rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
         if event_type:
             rows = [e for e in rows if e.event_type == event_type]

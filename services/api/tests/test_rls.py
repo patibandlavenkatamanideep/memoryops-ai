@@ -233,6 +233,9 @@ def test_loop_event_rls_resolves_scope_through_parent_run(app_engine):
 
 def test_rls_enabled_and_forced(admin_engine):
     with admin_engine.begin() as conn:
+        # `.all()` materializes Rows first: dict(CursorResult) would use the mapping
+        # protocol (CursorResult exposes .keys()) and try to subscript the result,
+        # raising "'CursorResult' object is not subscriptable".
         rows = dict(
             conn.execute(
                 text(
@@ -250,7 +253,7 @@ def test_rls_enabled_and_forced(admin_engine):
                         "worker_runs",
                     ]
                 },
-            )
+            ).all()
         )
     assert rows
     assert all(rows.values())
