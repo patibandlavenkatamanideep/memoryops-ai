@@ -141,10 +141,16 @@ class MemoryUsageTrace(BaseModel):
 
 # ── API contracts ────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
-    # max_length caps bound abuse / oversized payloads (P2.4). No min_length so odd
-    # ids (empty, wildcard) are handled by scoping, not rejected with 422.
-    tenant_id: str = Field(max_length=200)
-    user_id: str = Field(max_length=200)
+    # max_length caps bound abuse / oversized payloads (P2.4). tenant_id/user_id
+    # require min_length=1: an empty scope is invalid input, so it is rejected at the
+    # boundary (422) instead of flowing through the pipeline with no owner. Odd-but-
+    # non-empty ids (wildcards, injection-looking strings, whitespace) are still
+    # allowed and defused by parameterized scoping — that is what the isolation evals
+    # probe. (Empty scope was previously allowed on purpose; that let an empty-tenant
+    # probe crash the Postgres loop-evidence path — invariant #4 — so it is now
+    # rejected up front, which is also stronger isolation.)
+    tenant_id: str = Field(min_length=1, max_length=200)
+    user_id: str = Field(min_length=1, max_length=200)
     message: str = Field(max_length=8000)
     temporary_chat: bool = False
     conversation_id: str | None = None

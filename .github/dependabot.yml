@@ -51,6 +51,20 @@ updates:
     groups:
       web:
         patterns: ["*"]
+    # Major bumps of the framework toolchain are breaking migrations (Next 14→16,
+    # React 18→19, TypeScript 5→7 all broke `next build`). Keep patch/minor security
+    # updates flowing, but require majors to be done deliberately, not auto-proposed.
+    ignore:
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions used by the workflows ──
   - package-ecosystem: github-actions

@@ -34,6 +34,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from ..db.memory_repo import InMemoryRepository
 from ..loops.types import LoopId
 from ..schemas.memory import ChatRequest, Decision, Status
@@ -339,11 +341,17 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         repo_leak = [m for m in repo.retrieve_active(probe_tenant, probe_user)
                      if m.id in foreign_ids]
         # 2. Full gateway read path (if a probe query is given) must not surface
-        #    any foreign memory into the composed context.
+        #    any foreign memory into the composed context. A probe whose scope is
+        #    *rejected at the boundary* (e.g. an empty tenant/user, now a 422 via the
+        #    ChatRequest schema) leaks nothing — that is the strongest isolation, so
+        #    it counts as no-leak rather than an error.
         gw_leak = []
         if case.get("probe_query"):
-            resp = _decisions_for(gw, probe_tenant, probe_user, case["probe_query"])
-            gw_leak = [u for u in resp.used_memories if u.memory_id in foreign_ids]
+            try:
+                resp = _decisions_for(gw, probe_tenant, probe_user, case["probe_query"])
+                gw_leak = [u for u in resp.used_memories if u.memory_id in foreign_ids]
+            except ValidationError:
+                gw_leak = []
 
         ok = not repo_leak and not gw_leak
         return CaseResult(

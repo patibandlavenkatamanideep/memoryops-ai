@@ -27,6 +27,15 @@ drop policy if exists memory_records_tenant_isolation    on memory_records;
 drop policy if exists memory_audit_logs_tenant_isolation on memory_audit_logs;
 drop policy if exists memory_feedback_tenant_isolation   on memory_feedback;
 drop policy if exists memory_settings_tenant_isolation   on memory_settings;
+-- Policies on loop_runs/loop_events/worker_runs are created by migration 009. They
+-- do not exist on a first, in-order apply (009 runs after this), but they DO exist
+-- when the full set is re-applied idempotently (e.g. the RLS test fixture): a policy
+-- referencing loop_events.loop_run_id blocks the type change below with "cannot alter
+-- type of a column used in a policy definition". Drop-if-exists keeps 008 re-runnable;
+-- 009 recreates them (drop-before-create, so it is re-runnable too).
+drop policy if exists loop_runs_tenant_isolation            on loop_runs;
+drop policy if exists loop_events_parent_tenant_isolation   on loop_events;
+drop policy if exists worker_runs_tenant_isolation          on worker_runs;
 
 alter table memory_records  drop constraint if exists memory_records_tenant_id_fkey;
 alter table memory_records  drop constraint if exists memory_records_user_id_fkey;
