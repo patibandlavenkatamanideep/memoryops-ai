@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     llm_provider: Literal["stub", "heuristic", "openai", "anthropic", "gemini"] = "stub"
     openai_model: str = "gpt-4o-mini"
     anthropic_model: str = "claude-haiku-4-5-20251001"
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-2.5-flash"  # 1.5-flash was retired; flash-latest also valid
 
     # Structured memory intelligence knobs (v0.4). Defaults keep LLM output
     # advisory and always recoverable: validate structured output, and fall back
