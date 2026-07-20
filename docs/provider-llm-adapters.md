@@ -45,7 +45,7 @@ MEMORYOPS_LLM_TIMEOUT_SECONDS=20
 
 OPENAI_API_KEY=        OPENAI_MODEL=gpt-4o-mini
 ANTHROPIC_API_KEY=     ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-GEMINI_API_KEY=        GEMINI_MODEL=gemini-1.5-flash
+GEMINI_API_KEY=        GEMINI_MODEL=gemini-2.5-flash   # 1.5-flash retired
 ```
 
 ## Reliability & safety contract
