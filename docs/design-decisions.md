@@ -1,8 +1,8 @@
 # Design decisions — MemoryOps AI
 
 > A record of the hardest calls in this codebase: the decision, the alternative that
-> was rejected, and why. It's meant to be quizzed. (Personalize the voice — the
-> reasoning below is factual and matches the code, ADRs, tests, and CHANGELOG.)
+> was rejected, and why. It's meant to be quizzed. The reasoning below is factual and
+> matches the code, ADRs, tests, and CHANGELOG.
 
 ## 1. The policy broker is authoritative; the LLM is advisory
 
