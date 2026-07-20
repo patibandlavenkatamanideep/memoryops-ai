@@ -29,11 +29,13 @@
   separate them. Earlier drafts asserted the effect was **CPU/GIL-bound** and that
   the fix was **horizontal scaling**; that was over-stated for what a stub +
   in-memory + confounded-harness run can show, and has been removed.
-- **Implication for the async decision (P2.1): still undecided, not "rejected."**
-  The I/O-bound scenario that `asyncio` actually addresses (real LLM/embedding
-  network calls, Postgres round-trips) has not been measured, and the confounds
-  above have not been controlled. The decision stays open pending the corrected-
-  harness re-run and the Postgres/real-provider follow-ups.
+- **Implication for the async decision (P2.1): defer the blanket migration; tune and
+  measure the sync path first.** Sync routes already overlap I/O via Starlette's
+  threadpool; the stub + in-memory sweep removes the network/DB waiting async targets,
+  so it can't settle the question. Keep the sync API + stable 1.x contract, instrument
+  and tune the AnyIO thread tokens + SQLAlchemy pool together, and reconsider async only
+  when a real-provider + Postgres run shows sustained I/O-bound demand exceeding the
+  tuned synchronous architecture. Full verdict + trigger conditions below.
 - The **per-process rate limiter** works exactly as specified (30/min chat →
   fail-fast 429) and is, as the review noted, **per-replica** — not a distributed
   limit.
@@ -166,42 +168,52 @@ Each replica has its own 30/min budget, and a restart resets it. It is **local
 process protection, not distributed rate enforcement.** A Redis-backed limiter is
 the fix for a real multi-replica limit (follow-up).
 
-## The async decision (P2.1) — verdict: **undecided (insufficient evidence)**
+## The async decision (P2.1) — verdict: **defer the blanket migration; tune and measure the synchronous path first**
 
-The review's rule: proceed with the async rewrite only when measurements show
-thread-pool / connection-pool saturation, severe p95 degradation under moderate
-concurrency, provider calls serializing requests, or throughput materially below a
-realistic target.
+`POST /api/chat` is a **synchronous** FastAPI route. Starlette executes sync routes
+through AnyIO's threadpool, so requests **already overlap** their network and database
+waiting time across multiple worker threads — sync is *not* serial.
 
-What the data actually shows:
+**Why the current benchmark doesn't settle it.** The default AnyIO limiter provides
+**40 shared thread tokens per process** — which is *not* a guaranteed capacity of 40
+chat requests: sync dependencies, file operations, background tasks, DB-pool limits,
+provider connection limits, CPU work, and other endpoints all draw from the same pool
+and can exhaust it sooner. And the in-memory / stub-provider sweep in this doc
+**removes the very workload async is designed to improve** — it strips the real network
+and DB waiting and emphasizes Python execution, in-memory scans, ranking, and policy
+(CPU-bound work async would *not* accelerate, and could slow with added complexity).
 
-1. **Observed:** p95 degradation and flat throughput under concurrency, at 0% errors.
-2. **Not isolated:** this configuration cannot tell us *why*. A plausible contributor
-   is CPU/GIL-bound Python work in the sync handlers (stub embeddings, in-memory
-   cosine scan, ranking, policy) — which `asyncio` would **not** speed up — but
-   per-request client/connection overhead (old harness), the fixed Starlette
-   thread-pool, and store growth are equally unexcluded. The earlier version of this
-   doc named CPU/GIL as *the* cause; that conclusion is not supported and has been
-   withdrawn.
-3. The scenario async *does* address — a route thread parked on a **network** LLM /
-   embedding call or a **Postgres** round-trip while other requests wait — is
-   **exactly what the stub + in-memory config removes from the measurement.** It has
-   not been measured.
+**Recommendation (keep the sync API and the stable 1.x contract):**
 
-**Conclusion.** The decision **stays open.** This run neither justifies the async
-rewrite nor rules it out; horizontal scaling (multiple uvicorn workers/replicas
-behind the Railway load balancer) is a reasonable operational lever regardless, but
-is **not** established here as *the* fix. Reopen P2.1 with evidence once the gating
-numbers exist:
+1. **Instrument** thread-token utilization, request queueing, DB-pool checkout time,
+   provider latency, and stage-level CPU time.
+2. **Tune AnyIO thread tokens and the SQLAlchemy connection pool together** (raising
+   threads without pool headroom just moves the bottleneck).
+3. Use **Uvicorn concurrency limits as overload protection**, not as a way to increase
+   threadpool capacity.
+4. **Move nonessential provider calls off the response-critical path** — particularly
+   advisory conflict detection — where possible.
+5. **Run the corrected benchmark against Postgres + pgvector and a real LLM + embedding
+   provider** (the I/O-bound workload that actually exercises the question).
+6. **Reconsider async only** when measurements show sustained I/O-bound demand
+   exceeding the tuned synchronous architecture.
 
-- the **corrected-harness** re-run (isolating client overhead and store growth),
-- retrieval / write / chat latency + throughput with a **real** embedding + LLM
-  provider (network I/O in the hot path), and
-- the same against **Postgres** (connection-pool behaviour under concurrency).
+**A full async migration becomes justified when:**
 
-If *those* show threadpool or pool saturation, stage the rewrite as the review
-prescribed (async provider clients + gateway → async Postgres repo + pooling →
-async routes/workers, each with before/after numbers).
+- requests spend meaningful time **waiting for available thread tokens**;
+- the DB and provider pools have been tuned and are **not** the actual bottleneck;
+- sustained target concurrency **exceeds** the safe thread-based capacity;
+- increasing threads **materially harms** memory use / context-switching;
+- multiple Uvicorn workers or Railway replicas **do not** provide sufficient headroom;
+- before/after measurements show async improves throughput or tail latency **enough to
+  justify the added complexity**.
+
+**If those conditions are met, migrate incrementally** (each step with before/after
+numbers): async provider + embedding clients → async gateway + extraction path →
+SQLAlchemy async engine + repository → async routes → explicit offloading for the
+CPU-bound ranking / policy / compression / evaluation stages.
+
+Until that evidence exists, a blanket async rewrite is **not** justified.
 
 ## Follow-ups (measured next, tracked separately)
 
