@@ -164,15 +164,7 @@ def start_loop_run_sync(
         started_at=_now(),
         metadata=sanitize_loop_metadata(metadata or {}),
     )
-    # Loop evidence is best-effort observability: it must never block a response
-    # (invariant #4). Persistence can legitimately refuse — e.g. the Postgres backend
-    # requires a non-empty tenant_id for scoped evidence, which an isolation probe
-    # (empty/edge tenant) deliberately violates. The in-memory backend tolerates it,
-    # so degrade gracefully to keep both backends at parity.
-    try:
-        repo.add_loop_run(run)
-    except Exception as exc:  # noqa: BLE001 — evidence is best-effort
-        logger.warning("loop run evidence skipped", extra={"error": str(exc)})
+    repo.add_loop_run(run)
     return run
 
 
@@ -186,16 +178,12 @@ def emit_loop_event_sync(
     evidence: dict[str, Any] | None = None,
     audit_event_id: str | None = None,
 ) -> LoopEvent:
-    try:
-        prior = repo.list_loop_events(
-            loop_run_id=run.id,
-            tenant_id=run.tenant_id,
-            user_id=run.user_id,
-            limit=1,
-        )
-    except Exception as exc:  # noqa: BLE001 — evidence is best-effort (invariant #4)
-        logger.warning("loop event lookup skipped", extra={"error": str(exc)})
-        prior = []
+    prior = repo.list_loop_events(
+        loop_run_id=run.id,
+        tenant_id=run.tenant_id,
+        user_id=run.user_id,
+        limit=1,
+    )
     state_from = prior[0].state_to if prior else None
     validate_transition(state_from, state_to)
     event = LoopEvent(
@@ -211,10 +199,7 @@ def emit_loop_event_sync(
         audit_event_id=audit_event_id,
         created_at=_now(),
     )
-    try:
-        repo.add_loop_event(event, tenant_id=run.tenant_id, user_id=run.user_id)
-    except Exception as exc:  # noqa: BLE001 — evidence is best-effort (invariant #4)
-        logger.warning("loop event evidence skipped", extra={"error": str(exc)})
+    repo.add_loop_event(event, tenant_id=run.tenant_id, user_id=run.user_id)
     return event
 
 
@@ -228,8 +213,5 @@ def complete_loop_run_sync(
     run.status = status
     run.ended_at = _now()
     run.metadata.update(sanitize_loop_metadata(metadata or {}))
-    try:
-        repo.update_loop_run(run)
-    except Exception as exc:  # noqa: BLE001 — evidence is best-effort (invariant #4)
-        logger.warning("loop run completion evidence skipped", extra={"error": str(exc)})
+    repo.update_loop_run(run)
     return run
