@@ -9,17 +9,17 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "16.2.10",
-    "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "next": "14.2.15",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@types/node": "26.1.1",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
-    "autoprefixer": "10.5.4",
-    "postcss": "8.5.20",
-    "tailwindcss": "3.4.19",
-    "typescript": "7.0.2"
+    "@types/node": "20.16.5",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.47",
+    "tailwindcss": "3.4.13",
+    "typescript": "5.6.2"
   }
 }
