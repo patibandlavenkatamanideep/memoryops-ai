@@ -21,6 +21,12 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+class OperationalAccessUnavailable(RuntimeError):
+    """Raised when a cross-tenant operational read is requested but no separately
+    authorized operational connection is configured. Fail-closed: the caller must
+    degrade gracefully rather than fall back to a tenant-scoped connection."""
+
+
 @dataclass
 class StoredMemory:
     tenant_id: str

@@ -117,6 +117,23 @@ def test_worker_runs_are_tenant_scoped(repo):
     assert repo.list_worker_runs(tenant_id="tenant_demo", user_id="other") == []
 
 
+def test_worker_health_operational_read_is_explicitly_cross_tenant(repo):
+    # v2.3 (P0): global worker health is a deliberate cross-tenant *operational*
+    # view, kept on a separate, explicitly-authorized path — never by relaxing the
+    # tenant-scoped query (which stays isolated, asserted above). The two methods
+    # answer different questions and must not be confused.
+    from app.db.entities import WorkerRunRecord
+
+    repo.add_worker_run(WorkerRunRecord(tenant_id="tenant_acme", user_id="u1", status="completed"))
+    repo.add_worker_run(WorkerRunRecord(tenant_id="tenant_demo", user_id="u1", status="failed"))
+
+    # Tenant-scoped read still refuses to span tenants.
+    assert {r.tenant_id for r in repo.list_worker_runs(tenant_id="tenant_acme")} == {"tenant_acme"}
+    # The operational read is the *only* one that spans them, and it is opt-in.
+    operational = repo.list_worker_runs_operational()
+    assert {r.tenant_id for r in operational} == {"tenant_acme", "tenant_demo"}
+
+
 def test_audit_listing_is_tenant_and_memory_scoped(gateway, repo):
     # v0.5: the control plane's per-memory audit filter must stay tenant-scoped
     # and must not surface another memory's events.

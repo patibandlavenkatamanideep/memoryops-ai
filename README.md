@@ -84,7 +84,8 @@ Full design, diagrams, and where each invariant is enforced:
 4. **Graceful degradation** — retrieval failure never blocks a response.
 5. **Policy-before-storage** — unsafe/secret-like content is filtered before storage.
 6. **Temporary chat** — temporary sessions never read or write memory.
-7. **Auditability** — every lifecycle event appends an audit event.
+7. **Auditability** — every lifecycle mutation and its audit event commit together in
+   one transaction (atomic under partial failure), as an append-only, tamper-evident chain.
 8. **Explainability** — the system can show which memories affected a response.
 9. **Typed memory** — episodic/semantic/procedural/project/knowledge/system differ.
 10. **Evaluation** — memory quality is testable via a golden set, not manual inspection.
@@ -124,11 +125,12 @@ OpenAI Agents SDK) are *import-guarded examples*, not live-service tested. See
 Kept explicit on purpose — see **[docs/limitations.md](docs/limitations.md)** for the
 authoritative list. The material ones:
 
-- **Real-model extraction quality is not yet measured.** The extraction harness and
-  recorded-provider tests exist, but no run against a real provider has been recorded;
-  [EXTRACTION_QUALITY.md](benchmark/EXTRACTION_QUALITY.md) currently has only the
-  offline-stub row. Add a key and it fills in: `python evals/run_extraction_quality.py
-  --provider openai` (needs `OPENAI_API_KEY`).
+- **Real-model extraction quality is measured, but on a small set.** A live run on a
+  25-turn labeled set with **gemini-2.5-flash** scores **0.94 precision / 0.94 recall /
+  0.94 F1 with zero fallbacks** (vs. the offline stub's 1.00 / 0.53 / 0.69), recorded in
+  [EXTRACTION_QUALITY.md](benchmark/EXTRACTION_QUALITY.md). Broader provider/model
+  coverage and larger datasets remain future work — add a key and more rows fill in:
+  `python evals/run_extraction_quality.py --provider openai` (needs `OPENAI_API_KEY`).
 - **The request path is synchronous.** Under load, throughput is flat and latency grows
   with concurrency in a single process ([docs/performance.md](docs/performance.md)); the
   cause is not yet isolated, and the async decision is deferred until the I/O-bound

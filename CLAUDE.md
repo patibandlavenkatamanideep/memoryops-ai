@@ -23,7 +23,8 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 4. Graceful degradation — retrieval failures never block responses.
 5. Policy-before-storage — the policy broker runs before any write.
 6. Temporary chat — `temporary_chat=true` writes/reads nothing.
-7. Auditability — every lifecycle action appends an audit event.
+7. Auditability — every lifecycle mutation and its audit event commit atomically in one
+   `repo.transaction()` (append-only, tamper-evident, fork-proof under concurrency; ADR-027).
 
 ## Layout
 

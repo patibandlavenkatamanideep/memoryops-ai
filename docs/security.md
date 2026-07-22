@@ -100,6 +100,19 @@ The most dangerous failures for an AI memory system are:
   covers deletion/compaction audit events too, so a deletion proof is verifiable. This is
   tamper-*evidence*, not tamper-*proofing* — pin the head hash to a WORM store/notary for
   a stronger guarantee. See [enterprise-evidence.md](enterprise-evidence.md).
+- **Atomic mutation + audit (v2.3, ADR-027).** Every mutation-plus-evidence path
+  (save/update/merge, approve/reject/archive, manual edit, soft-delete + tombstone,
+  legal-hold/pin/protect/consent) runs inside one `repo.transaction()`, so a crash
+  between the memory write and its audit event can no longer persist one without the
+  other — the auditability guarantee holds under partial failure, not just the happy path.
+- **Fork-proof chain under concurrency (v2.3, ADR-027).** A per-tenant `audit_chain_heads`
+  row (migration 011) is locked with `SELECT ... FOR UPDATE` while a new event links and
+  advances the head, so concurrent audited mutations serialize onto one continuous chain
+  instead of forking it. The in-memory backend uses an equivalent per-repo lock.
+- **Operational health never weakens RLS (v2.3, ADR-027).** Global (cross-tenant) worker
+  health reads through a *separately authorized* operational connection
+  (`OPERATIONAL_DATABASE_URL`), never the request-scoped RLS engine; unconfigured, it
+  fails closed to a documented "not configured" state rather than leaking or crashing.
 
 ### Loop engineering traces (v0.3.1)
 - `loop_runs` / `loop_events` (migration `005_loop_engineering.sql`) store operational lifecycle

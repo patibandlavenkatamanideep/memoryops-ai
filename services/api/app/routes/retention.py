@@ -75,16 +75,17 @@ def _state(memory) -> dict:
 def set_legal_hold(req: LegalHoldRequest, request: Request) -> dict:
     repo, memory = _load(req, request)
     gov.set_legal_hold(memory, on=req.on, reason=req.reason)
-    repo.update_memory(memory)
-    audit_service().record(
-        tenant_id=req.tenant_id,
-        user_id=req.user_id,
-        memory_id=req.memory_id,
-        action="memory_legal_hold_set" if req.on else "memory_legal_hold_released",
-        reason=(req.reason or "legal hold updated") if req.on else "legal hold released",
-        trace_id=_trace(request),
-        metadata={"legal_hold": req.on},
-    )
+    with repo.transaction(req.tenant_id, req.user_id):
+        repo.update_memory(memory)
+        audit_service().record(
+            tenant_id=req.tenant_id,
+            user_id=req.user_id,
+            memory_id=req.memory_id,
+            action="memory_legal_hold_set" if req.on else "memory_legal_hold_released",
+            reason=(req.reason or "legal hold updated") if req.on else "legal hold released",
+            trace_id=_trace(request),
+            metadata={"legal_hold": req.on},
+        )
     return _state(memory)
 
 
@@ -92,16 +93,17 @@ def set_legal_hold(req: LegalHoldRequest, request: Request) -> dict:
 def set_pin(req: FlagRequest, request: Request) -> dict:
     repo, memory = _load(req, request)
     gov.set_pinned(memory, on=req.on)
-    repo.update_memory(memory)
-    audit_service().record(
-        tenant_id=req.tenant_id,
-        user_id=req.user_id,
-        memory_id=req.memory_id,
-        action="memory_pinned" if req.on else "memory_unpinned",
-        reason="memory pin updated",
-        trace_id=_trace(request),
-        metadata={"pinned": req.on},
-    )
+    with repo.transaction(req.tenant_id, req.user_id):
+        repo.update_memory(memory)
+        audit_service().record(
+            tenant_id=req.tenant_id,
+            user_id=req.user_id,
+            memory_id=req.memory_id,
+            action="memory_pinned" if req.on else "memory_unpinned",
+            reason="memory pin updated",
+            trace_id=_trace(request),
+            metadata={"pinned": req.on},
+        )
     return _state(memory)
 
 
@@ -109,16 +111,17 @@ def set_pin(req: FlagRequest, request: Request) -> dict:
 def set_protect(req: FlagRequest, request: Request) -> dict:
     repo, memory = _load(req, request)
     gov.set_protected(memory, on=req.on)
-    repo.update_memory(memory)
-    audit_service().record(
-        tenant_id=req.tenant_id,
-        user_id=req.user_id,
-        memory_id=req.memory_id,
-        action="memory_protected" if req.on else "memory_unprotected",
-        reason="memory protection updated",
-        trace_id=_trace(request),
-        metadata={"protected": req.on},
-    )
+    with repo.transaction(req.tenant_id, req.user_id):
+        repo.update_memory(memory)
+        audit_service().record(
+            tenant_id=req.tenant_id,
+            user_id=req.user_id,
+            memory_id=req.memory_id,
+            action="memory_protected" if req.on else "memory_unprotected",
+            reason="memory protection updated",
+            trace_id=_trace(request),
+            metadata={"protected": req.on},
+        )
     return _state(memory)
 
 
@@ -128,16 +131,17 @@ def set_consent(req: ConsentRequest, request: Request) -> dict:
         raise HTTPException(status_code=422, detail=f"unknown consent status: {req.status}")
     repo, memory = _load(req, request)
     gov.set_consent(memory, status=req.status, expires_at=req.expires_at)
-    repo.update_memory(memory)
-    audit_service().record(
-        tenant_id=req.tenant_id,
-        user_id=req.user_id,
-        memory_id=req.memory_id,
-        action="memory_consent_updated",
-        reason=f"consent set to {req.status}",
-        trace_id=_trace(request),
-        metadata={"consent_status": req.status},
-    )
+    with repo.transaction(req.tenant_id, req.user_id):
+        repo.update_memory(memory)
+        audit_service().record(
+            tenant_id=req.tenant_id,
+            user_id=req.user_id,
+            memory_id=req.memory_id,
+            action="memory_consent_updated",
+            reason=f"consent set to {req.status}",
+            trace_id=_trace(request),
+            metadata={"consent_status": req.status},
+        )
     return _state(memory)
 
 

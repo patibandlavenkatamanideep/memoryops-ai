@@ -196,7 +196,12 @@ See [docs/enterprise-evidence.md](enterprise-evidence.md), ADR-024.
 
 ## Ops
 - `GET /healthz` → `{ status, version, uptime_seconds, metrics_enabled }`
-- `GET /healthz/workers` → content-free worker run history (dead-letter / failure counts)
+- `GET /healthz/workers` → content-free, **cross-tenant** worker run history (dead-letter /
+  failure counts). This is a global operator view served from a separately authorized
+  operational connection (`OPERATIONAL_DATABASE_URL`), never the request-scoped RLS engine
+  (v2.3, ADR-027). When that connection is unconfigured it returns
+  `{ healthy: null, detail: "operational access not configured", hint: … }` — an
+  actionable, non-fatal state, not a `500`.
 - `GET /readyz` → `{ ready, storage, llm_provider, embeddings_provider, embedding_dim, detail }`
 - `GET /metrics` → **Prometheus text exposition** (v1.1; format `0.0.4`). Process-wide,
   content-free, low-cardinality (no `tenant_id`/`user_id` labels): HTTP traffic,

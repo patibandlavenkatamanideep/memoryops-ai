@@ -3,6 +3,42 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## Unreleased — post-v2.2 hardening
+Additive under the `1.x` compatibility promise. Consolidates the operational and
+evidence hardening that landed after the v2.2 tag but has not yet been cut as a release:
+
+- **SDK published** to PyPI (`memoryops-sdk`) with a tag-only, version-locked
+  publish workflow (`.github/workflows/publish-sdk.yml`).
+- **Dependency security fixes**, including the PyJWT/`pyjwt[crypto]` path for the
+  auth adapters and the Dependabot major bumps (web / RLS / perf) CI repairs.
+- **Complete operational-evidence RLS** (migration 009): loop runs/events and worker
+  runs now enforce the same `FORCE` tenant boundary as memory + audit rows.
+- **Migration enforcement** at startup: the Postgres backend refuses to start unless
+  the current schema migration is applied.
+- **Real-model extraction evidence**: a live gemini-2.5-flash run
+  (0.94 / 0.94 / 0.94, 0 fallbacks) recorded in `benchmark/EXTRACTION_QUALITY.md`,
+  and the retired-model default fixed.
+- **README consolidation** (550 → ~158 lines) and the empty-scope rejection fix.
+- **Async decision recorded**: defer a blanket async conversion; tune and measure the
+  synchronous path against real Postgres/provider workloads first
+  (`docs/performance.md`, ADR).
+
+### In progress — v2.3 Transactional Evidence (this branch, not yet tagged)
+Closes the gap between the auditability *claim* and the transaction *boundary*:
+
+- **Atomic mutation + audit**: every mutation-plus-evidence path (save/update/merge,
+  approve/reject/archive, manual edit, soft-delete + tombstone, legal-hold, pin,
+  protect, consent) now runs inside a single `repo.transaction(...)` — a crash between
+  the memory write and its audit event can no longer persist one without the other.
+- **Fork-proof audit chain**: a tenant-locked `audit_chain_heads` table (migration 011)
+  with `SELECT ... FOR UPDATE` serializes concurrent audited mutations onto one
+  continuous hash chain (the in-memory backend uses an equivalent per-repo lock).
+- **Worker-health regression fixed**: global worker health reads via an explicit
+  cross-tenant *operational* connection (`OPERATIONAL_DATABASE_URL`, a monitoring role),
+  fail-closed and clearly reported when unconfigured — never weakening tenant RLS.
+- **Teeth**: `tests/test_transactional_evidence.py` proves rollback (neither side
+  survives a partial failure) and chain continuity under 40 concurrent appends.
+
 ## v2.2 — Public Benchmark + Examples
 Additive under the `1.x` compatibility promise. Turns MemoryOps' *measured* governance
 into a public, reproducible artifact. A new **benchmark** (`benchmark/run_benchmark.py`)

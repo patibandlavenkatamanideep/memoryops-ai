@@ -75,6 +75,18 @@ class AuditLogORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AuditChainHeadORM(Base):
+    """One row per tenant holding the current audit hash-chain head (migration
+    011). The append path locks this row with SELECT ... FOR UPDATE so concurrent
+    audited mutations serialize onto one continuous chain instead of forking."""
+
+    __tablename__ = "audit_chain_heads"
+
+    tenant_id: Mapped[str] = mapped_column(String, primary_key=True)
+    head_hash: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class LoopRunORM(Base):
     __tablename__ = "loop_runs"
 

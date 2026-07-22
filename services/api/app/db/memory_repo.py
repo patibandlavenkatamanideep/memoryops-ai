@@ -6,6 +6,7 @@ scoping on every read, deleted rows excluded from retrieval, append-only audit.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
@@ -38,6 +39,10 @@ class InMemoryRepository(Repository):
         self._memories: dict[str, StoredMemory] = {}
         self._audit: list[StoredAudit] = []
         self._audit_head: dict[str, str] = {}  # tenant → last entry_hash (v2.0 chain)
+        # Serializes the chain head read-modify-write so concurrent audited
+        # mutations cannot fork the chain — the in-memory analogue of the
+        # Postgres SELECT ... FOR UPDATE on audit_chain_heads (migration 011).
+        self._audit_head_lock = threading.Lock()
         self._settings: dict[tuple[str, str], StoredSettings] = {}
         self._loop_runs: dict[str, LoopRun] = {}
         self._loop_events: list[LoopEvent] = []
@@ -225,10 +230,11 @@ class InMemoryRepository(Repository):
         # previous one in its tenant's chain so any later edit/reorder is detectable.
         from ..evidence.hashchain import GENESIS, compute_entry_hash
 
-        event.prev_hash = self._audit_head.get(event.tenant_id, GENESIS)
-        event.entry_hash = compute_entry_hash(event, event.prev_hash)
-        self._audit_head[event.tenant_id] = event.entry_hash
-        self._audit.append(event)  # append-only (invariant #7)
+        with self._audit_head_lock:
+            event.prev_hash = self._audit_head.get(event.tenant_id, GENESIS)
+            event.entry_hash = compute_entry_hash(event, event.prev_hash)
+            self._audit_head[event.tenant_id] = event.entry_hash
+            self._audit.append(event)  # append-only (invariant #7)
         return event
 
     def list_audit(
@@ -290,6 +296,16 @@ class InMemoryRepository(Repository):
             rows = [r for r in rows if r.tenant_id == tenant_id]
         if user_id:
             rows = [r for r in rows if r.user_id == user_id]
+        if status:
+            rows = [r for r in rows if r.status == status]
+        return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
+
+    def list_worker_runs_operational(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[WorkerRunRecord]:
+        # The single-process in-memory store has no separate RLS boundary to
+        # cross, so the whole run history is the operational view.
+        rows = list(self._worker_runs)
         if status:
             rows = [r for r in rows if r.status == status]
         return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]

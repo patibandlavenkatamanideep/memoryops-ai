@@ -202,8 +202,14 @@ class WorkerOrchestrator:
 
 
 def summarize_runtime_health(repo: Repository, *, limit: int = 200) -> dict:
-    """Content-free operational health view over recent worker runs (v0.8)."""
-    runs = repo.list_worker_runs(limit=limit)
+    """Content-free operational health view over recent worker runs (v0.8).
+
+    Global operator concern → reads via the explicit cross-tenant operational
+    path, not the tenant-scoped one (which would raise). Raises
+    ``OperationalAccessUnavailable`` when no operational connection is configured;
+    callers degrade gracefully.
+    """
+    runs = repo.list_worker_runs_operational(limit=limit)
     by_status: dict[str, int] = {}
     last_per_scope: dict[str, dict] = {}
     for r in runs:

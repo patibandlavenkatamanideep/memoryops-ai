@@ -59,6 +59,16 @@ Stored via `worker_runs` (migration `006_worker_runtime.sql`); query with
 | `worker_backoff_factor` | 2.0 | backoff multiplier |
 | `worker_backoff_max_seconds` | 30.0 | backoff ceiling |
 | `worker_run_history_limit` | 500 | rows scanned for the health view |
+| `operational_database_url` (`OPERATIONAL_DATABASE_URL`) | *(unset)* | separately authorized cross-tenant connection for global worker health |
+
+> **Global worker health & tenant isolation (v2.3, ADR-027).** `GET /healthz/workers`
+> aggregates runs across *all* tenants, so it must not use the request-scoped,
+> RLS-enforced connection (that one is — correctly — tenant-scoped and rejects an
+> unscoped query). It reads instead through an explicit operational path
+> (`list_worker_runs_operational`) backed by `OPERATIONAL_DATABASE_URL`, a
+> monitoring/BYPASSRLS role. Leave it unset and worker health fails **closed**:
+> `{ healthy: null, detail: "operational access not configured", … }` — never a crash,
+> never a tenant-boundary relaxation.
 
 ## Running
 
