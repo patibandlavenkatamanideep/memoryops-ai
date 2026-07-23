@@ -233,27 +233,30 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
     if not m or m.status == Status.deleted:
         raise HTTPException(status_code=404, detail="memory not found")
 
+    # Mutation + audit are one atomic unit of work (P0): a crash mid-way can no
+    # longer persist the edit without its audit evidence, or vice versa. The
+    # transaction must open *before* the in-place field mutations — the in-memory
+    # backend hands back the live stored row, so a rollback can only undo changes
+    # made after the unit of work's snapshot is taken.
     action = "memory_updated"
     reason = "memory edited"
-    if patch.content is not None:
-        m.content = patch.content
-        m.normalized_content = " ".join(patch.content.lower().split())
-    if patch.importance is not None:
-        m.importance = patch.importance
-    if patch.confidence is not None:
-        m.confidence = patch.confidence
-    if patch.status is not None:
-        m.status = patch.status
-        if patch.status == Status.active:
-            action, reason = "memory_approved", "pending memory approved"
-        elif patch.status == Status.rejected:
-            action, reason = "memory_rejected", "pending memory rejected"
-        elif patch.status == Status.archived:
-            action, reason = "memory_archived", "memory archived"
-
-    # Mutation + audit are one atomic unit of work (P0): a crash mid-way can no
-    # longer persist the edit without its audit evidence, or vice versa.
     with repo.transaction(patch.tenant_id, patch.user_id):
+        if patch.content is not None:
+            m.content = patch.content
+            m.normalized_content = " ".join(patch.content.lower().split())
+        if patch.importance is not None:
+            m.importance = patch.importance
+        if patch.confidence is not None:
+            m.confidence = patch.confidence
+        if patch.status is not None:
+            m.status = patch.status
+            if patch.status == Status.active:
+                action, reason = "memory_approved", "pending memory approved"
+            elif patch.status == Status.rejected:
+                action, reason = "memory_rejected", "pending memory rejected"
+            elif patch.status == Status.archived:
+                action, reason = "memory_archived", "memory archived"
+
         repo.update_memory(m)
         emit_loop_event_sync(
             repo,
