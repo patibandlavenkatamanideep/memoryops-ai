@@ -36,6 +36,21 @@ settings = get_settings()
 setup_logging(settings.log_level)
 logger = get_logger("memoryops.http")
 
+# Fail-closed production guard (v2.3). Under MEMORYOPS_PROFILE=production the
+# demo-friendly defaults (in-memory store, auth off, open CORS, demo creds,
+# public evals) become hard startup errors — the process refuses to boot rather
+# than silently serve production traffic with dev defaults. No-op for "dev".
+_prod_errors = settings.production_readiness_errors()
+if _prod_errors:
+    logger.error(
+        "refusing to start under MEMORYOPS_PROFILE=production",
+        extra={"event": "startup_blocked", "violations": _prod_errors},
+    )
+    raise RuntimeError(
+        "MEMORYOPS_PROFILE=production but insecure settings remain:\n  - "
+        + "\n  - ".join(_prod_errors)
+    )
+
 app = FastAPI(
     title="MemoryOps AI API",
     version=__version__,
@@ -44,7 +59,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten per-environment in production
+    allow_origins=settings.cors_origins_list(),  # "*" in dev; explicit list in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
