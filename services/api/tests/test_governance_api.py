@@ -8,6 +8,8 @@ auditability (#7).
 
 from __future__ import annotations
 
+import pytest
+
 from app.db.entities import StoredMemory
 from app.schemas.memory import MemoryType, Sensitivity, Source, Status
 
@@ -97,6 +99,29 @@ def test_approve_pending(api_client):
     assert r.json()["status"] == "active"
     actions = {e.action for e in repo.list_audit("t1", "u1", memory_id=m.id)}
     assert "memory_approved" in actions
+
+
+def test_approve_is_atomic_when_audit_fails(api_client, monkeypatch):
+    """v2.3 (P0, ADR-027): the control-plane mutation + its audit event commit in one
+    transaction. If the audit append fails while approving, the status change rolls
+    back — the memory stays pending, never approved-without-evidence."""
+    client, repo = api_client
+    m = _seed(repo, status=Status.pending)
+
+    def _boom(_event):
+        raise RuntimeError("audit backend down")
+
+    monkeypatch.setattr(repo, "add_audit", _boom)
+
+    with pytest.raises(RuntimeError):
+        client.patch(
+            f"/api/memories/{m.id}",
+            json={"tenant_id": "t1", "user_id": "u1", "status": "active"},
+        )
+
+    # Rolled back: still pending, and no partial audit event for the approval.
+    assert repo.get_memory("t1", "u1", m.id).status is Status.pending
+    assert repo.list_audit("t1", "u1", memory_id=m.id) == []
 
 
 def test_reject_pending(api_client):

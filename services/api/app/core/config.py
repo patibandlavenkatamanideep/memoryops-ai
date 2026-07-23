@@ -97,6 +97,11 @@ class Settings(BaseSettings):
     vector_index_api_key: str = ""
     vector_index_collection: str = "memoryops"
     database_url: str = "postgresql+psycopg://memoryops:memoryops@localhost:5432/memoryops"
+    # Optional cross-tenant *operational* connection (a monitoring/BYPASSRLS
+    # role) used only for global operator views like worker health. Unset by
+    # default: operational aggregation is fail-closed and never reuses the
+    # request-scoped, RLS-enforced connection. See docs/worker-runtime.md.
+    operational_database_url: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
 

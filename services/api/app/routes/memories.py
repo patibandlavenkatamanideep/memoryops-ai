@@ -233,49 +233,55 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
     if not m or m.status == Status.deleted:
         raise HTTPException(status_code=404, detail="memory not found")
 
+    # Mutation + audit are one atomic unit of work (P0): a crash mid-way can no
+    # longer persist the edit without its audit evidence, or vice versa. The
+    # transaction must open *before* the in-place field mutations — the in-memory
+    # backend hands back the live stored row, so a rollback can only undo changes
+    # made after the unit of work's snapshot is taken.
     action = "memory_updated"
     reason = "memory edited"
-    if patch.content is not None:
-        m.content = patch.content
-        m.normalized_content = " ".join(patch.content.lower().split())
-    if patch.importance is not None:
-        m.importance = patch.importance
-    if patch.confidence is not None:
-        m.confidence = patch.confidence
-    if patch.status is not None:
-        m.status = patch.status
-        if patch.status == Status.active:
-            action, reason = "memory_approved", "pending memory approved"
-        elif patch.status == Status.rejected:
-            action, reason = "memory_rejected", "pending memory rejected"
-        elif patch.status == Status.archived:
-            action, reason = "memory_archived", "memory archived"
+    with repo.transaction(patch.tenant_id, patch.user_id):
+        if patch.content is not None:
+            m.content = patch.content
+            m.normalized_content = " ".join(patch.content.lower().split())
+        if patch.importance is not None:
+            m.importance = patch.importance
+        if patch.confidence is not None:
+            m.confidence = patch.confidence
+        if patch.status is not None:
+            m.status = patch.status
+            if patch.status == Status.active:
+                action, reason = "memory_approved", "pending memory approved"
+            elif patch.status == Status.rejected:
+                action, reason = "memory_rejected", "pending memory rejected"
+            elif patch.status == Status.archived:
+                action, reason = "memory_archived", "memory archived"
 
-    repo.update_memory(m)
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.EXECUTED,
-        event_type="memory_governance_executed",
-        reason="memory governance patch executed",
-        evidence={"action": action, "status": m.status.value},
-    )
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.VERIFIED,
-        event_type="memory_governance_verified",
-        reason="memory status/content update verified",
-        evidence={"memory_id": memory_id, "status": m.status.value},
-    )
-    audit = audit_service().record(
-        tenant_id=patch.tenant_id,
-        user_id=patch.user_id,
-        memory_id=memory_id,
-        action=action,
-        reason=reason,
-        trace_id=trace_id,
-    )
+        repo.update_memory(m)
+        emit_loop_event_sync(
+            repo,
+            loop,
+            LoopState.EXECUTED,
+            event_type="memory_governance_executed",
+            reason="memory governance patch executed",
+            evidence={"action": action, "status": m.status.value},
+        )
+        emit_loop_event_sync(
+            repo,
+            loop,
+            LoopState.VERIFIED,
+            event_type="memory_governance_verified",
+            reason="memory status/content update verified",
+            evidence={"memory_id": memory_id, "status": m.status.value},
+        )
+        audit = audit_service().record(
+            tenant_id=patch.tenant_id,
+            user_id=patch.user_id,
+            memory_id=memory_id,
+            action=action,
+            reason=reason,
+            trace_id=trace_id,
+        )
     emit_loop_event_sync(
         repo,
         loop,
@@ -352,39 +358,41 @@ def delete_memory(memory_id: str, body: DeleteRequest, request: Request) -> dict
             trace_id=trace_id,
         )
         raise HTTPException(status_code=409, detail="memory is under legal hold")
-    m = repo.soft_delete(body.tenant_id, body.user_id, memory_id)
-    if not m:
-        raise HTTPException(status_code=404, detail="memory not found")
-    # Tombstone lineage (v1.4, ADR-018): stamp an explicit, audited tombstone so
-    # any artifact derived from this memory is blocked from context by the
-    # admission gate. Soft-deletion alone already blocks direct retrieval (#2);
-    # the marker propagates the deletion through derived lineage.
-    lineage.set_tombstone(m, on=True, reason="memory deleted")
-    repo.update_memory(m)
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.EXECUTED,
-        event_type="memory_governance_executed",
-        reason="memory soft delete executed",
-        evidence={"memory_id": memory_id, "status": "deleted"},
-    )
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.VERIFIED,
-        event_type="memory_governance_verified",
-        reason="deleted memory marked unretrievable",
-        evidence={"memory_id": memory_id, "status": m.status.value},
-    )
-    audit = audit_service().record(
-        tenant_id=body.tenant_id,
-        user_id=body.user_id,
-        memory_id=memory_id,
-        action="memory_deleted",
-        reason="memory soft-deleted; excluded from all future retrieval",
-        trace_id=trace_id,
-    )
+    # Soft-deletion, tombstone stamping, and the audit event are one atomic unit
+    # of work (P0): the deletion guarantee and its evidence commit together or
+    # not at all. Tombstone lineage (v1.4, ADR-018) stamps an explicit, audited
+    # tombstone so any artifact derived from this memory is blocked from context
+    # by the admission gate; soft-deletion alone already blocks direct retrieval.
+    with repo.transaction(body.tenant_id, body.user_id):
+        m = repo.soft_delete(body.tenant_id, body.user_id, memory_id)
+        if not m:
+            raise HTTPException(status_code=404, detail="memory not found")
+        lineage.set_tombstone(m, on=True, reason="memory deleted")
+        repo.update_memory(m)
+        emit_loop_event_sync(
+            repo,
+            loop,
+            LoopState.EXECUTED,
+            event_type="memory_governance_executed",
+            reason="memory soft delete executed",
+            evidence={"memory_id": memory_id, "status": "deleted"},
+        )
+        emit_loop_event_sync(
+            repo,
+            loop,
+            LoopState.VERIFIED,
+            event_type="memory_governance_verified",
+            reason="deleted memory marked unretrievable",
+            evidence={"memory_id": memory_id, "status": m.status.value},
+        )
+        audit = audit_service().record(
+            tenant_id=body.tenant_id,
+            user_id=body.user_id,
+            memory_id=memory_id,
+            action="memory_deleted",
+            reason="memory soft-deleted; excluded from all future retrieval",
+            trace_id=trace_id,
+        )
     emit_loop_event_sync(
         repo,
         loop,

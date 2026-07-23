@@ -4,6 +4,20 @@ from app.loops.types import LoopId, LoopStatus
 from app.schemas.memory import ChatRequest
 
 
+def test_memory_write_loop_audit_event_is_persisted(gateway, repo):
+    """The write loop's AUDITED state maps to a durably persisted audit event: the
+    memory and its `memory_created` audit are committed together in one transaction
+    (v2.3, ADR-027) — never a memory without its evidence."""
+    gateway.handle_chat(
+        ChatRequest(tenant_id="t1", user_id="u1", message="Remember I prefer persisted audits."),
+        trace_id="trace-audit-persist",
+    )
+    mems = repo.list_memories("t1", "u1")
+    assert mems
+    audits = repo.list_audit("t1", "u1", memory_id=mems[0].id)
+    assert any(a.action == "memory_created" for a in audits)
+
+
 def test_memory_write_loop_emits_events(gateway, repo):
     resp = gateway.handle_chat(
         ChatRequest(tenant_id="t1", user_id="u1", message="Remember that I prefer loops."),

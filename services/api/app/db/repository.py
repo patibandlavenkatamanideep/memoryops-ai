@@ -164,6 +164,20 @@ class Repository(ABC):
         limit: int = 200,
     ) -> list[WorkerRunRecord]: ...
 
+    @abstractmethod
+    def list_worker_runs_operational(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[WorkerRunRecord]:
+        """Cross-tenant worker-run history for *global operator* views only.
+
+        Deliberately not tenant-scoped — worker health is an operator concern that
+        spans every scope. This must never reuse the request-scoped, RLS-enforced
+        connection; a backend that cannot serve it without weakening tenant
+        isolation raises :class:`OperationalAccessUnavailable` (fail-closed) so the
+        caller degrades gracefully rather than leaking or crashing.
+        """
+        ...
+
     # ── settings ─────────────────────────────────────────────────────────────
     @abstractmethod
     def get_settings(self, tenant_id: str, user_id: str) -> StoredSettings: ...

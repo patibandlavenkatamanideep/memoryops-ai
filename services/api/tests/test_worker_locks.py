@@ -17,6 +17,21 @@ def test_scope_key_is_tenant_user() -> None:
     assert scope_key("t1", "u1") == "t1:u1"
 
 
+def test_operational_health_read_observes_leased_run(repo) -> None:
+    """v2.3 (ADR-027): the new cross-tenant *operational* run-history read
+    (`list_worker_runs_operational`) and worker leasing coexist — a run recorded
+    while a lease is held is visible to the global health view. Leasing prevents
+    duplicate runs; the operational read reports them, on separate paths."""
+    from app.db.entities import WorkerRunRecord
+
+    mgr = _mgr(repo, "worker-a")
+    assert mgr.acquire("t1:u1", now=NOW) is True
+    repo.add_worker_run(WorkerRunRecord(tenant_id="t1", user_id="u1", status="completed"))
+
+    observed = repo.list_worker_runs_operational()
+    assert any(r.tenant_id == "t1" and r.status == "completed" for r in observed)
+
+
 def test_second_owner_cannot_acquire_live_lease(repo) -> None:
     a = _mgr(repo, "worker-a")
     b = _mgr(repo, "worker-b")

@@ -6,6 +6,8 @@ scoping on every read, deleted rows excluded from retrieval, append-only audit.
 
 from __future__ import annotations
 
+import functools
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
@@ -33,11 +35,35 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _locked(method):
+    """Serialize a state-mutating method under the repository's re-entrant lock.
+
+    The in-memory backend is driven concurrently (uvicorn's threadpool). Its unit
+    of work (``transaction``) snapshots the whole store with ``deepcopy``; a write
+    mutating a dict/list while another thread deep-copies it raises "dictionary
+    changed size during iteration". A single re-entrant lock, held by both the
+    transaction and every mutation, makes writes serialize safely. The lock is
+    re-entrant so mutations invoked *inside* a transaction (which already holds it)
+    do not deadlock. Postgres does not need this — it uses real DB transactions."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class InMemoryRepository(Repository):
     def __init__(self, vector_index: VectorIndex | None = None) -> None:
         self._memories: dict[str, StoredMemory] = {}
         self._audit: list[StoredAudit] = []
         self._audit_head: dict[str, str] = {}  # tenant → last entry_hash (v2.0 chain)
+        # One re-entrant lock guards the transaction snapshot/restore and every
+        # state mutation, so concurrent requests can't corrupt the store or fork
+        # the audit chain. Re-entrant: a mutation inside an active transaction
+        # (which holds it) re-acquires it on the same thread without deadlock.
+        self._lock = threading.RLock()
         self._settings: dict[tuple[str, str], StoredSettings] = {}
         self._loop_runs: dict[str, LoopRun] = {}
         self._loop_events: list[LoopEvent] = []
@@ -50,45 +76,53 @@ class InMemoryRepository(Repository):
 
     @contextmanager
     def transaction(self, tenant_id: str, user_id: str = "") -> Iterator[None]:
-        """Rollback-capable unit of work for the in-memory backend."""
-        if self._transaction_depth:
-            self._transaction_depth += 1
+        """Rollback-capable unit of work for the in-memory backend.
+
+        Holds ``self._lock`` for the whole unit of work: the snapshot, the caller's
+        body, and any commit/restore. Because the lock is re-entrant and every
+        mutation also takes it, no other thread can mutate the store while it is
+        being deep-copied (which would otherwise raise "dictionary changed size
+        during iteration" under concurrent load)."""
+        with self._lock:
+            if self._transaction_depth:
+                self._transaction_depth += 1
+                try:
+                    yield
+                finally:
+                    self._transaction_depth -= 1
+                return
+            snapshot = (
+                deepcopy(self._memories),
+                deepcopy(self._audit),
+                deepcopy(self._audit_head),
+                deepcopy(self._settings),
+                deepcopy(self._loop_runs),
+                deepcopy(self._loop_events),
+                deepcopy(self._leases),
+                deepcopy(self._worker_runs),
+                deepcopy(self._vectors),
+            )
+            self._transaction_depth = 1
             try:
                 yield
+            except Exception:
+                (
+                    self._memories,
+                    self._audit,
+                    self._audit_head,
+                    self._settings,
+                    self._loop_runs,
+                    self._loop_events,
+                    self._leases,
+                    self._worker_runs,
+                    self._vectors,
+                ) = snapshot
+                raise
             finally:
-                self._transaction_depth -= 1
-            return
-        snapshot = (
-            deepcopy(self._memories),
-            deepcopy(self._audit),
-            deepcopy(self._audit_head),
-            deepcopy(self._settings),
-            deepcopy(self._loop_runs),
-            deepcopy(self._loop_events),
-            deepcopy(self._leases),
-            deepcopy(self._worker_runs),
-            deepcopy(self._vectors),
-        )
-        self._transaction_depth = 1
-        try:
-            yield
-        except Exception:
-            (
-                self._memories,
-                self._audit,
-                self._audit_head,
-                self._settings,
-                self._loop_runs,
-                self._loop_events,
-                self._leases,
-                self._worker_runs,
-                self._vectors,
-            ) = snapshot
-            raise
-        finally:
-            self._transaction_depth = 0
+                self._transaction_depth = 0
 
     # ── memory ───────────────────────────────────────────────────────────────
+    @_locked
     def create_memory(self, memory: StoredMemory) -> StoredMemory:
         if not memory.source:  # provenance is mandatory (invariant #3)
             raise ValueError("memory.source (provenance) is required")
@@ -96,10 +130,11 @@ class InMemoryRepository(Repository):
         self._vectors.upsert(memory.tenant_id, memory.user_id, memory.id, memory.embedding or [])
         return memory
 
+    @_locked
     def _scoped(self, tenant_id: str, user_id: str) -> list[StoredMemory]:
-        # Tenant + user isolation enforced here (invariant #1). Snapshot the dict
-        # first: concurrent writes mutate it in the threadpool, and iterating a live
-        # dict raises "dictionary changed size during iteration" under load.
+        # Tenant + user isolation enforced here (invariant #1). Held under the lock
+        # so the snapshot can't observe a concurrent write mid-mutation (which would
+        # raise "dictionary changed size during iteration" under load).
         return [
             m
             for m in list(self._memories.values())
@@ -130,6 +165,7 @@ class InMemoryRepository(Repository):
             rows = [m for m in rows if m.memory_type.value == memory_type]
         return sorted(rows, key=lambda m: m.created_at, reverse=True)
 
+    @_locked
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         memory.updated_at = datetime.now(UTC)
         self._memories[memory.id] = memory
@@ -142,6 +178,7 @@ class InMemoryRepository(Repository):
             self._vectors.delete(memory.tenant_id, memory.user_id, memory.id)
         return memory
 
+    @_locked
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
         m = self.get_memory(tenant_id, user_id, memory_id)
         if not m:
@@ -163,6 +200,7 @@ class InMemoryRepository(Repository):
             rows = [m for m in rows if not is_compacted(m)]
         return sorted(rows, key=lambda m: m.deleted_at or m.created_at, reverse=True)
 
+    @_locked
     def compact_deleted_memory(
         self,
         tenant_id: str,
@@ -194,6 +232,7 @@ class InMemoryRepository(Repository):
         # Only active rows are ever retrievable (invariant #2).
         return [m for m in self._scoped(tenant_id, user_id) if m.status.value == _ACTIVE]
 
+    @_locked
     def search_candidates(
         self,
         tenant_id: str,
@@ -220,9 +259,13 @@ class InMemoryRepository(Repository):
         return scored[:limit]
 
     # ── audit ────────────────────────────────────────────────────────────────
+    @_locked
     def add_audit(self, event: StoredAudit) -> StoredAudit:
         # Tamper-evident per-tenant hash chain (v2.0, ADR-024): link each event to the
         # previous one in its tenant's chain so any later edit/reorder is detectable.
+        # The lock serializes the head read-modify-write so concurrent audited
+        # mutations cannot fork the chain (the in-memory analogue of the Postgres
+        # SELECT ... FOR UPDATE on audit_chain_heads, migration 011).
         from ..evidence.hashchain import GENESIS, compute_entry_hash
 
         event.prev_hash = self._audit_head.get(event.tenant_id, GENESIS)
@@ -231,6 +274,7 @@ class InMemoryRepository(Repository):
         self._audit.append(event)  # append-only (invariant #7)
         return event
 
+    @_locked
     def list_audit(
         self,
         tenant_id: str,
@@ -247,6 +291,7 @@ class InMemoryRepository(Repository):
         return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]
 
     # ── worker runtime (v0.8) ──────────────────────────────────────────────────
+    @_locked
     def try_acquire_lease(
         self, key: str, owner: str, *, now: datetime, expires_at: datetime
     ) -> bool:
@@ -258,6 +303,7 @@ class InMemoryRepository(Repository):
         )
         return True
 
+    @_locked
     def renew_lease(self, key: str, owner: str, *, expires_at: datetime) -> bool:
         existing = self._leases.get(key)
         if not existing or existing.owner != owner:
@@ -265,6 +311,7 @@ class InMemoryRepository(Repository):
         existing.expires_at = expires_at
         return True
 
+    @_locked
     def release_lease(self, key: str, owner: str) -> None:
         existing = self._leases.get(key)
         if existing and existing.owner == owner:
@@ -273,10 +320,12 @@ class InMemoryRepository(Repository):
     def get_lease(self, key: str) -> WorkerLease | None:
         return self._leases.get(key)
 
+    @_locked
     def add_worker_run(self, record: WorkerRunRecord) -> WorkerRunRecord:
         self._worker_runs.append(record)
         return record
 
+    @_locked
     def list_worker_runs(
         self,
         *,
@@ -294,17 +343,30 @@ class InMemoryRepository(Repository):
             rows = [r for r in rows if r.status == status]
         return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
 
+    @_locked
+    def list_worker_runs_operational(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[WorkerRunRecord]:
+        # The single-process in-memory store has no separate RLS boundary to
+        # cross, so the whole run history is the operational view.
+        rows = list(self._worker_runs)
+        if status:
+            rows = [r for r in rows if r.status == status]
+        return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
+
     # ── settings ─────────────────────────────────────────────────────────────
     def get_settings(self, tenant_id: str, user_id: str) -> StoredSettings:
         return self._settings.get(
             (tenant_id, user_id), StoredSettings(tenant_id=tenant_id, user_id=user_id)
         )
 
+    @_locked
     def upsert_settings(self, settings: StoredSettings) -> StoredSettings:
         self._settings[(settings.tenant_id, settings.user_id)] = settings
         return settings
 
     # ── metrics ──────────────────────────────────────────────────────────────
+    @_locked
     def metrics(self, tenant_id: str) -> dict:
         rows = [m for m in list(self._memories.values()) if m.tenant_id == tenant_id]
         by_status: dict[str, int] = {}
@@ -325,14 +387,17 @@ class InMemoryRepository(Repository):
         }
 
     # ── loops ────────────────────────────────────────────────────────────────
+    @_locked
     def add_loop_run(self, run: LoopRun) -> LoopRun:
         self._loop_runs[run.id] = run
         return run
 
+    @_locked
     def update_loop_run(self, run: LoopRun) -> LoopRun:
         self._loop_runs[run.id] = run
         return run
 
+    @_locked
     def list_loop_runs(
         self,
         *,
@@ -356,6 +421,7 @@ class InMemoryRepository(Repository):
             rows = [r for r in rows if r.status.value == status]
         return sorted(rows, key=lambda r: r.started_at, reverse=True)[:limit]
 
+    @_locked
     def add_loop_event(
         self,
         event: LoopEvent,
@@ -366,6 +432,7 @@ class InMemoryRepository(Repository):
         self._loop_events.append(event)
         return event
 
+    @_locked
     def list_loop_events(
         self,
         *,

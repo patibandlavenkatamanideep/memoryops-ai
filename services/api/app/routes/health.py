@@ -31,6 +31,7 @@ def healthz() -> dict:
 def workers_health() -> dict:
     """Worker runtime health (v0.8): recent run history, dead-letter + failure
     counts, and the last run per scope. Content-free operational evidence."""
+    from ..db.entities import OperationalAccessUnavailable
     from ..workers.orchestrator import summarize_runtime_health
 
     settings = get_settings()
@@ -40,6 +41,14 @@ def workers_health() -> dict:
         )
         healthy = summary["dead_letter_count"] == 0 and summary["failed_count"] == 0
         return {"healthy": healthy, **summary}
+    except OperationalAccessUnavailable:
+        # Not an error — global worker health needs a separately authorized
+        # operational connection. Report it as an actionable, non-fatal state.
+        return {
+            "healthy": None,
+            "detail": "operational access not configured",
+            "hint": "set OPERATIONAL_DATABASE_URL to a monitoring role",
+        }
     except Exception as exc:  # noqa: BLE001 — health must not raise
         return {"healthy": False, "detail": f"unavailable: {type(exc).__name__}"}
 

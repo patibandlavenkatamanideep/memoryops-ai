@@ -18,6 +18,7 @@ from ..core.config import get_settings
 from ..loops.metrics import summarize_loop_runs
 from ..loops.types import LoopEvent, LoopId, LoopRun, LoopState, LoopStatus
 from ..models.sqlalchemy_models import (
+    AuditChainHeadORM,
     AuditLogORM,
     LoopEventORM,
     LoopRunORM,
@@ -28,6 +29,7 @@ from ..models.sqlalchemy_models import (
 )
 from ..schemas.memory import MemoryType, Sensitivity, Source, Status
 from .entities import (
+    OperationalAccessUnavailable,
     StoredAudit,
     StoredMemory,
     StoredSettings,
@@ -40,7 +42,7 @@ from .repository import Repository
 
 _DELETED = "deleted"
 _ACTIVE = "active"
-_CURRENT_SCHEMA_VERSION = "010_transactional_audit_chain"
+_CURRENT_SCHEMA_VERSION = "011_audit_chain_heads"
 
 
 def _norm(text: str) -> str:
@@ -117,7 +119,28 @@ class PostgresRepository(Repository):
         )
         self._active_tenant: ContextVar[str] = ContextVar("memoryops_pg_tenant", default="")
         self._active_user: ContextVar[str] = ContextVar("memoryops_pg_user", default="")
+        # Separately authorized, cross-tenant connection for global operator views
+        # (worker health). Built lazily; only from an explicitly configured
+        # monitoring role, never the request-scoped engine (see ADR-006 / #1).
+        self._operational_settings = settings
+        self._operational_engine = None
+        self._OperationalSession: sessionmaker[Session] | None = None
         self._assert_current_schema()
+
+    def _operational_session_factory(self) -> sessionmaker[Session]:
+        url = (self._operational_settings.operational_database_url or "").strip()
+        if not url:
+            raise OperationalAccessUnavailable(
+                "operational worker-run access is not configured; set "
+                "OPERATIONAL_DATABASE_URL to a monitoring role to enable global "
+                "worker health"
+            )
+        if self._OperationalSession is None:
+            self._operational_engine = create_engine(url, pool_pre_ping=True, future=True)
+            self._OperationalSession = sessionmaker(
+                self._operational_engine, expire_on_commit=False
+            )
+        return self._OperationalSession
 
     def _assert_current_schema(self) -> None:
         """Fail clearly when the database has not been migrated."""
@@ -395,19 +418,29 @@ class PostgresRepository(Repository):
     # ── audit ────────────────────────────────────────────────────────────────
     def add_audit(self, event: StoredAudit) -> StoredAudit:
         with self._scoped(event.tenant_id, event.user_id or "") as s:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
             from ..evidence.hashchain import GENESIS, compute_entry_hash
 
-            prev_hash = s.scalars(
-                select(AuditLogORM.entry_hash)
-                .where(
-                    AuditLogORM.tenant_id == event.tenant_id,
-                    AuditLogORM.entry_hash != "",
-                )
-                .order_by(AuditLogORM.created_at.desc())
-                .limit(1)
-            ).first() or GENESIS
+            # Serialize this tenant's chain (P0, migration 011): ensure a head row
+            # exists, then lock it FOR UPDATE. Two concurrent audited mutations
+            # can no longer read the same head and fork the chain — the second
+            # append blocks until the first commits and advances the head.
+            s.execute(
+                pg_insert(AuditChainHeadORM.__table__)
+                .values(tenant_id=event.tenant_id, head_hash="", updated_at=event.created_at)
+                .on_conflict_do_nothing(index_elements=["tenant_id"])
+            )
+            head = s.execute(
+                select(AuditChainHeadORM)
+                .where(AuditChainHeadORM.tenant_id == event.tenant_id)
+                .with_for_update()
+            ).scalar_one()
+            prev_hash = head.head_hash or GENESIS
             event.prev_hash = prev_hash
             event.entry_hash = compute_entry_hash(event, prev_hash)
+            head.head_hash = event.entry_hash
+            head.updated_at = event.created_at
             row = AuditLogORM(
                 id=event.id,
                 tenant_id=event.tenant_id,
@@ -549,6 +582,40 @@ class PostgresRepository(Repository):
             stmt = select(WorkerRunORM).where(WorkerRunORM.tenant_id == tenant_id)
             if user_id:
                 stmt = stmt.where(WorkerRunORM.user_id == user_id)
+            if status:
+                stmt = stmt.where(WorkerRunORM.status == status)
+            stmt = stmt.order_by(WorkerRunORM.started_at.desc()).limit(limit)
+            return [
+                WorkerRunRecord(
+                    id=r.id,
+                    tenant_id=r.tenant_id,
+                    user_id=r.user_id,
+                    status=r.status,
+                    jobs=list(r.jobs or []),
+                    attempts=r.attempts,
+                    scanned_count=r.scanned_count,
+                    changed_count=r.changed_count,
+                    skipped_count=r.skipped_count,
+                    error_count=r.error_count,
+                    owner=r.owner,
+                    trace_id=r.trace_id,
+                    error=r.error,
+                    details=r.extra_metadata or {},
+                    started_at=r.started_at,
+                    completed_at=r.completed_at,
+                )
+                for r in s.scalars(stmt)
+            ]
+
+    def list_worker_runs_operational(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[WorkerRunRecord]:
+        # Cross-tenant, so it must run on the separately authorized operational
+        # connection — never the RLS-enforced request engine. Unconfigured →
+        # fail-closed (the health surface degrades, no tenant boundary weakened).
+        factory = self._operational_session_factory()
+        with factory() as s:
+            stmt = select(WorkerRunORM)
             if status:
                 stmt = stmt.where(WorkerRunORM.status == status)
             stmt = stmt.order_by(WorkerRunORM.started_at.desc()).limit(limit)

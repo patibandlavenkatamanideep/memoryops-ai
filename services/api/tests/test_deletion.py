@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.schemas.memory import ChatRequest, Status
 
 
@@ -9,6 +11,37 @@ def _chat(gateway, message):
     return gateway.handle_chat(
         ChatRequest(tenant_id="t1", user_id="u1", message=message), trace_id="test"
     )
+
+
+def test_delete_route_is_atomic_when_audit_fails(api_client, monkeypatch) -> None:
+    """v2.3 (P0): soft-deletion + tombstone + audit are one atomic unit of work.
+
+    If the audit append fails mid-delete, the deletion rolls back — the memory is
+    neither soft-deleted nor tombstoned, so we never persist a half-deleted memory
+    (a mutation without its evidence)."""
+    from app.db import lineage
+
+    client, repo = api_client
+    client.post(
+        "/api/chat",
+        json={"tenant_id": "t1", "user_id": "u1", "message": "Remember I prefer Vendor X."},
+    )
+    mem = repo.list_memories("t1", "u1")[0]
+
+    def _boom(_event):
+        raise RuntimeError("audit backend down")
+
+    monkeypatch.setattr(repo, "add_audit", _boom)
+
+    with pytest.raises(RuntimeError):
+        client.request(
+            "DELETE", f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1"}
+        )
+
+    survived = repo.get_memory("t1", "u1", mem.id)
+    assert survived.status is Status.active  # rolled back — still active
+    assert not lineage.is_tombstoned(survived)
+    assert mem.id in {m.id for m in repo.retrieve_active("t1", "u1")}
 
 
 def test_deleted_memory_excluded_from_retrieval(gateway, repo):

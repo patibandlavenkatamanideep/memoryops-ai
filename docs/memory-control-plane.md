@@ -82,7 +82,11 @@ is intentionally **out of scope** for v0.5 and is future lifecycle work.
 3. Provenance — `source` is always present and surfaced.
 5. Policy-before-storage — unchanged; the control plane never writes around it.
 6. Temporary chat — never persisted, so never visible here.
-7. Auditability — every action (and detail view) appends an audit event.
+7. Auditability — every action (and detail view) appends an audit event. Since v2.3
+   (ADR-027) each control-plane **mutation and its audit event commit in one
+   `repo.transaction()`**: approve/reject/archive/edit and delete/tombstone are atomic,
+   so a partial failure can never approve, edit, or delete a memory without its evidence
+   (or vice versa). The audit chain is fork-proof under concurrency.
 
 ## Legal hold on delete (v0.10)
 

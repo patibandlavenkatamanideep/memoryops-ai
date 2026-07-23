@@ -37,8 +37,16 @@ There are **two independent tracks** (see
 
 ## SDK release checklist
 
-The Python SDK publishes through PyPI Trusted Publishing, not a long-lived API
-token. Configure PyPI once with:
+The Python SDK publishes to PyPI from `.github/workflows/publish-sdk.yml`. The
+`publish` job selects its auth at run time: it **prefers the `PYPI_API_TOKEN`
+secret when configured, and otherwise falls back to PyPI Trusted Publishing
+(OIDC, no long-lived secret)**. Both paths use `pypa/gh-action-pypi-publish`.
+
+> **Hardening intent:** a project-scoped token or working OIDC is preferable to a
+> broad long-lived token. Once Trusted Publishing is verified end-to-end, retire
+> `PYPI_API_TOKEN` so the workflow always takes the OIDC path.
+
+Configure PyPI once (Trusted Publishing path) with:
 
 - project: `memoryops-sdk`
 - owner/repository: `patibandlavenkatamanideep/memoryops-ai`

@@ -44,51 +44,59 @@ class WriteService:
         memory_id: str | None = None
         audit_ids: list[str] = []
 
+        # Embedding is a best-effort network call; compute it *before* opening the
+        # transaction so we never hold a DB unit of work across it (and so failure,
+        # already swallowed by safe_call, can't affect atomicity).
+        embedding: list[float] = []
         if decision in (Decision.SAVE, Decision.PENDING_APPROVAL):
-            status = Status.active if decision == Decision.SAVE else Status.pending
-            # Embedding is best-effort; failure must not block the write.
             embedding = safe_call(lambda: embed(cand.content), default=[], label="embed")
-            stored = StoredMemory(
+
+        # Persist-plus-audit is one atomic unit of work (P0): a crash between the
+        # memory mutation and its audit event can no longer leave one without the
+        # other. BLOCK/DROP store nothing but still audit inside the same boundary.
+        with self._repo.transaction(tenant_id, user_id):
+            if decision in (Decision.SAVE, Decision.PENDING_APPROVAL):
+                status = Status.active if decision == Decision.SAVE else Status.pending
+                stored = StoredMemory(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    memory_type=cand.type,
+                    content=cand.content,
+                    normalized_content=" ".join(cand.content.lower().split()),
+                    embedding=embedding,
+                    importance=cand.importance,
+                    confidence=cand.confidence,
+                    sensitivity=cand.sensitivity,
+                    status=status,
+                    source=cand.source,
+                )
+                self._repo.create_memory(stored)
+                memory_id = stored.id
+
+            elif decision in (Decision.UPDATE_EXISTING, Decision.MERGE_WITH_EXISTING):
+                existing = (
+                    self._repo.get_memory(tenant_id, user_id, outcome.existing_id)
+                    if outcome.existing_id
+                    else None
+                )
+                if existing:
+                    existing.reinforcement_count += 1
+                    existing.weight = min(existing.weight + 0.1, 2.0)
+                    existing.importance = max(existing.importance, cand.importance)
+                    existing.confidence = max(existing.confidence, cand.confidence)
+                    self._repo.update_memory(existing)
+                    memory_id = existing.id
+
+            event = self._audit.record(
                 tenant_id=tenant_id,
                 user_id=user_id,
-                memory_type=cand.type,
-                content=cand.content,
-                normalized_content=" ".join(cand.content.lower().split()),
-                embedding=embedding,
-                importance=cand.importance,
-                confidence=cand.confidence,
-                sensitivity=cand.sensitivity,
-                status=status,
-                source=cand.source,
+                memory_id=memory_id,
+                action=_AUDIT_ACTION[decision],
+                reason=outcome.reason,
+                trace_id=trace_id,
+                metadata={"type": cand.type.value, "sensitivity": cand.sensitivity.value},
             )
-            self._repo.create_memory(stored)
-            memory_id = stored.id
-
-        elif decision in (Decision.UPDATE_EXISTING, Decision.MERGE_WITH_EXISTING):
-            existing = (
-                self._repo.get_memory(tenant_id, user_id, outcome.existing_id)
-                if outcome.existing_id
-                else None
-            )
-            if existing:
-                existing.reinforcement_count += 1
-                existing.weight = min(existing.weight + 0.1, 2.0)
-                existing.importance = max(existing.importance, cand.importance)
-                existing.confidence = max(existing.confidence, cand.confidence)
-                self._repo.update_memory(existing)
-                memory_id = existing.id
-
-        # BLOCK / DROP store nothing — audit only.
-        event = self._audit.record(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            memory_id=memory_id,
-            action=_AUDIT_ACTION[decision],
-            reason=outcome.reason,
-            trace_id=trace_id,
-            metadata={"type": cand.type.value, "sensitivity": cand.sensitivity.value},
-        )
-        audit_ids.append(event.id)
+            audit_ids.append(event.id)
 
         decision_view = CandidateDecision(
             content=cand.content,

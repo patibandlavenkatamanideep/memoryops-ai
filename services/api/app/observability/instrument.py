@@ -92,6 +92,7 @@ def collect_worker_gauges(repo, limit: int = 500) -> None:
     cleared so ``/metrics`` degrades to omitting worker signals, never a 500.
     """
     # Import here to avoid a heavy import at module load for the common path.
+    from ..db.entities import OperationalAccessUnavailable
     from ..workers.orchestrator import summarize_runtime_health
 
     m.WORKER_RUNS.reset()
@@ -101,5 +102,9 @@ def collect_worker_gauges(repo, limit: int = 500) -> None:
             m.WORKER_RUNS.set(count, {"status": status})
         m.WORKER_DEAD_LETTER.set(summary.get("dead_letter_count", 0))
         m.WORKER_FAILED.set(summary.get("failed_count", 0))
+    except OperationalAccessUnavailable:
+        # Expected when no operational connection is configured — leave the worker
+        # gauges omitted rather than logging noise on every scrape.
+        pass
     except Exception:  # noqa: BLE001 — worker metrics are best-effort
         logger.debug("collect_worker_gauges failed", extra={"event": "metric_drop"})

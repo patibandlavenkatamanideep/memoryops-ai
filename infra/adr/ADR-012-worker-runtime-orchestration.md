@@ -82,3 +82,15 @@ counts, and the last run per scope.
 - Future work (v0.9+): governed retention/legal-hold inputs to the workers;
   optional queue/cron backend behind the same orchestrator interface; per-scope
   scheduling cadence.
+
+## Amendment (v2.3, ADR-027): global worker health respects tenant isolation
+
+`summarize_runtime_health` (the data behind `/healthz/workers`) is a *global* operator
+view that aggregates runs across every tenant. It therefore must **not** use the
+request-scoped, RLS-enforced connection — that one is correctly tenant-scoped and rejects
+an unscoped `list_worker_runs()` query (which is why worker health had regressed to
+"unavailable"). Health now reads through an explicit
+`Repository.list_worker_runs_operational()` backed by a separately authorized
+`OPERATIONAL_DATABASE_URL` (a monitoring/BYPASSRLS role); unconfigured, it fails **closed**
+to a documented "operational access not configured" state. Orchestration, leasing, retry,
+and scheduling semantics are unchanged. See ADR-027 and `docs/worker-runtime.md`.
