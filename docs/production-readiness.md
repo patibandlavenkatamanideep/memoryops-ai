@@ -17,7 +17,7 @@ For the inverse (what is *not* claimed), see [limitations.md](limitations.md).
 | 4 | Graceful degradation | Retrieval failure degrades to keyword-only; workers never raise into chat |
 | 5 | Policy-before-storage | Policy broker runs before any write; LLM output is advisory |
 | 6 | Temporary chat | `temporary_chat=true` reads/writes nothing |
-| 7 | Auditability | Every lifecycle action appends an append-only audit event |
+| 7 | Auditability | Every lifecycle mutation and its audit event commit atomically in one `repo.transaction()` (append-only, fork-proof; ADR-027) |
 
 ## Cross-cutting planes
 
@@ -47,10 +47,35 @@ For the inverse (what is *not* claimed), see [limitations.md](limitations.md).
 | Workers | Lease/scheduler runtime (`services/worker`) | One-shot `runner.py` invocations |
 | Client | Typed Python SDK (`memoryops-sdk`) | Example scripts |
 
+## Production profile (fail-closed startup)
+
+The defaults are demo-friendly so the app runs with zero infra (in-memory store,
+`auth_mode=none`, open CORS). Set **`MEMORYOPS_PROFILE=production`** on real
+deployments: the API then **refuses to start** while any of those insecure defaults
+remain, instead of silently serving production traffic with them. It rejects:
+
+| Rejected setting | Fix |
+|------------------|-----|
+| `MEMORYOPS_STORAGE=memory` (no durability, no RLS) | `MEMORYOPS_STORAGE=postgres` |
+| `MEMORYOPS_AUTH_MODE=none` (unauthenticated) | `MEMORYOPS_AUTH_MODE=jwt` \| `trusted_header` |
+| open CORS (`*`) | `MEMORYOPS_CORS_ALLOW_ORIGINS=https://app.example.com,…` |
+| bundled demo DB credentials / `localhost` DSN | real `MEMORYOPS_DATABASE_URL` / `DATABASE_URL` |
+| `MEMORYOPS_PUBLIC_EVALS=true` (denial-of-wallet) | `MEMORYOPS_PUBLIC_EVALS=false` |
+
+The check is enforced only under the production profile (`dev` is unchanged) and is
+implemented in `Settings.production_readiness_errors()` — see `tests/test_production_profile.py`.
+
+**Readiness** (`GET /readyz`) reports **dependency-specific** states rather than one
+combined string: `storage`, `schema` (migration revision), `vector_backend`,
+`worker_runtime`, `llm_provider`, `embedding_provider` — each `ok` / `skipped` /
+`error`. `ready` is false iff any dependency is in `error` (a `skipped` backend that
+isn't selected never blocks readiness). Every probe is no-throw (invariant #4).
+
 ## Deploying
 
 Railway-only: one project, five core services (web/api/worker + Postgres + Redis).
-Run migrations from `infra/db/migrations`; set `MEMORYOPS_STORAGE=postgres`.
+Run migrations from `infra/db/migrations`; set `MEMORYOPS_STORAGE=postgres` and
+`MEMORYOPS_PROFILE=production`.
 Configure authentication: either enable a built-in auth adapter
 (`MEMORYOPS_AUTH_MODE=jwt` or `trusted_header`, which verify identity and enforce
 tenant/user scope — see [auth-adapters.md](auth-adapters.md)), or, with the default
