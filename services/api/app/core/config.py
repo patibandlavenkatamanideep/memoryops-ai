@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     service_name: str = "memoryops-api"
     log_level: str = "INFO"
 
+    # Deployment profile (v2.3). "dev" keeps the demo-friendly defaults (in-memory
+    # store, auth off, open CORS) so the app runs with no infra. "production" turns
+    # those same defaults into *fail-closed startup errors*: the app refuses to boot
+    # until storage, auth, CORS, credentials, and the public-eval trigger are set to
+    # safe values (see `production_readiness_errors`). Set MEMORYOPS_PROFILE=production
+    # on real deployments. See docs/production-readiness.md.
+    profile: Literal["dev", "production"] = "dev"
+
+    # CORS allow-list. "*" (default) is fine for the public demo but is rejected under
+    # the production profile. Comma-separated origins, e.g.
+    # "https://app.example.com,https://admin.example.com".
+    cors_allow_origins: str = "*"
+
     # Public eval trigger (security). POST /api/evals/run executes the full eval
     # harness on demand — a denial-of-wallet / compute-abuse vector if exposed
     # unauthenticated on a public deployment. OFF by default: the trigger returns
@@ -224,6 +237,57 @@ class Settings(BaseSettings):
     circuit_breaker_threshold: int = 5
     circuit_breaker_reset_seconds: float = 30.0
 
+    # ── derived helpers ──────────────────────────────────────────────────────
+    def cors_origins_list(self) -> list[str]:
+        """CORS allow-list as a list. '*' stays a single wildcard entry."""
+        raw = self.cors_allow_origins.strip()
+        if not raw or raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+    def production_readiness_errors(self) -> list[str]:
+        """Fail-closed startup checks for the production profile.
+
+        Returns a list of human-readable violations. Empty means the current
+        settings are safe to serve production traffic. This is intentionally
+        conservative: every insecure *default* that is convenient for the demo is
+        a hard error here, so a real deployment cannot silently inherit them.
+        Only enforced when ``profile == "production"``; callers should no-op
+        otherwise. See docs/production-readiness.md and invariants #1/#5.
+        """
+        if self.profile != "production":
+            return []
+        errors: list[str] = []
+        if self.storage != "postgres":
+            errors.append(
+                f"storage={self.storage!r}: the in-memory store loses all data on "
+                "restart and has no RLS — set MEMORYOPS_STORAGE=postgres."
+            )
+        if self.auth_mode == "none":
+            errors.append(
+                "auth_mode='none': every request would be trusted unauthenticated — "
+                "set MEMORYOPS_AUTH_MODE=trusted_header|jwt."
+            )
+        if "*" in self.cors_origins_list():
+            errors.append(
+                "cors_allow_origins='*': any origin could call the API from a browser — "
+                "set MEMORYOPS_CORS_ALLOW_ORIGINS to an explicit allow-list."
+            )
+        # Demo credentials shipped in the default database_url must never reach prod.
+        if self.storage == "postgres" and (
+            "memoryops:memoryops@" in self.database_url or "@localhost" in self.database_url
+        ):
+            errors.append(
+                "database_url uses the bundled demo credentials / localhost — "
+                "point MEMORYOPS_DATABASE_URL / DATABASE_URL at the real database."
+            )
+        if self.public_evals:
+            errors.append(
+                "public_evals=true: the eval trigger is a denial-of-wallet vector when "
+                "public — set MEMORYOPS_PUBLIC_EVALS=false."
+            )
+        return errors
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -285,6 +349,14 @@ def get_settings() -> Settings:
         overrides["output_gate_mode"] = val
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
+    # v2.3 deployment profile + CORS allow-list. Public operator knobs.
+    if (val := os.getenv("MEMORYOPS_PROFILE")) in ("dev", "production"):
+        overrides["profile"] = val
+    if (val := os.getenv("MEMORYOPS_CORS_ALLOW_ORIGINS")) is not None:
+        overrides["cors_allow_origins"] = val
+    # Honor the conventional DATABASE_URL (Railway/Heroku-style) if MEMORYOPS_* unset.
+    if (val := os.getenv("MEMORYOPS_DATABASE_URL") or os.getenv("DATABASE_URL")):
+        overrides["database_url"] = val
     # v1.7 pluggable vector index (ADR-021). Public operator toggles; default "memory".
     if (val := os.getenv("MEMORYOPS_VECTOR_INDEX")) in ("memory", "qdrant", "lancedb", "weaviate"):
         overrides["vector_index"] = val

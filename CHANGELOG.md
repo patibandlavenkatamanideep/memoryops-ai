@@ -38,6 +38,16 @@ Closes the gap between the auditability *claim* and the transaction *boundary*:
   fail-closed and clearly reported when unconfigured — never weakening tenant RLS.
 - **Teeth**: `tests/test_transactional_evidence.py` proves rollback (neither side
   survives a partial failure) and chain continuity under 40 concurrent appends.
+- **Production profile (fail-closed startup)**: `MEMORYOPS_PROFILE=production` makes
+  the demo-friendly defaults hard startup errors — the API refuses to boot while the
+  store is in-memory, auth is off, CORS is open (`*`), the DSN uses the bundled demo
+  credentials, or the public-eval trigger is enabled. `MEMORYOPS_CORS_ALLOW_ORIGINS`
+  now drives the real CORS allow-list. `dev` is unchanged. See
+  `Settings.production_readiness_errors()` + `tests/test_production_profile.py`.
+- **Dependency-specific readiness**: `GET /readyz` now reports per-dependency states
+  (`storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
+  `embedding_provider`) — each `ok`/`skipped`/`error` — instead of one combined
+  detail string; `ready` is false iff a dependency is in `error`. All probes no-throw.
 
 ## v2.2 — Public Benchmark + Examples
 Additive under the `1.x` compatibility promise. Turns MemoryOps' *measured* governance

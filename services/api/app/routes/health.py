@@ -55,20 +55,88 @@ def workers_health() -> dict:
 
 @router.get("/readyz")
 def readyz() -> dict:
+    """Readiness probe with *dependency-specific* states (v2.3).
+
+    Rather than a single combined detail string, each backing dependency reports
+    its own ``{"status": ok|error|skipped, ...}`` so an operator can see *which*
+    dependency is unhealthy. Every probe is no-throw (invariant #4); the top-level
+    ``ready`` is false iff any dependency is in an ``error`` state (``skipped`` —
+    e.g. a backend not selected — never blocks readiness).
+    """
     settings = get_settings()
-    ready = True
-    detail = "ready"
-    try:
-        # Touch the repository so a misconfigured DB surfaces as not-ready.
-        get_repository().metrics("__readiness_probe__")
-    except Exception as exc:  # noqa: BLE001
-        ready = False
-        detail = f"repository unavailable: {type(exc).__name__}"
+    checks: dict[str, dict] = {
+        "storage": _check_storage(settings),
+        "schema": _check_schema(settings),
+        "vector_backend": _check_vector_backend(settings),
+        "worker_runtime": _check_worker_runtime(settings),
+        "llm_provider": {"status": "ok", "provider": settings.llm_provider},
+        "embedding_provider": {
+            "status": "ok",
+            "provider": settings.embeddings_provider,
+            "dim": settings.embedding_dim,
+        },
+    }
+    ready = all(c["status"] != "error" for c in checks.values())
     return {
         "ready": ready,
+        "profile": settings.profile,
         "storage": settings.storage,
-        "llm_provider": settings.llm_provider,
-        "embeddings_provider": settings.embeddings_provider,
-        "embedding_dim": settings.embedding_dim,
-        "detail": detail,
+        "checks": checks,
     }
+
+
+def _check_storage(settings) -> dict:
+    try:
+        # Touch the repository so a misconfigured DB/pool surfaces as not-ready.
+        get_repository().metrics("__readiness_probe__")
+        return {"status": "ok", "backend": settings.storage}
+    except Exception as exc:  # noqa: BLE001 — readiness must not raise
+        return {"status": "error", "backend": settings.storage, "detail": type(exc).__name__}
+
+
+def _check_schema(settings) -> dict:
+    if settings.storage != "postgres":
+        return {"status": "skipped", "detail": "in-memory store has no schema revision"}
+    # get_repository() validates the applied migration at construction and raises if
+    # outdated; if _check_storage passed, the expected revision is applied.
+    try:
+        from ..db.postgres_repo import _CURRENT_SCHEMA_VERSION
+
+        get_repository()
+        return {"status": "ok", "revision": _CURRENT_SCHEMA_VERSION}
+    except Exception as exc:  # noqa: BLE001 — readiness must not raise
+        return {"status": "error", "detail": type(exc).__name__}
+
+
+def _check_vector_backend(settings) -> dict:
+    if settings.vector_index == "memory":
+        return {"status": "ok", "backend": "memory"}
+    # External backends degrade to keyword-only if unreachable (never fatal), so this
+    # is informational: report the selected backend without failing readiness.
+    return {
+        "status": "ok",
+        "backend": settings.vector_index,
+        "note": "degrades to keyword-only if unreachable",
+    }
+
+
+def _check_worker_runtime(settings) -> dict:
+    if not settings.operational_database_url:
+        return {
+            "status": "skipped",
+            "detail": "operational access not configured (global worker health disabled)",
+        }
+    from ..db.entities import OperationalAccessUnavailable
+    from ..workers.orchestrator import summarize_runtime_health
+
+    try:
+        summary = summarize_runtime_health(get_repository(), limit=1)
+        return {
+            "status": "ok",
+            "dead_letter_count": summary.get("dead_letter_count", 0),
+            "failed_count": summary.get("failed_count", 0),
+        }
+    except OperationalAccessUnavailable:
+        return {"status": "skipped", "detail": "operational access not configured"}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "detail": type(exc).__name__}
