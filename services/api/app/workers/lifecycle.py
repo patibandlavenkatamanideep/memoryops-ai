@@ -21,6 +21,8 @@ or create active memory.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -96,6 +98,24 @@ class LifecycleWorker(ABC):
     # must NOT touch deleted memory and must stay within the ctx scope.
     @abstractmethod
     def _execute(self, ctx: WorkerContext, result: WorkerJobResult) -> None: ...
+
+    @contextmanager
+    def _atomic(self, ctx: WorkerContext) -> Iterator[None]:
+        """Commit a memory mutation and its audit event(s) as one unit (invariant #7).
+
+        Extends the transactional-evidence guarantee (ADR-027) to the background
+        workers: a crash between a worker's mutation and its audit event can no
+        longer persist one without the other. Scope is **per item**, so earlier
+        items in a batch stay committed and a re-run finishes the rest idempotently.
+
+        Open this *before* the first in-place field mutation of the memory object:
+        the in-memory backend's rollback snapshot is taken at ``transaction()`` entry
+        and the store hands back live references, so a mutation made before entry
+        would survive a rollback (mirrors the write path — see write_service). On
+        Postgres it shares one session + commit.
+        """
+        with self._repo.transaction(ctx.tenant_id, ctx.user_id):
+            yield
 
     def run(self, ctx: WorkerContext) -> WorkerJobResult:
         result = WorkerJobResult(

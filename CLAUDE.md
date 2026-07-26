@@ -24,7 +24,8 @@ wrapped by Security, Governance, Observability, Reliability, Evaluation planes.
 5. Policy-before-storage — the policy broker runs before any write.
 6. Temporary chat — `temporary_chat=true` writes/reads nothing.
 7. Auditability — every lifecycle mutation and its audit event commit atomically in one
-   `repo.transaction()` (append-only, tamper-evident, fork-proof under concurrency; ADR-027).
+   `repo.transaction()`, across both the API/governance write paths and the background
+   lifecycle workers (append-only, tamper-evident, fork-proof under concurrency; ADR-027).
 
 ## Layout
 

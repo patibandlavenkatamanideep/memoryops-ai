@@ -75,25 +75,30 @@ class DecayWorker(LifecycleWorker):
                 result.skipped_count += 1
                 continue
 
-            memory.importance = new_importance
-            set_lifecycle_meta(
-                memory,
-                {"decayed": True, "decay_age_days": age, "decay_from_importance": old_importance},
-            )
-            self._repo.update_memory(memory)
-            event = self._audit.record(
-                tenant_id=ctx.tenant_id,
-                user_id=ctx.user_id,
-                action=MEMORY_DECAY_APPLIED,
-                reason="importance decayed for aged/low-confidence memory",
-                memory_id=memory.id,
-                trace_id=ctx.trace_id,
-                metadata={
-                    "old_importance": old_importance,
-                    "new_importance": new_importance,
-                    "age_days": age,
-                    "low_confidence": memory.confidence < self._min_confidence,
-                },
-            )
+            # Atomic (invariant #7): the importance change and its audit event
+            # commit together. Opened before the in-place mutation so an in-memory
+            # rollback undoes it (see LifecycleWorker._atomic).
+            with self._atomic(ctx):
+                memory.importance = new_importance
+                set_lifecycle_meta(
+                    memory,
+                    {"decayed": True, "decay_age_days": age,
+                     "decay_from_importance": old_importance},
+                )
+                self._repo.update_memory(memory)
+                event = self._audit.record(
+                    tenant_id=ctx.tenant_id,
+                    user_id=ctx.user_id,
+                    action=MEMORY_DECAY_APPLIED,
+                    reason="importance decayed for aged/low-confidence memory",
+                    memory_id=memory.id,
+                    trace_id=ctx.trace_id,
+                    metadata={
+                        "old_importance": old_importance,
+                        "new_importance": new_importance,
+                        "age_days": age,
+                        "low_confidence": memory.confidence < self._min_confidence,
+                    },
+                )
             result.audit_event_ids.append(event.id)
             result.changed_count += 1

@@ -127,13 +127,41 @@ class DeletionCompactionWorker(LifecycleWorker):
                 result.changed_count += 1  # candidate only; nothing cleared
                 continue
 
-            row = self._repo.compact_deleted_memory(
-                ctx.tenant_id,
-                ctx.user_id,
-                memory.id,
-                reason=_COMPACTION_REASON,
-                now=ctx.now,
-            )
+            # Atomic (invariant #7): the destructive content/vector clear and its
+            # primary evidence (content-compacted + vector-purge-attempted) commit
+            # together — a crash can't clear content without recording that it did.
+            # The read-back verification below is separate (it audits a check, not a
+            # mutation).
+            with self._atomic(ctx):
+                row = self._repo.compact_deleted_memory(
+                    ctx.tenant_id,
+                    ctx.user_id,
+                    memory.id,
+                    reason=_COMPACTION_REASON,
+                    now=ctx.now,
+                )
+                if row is not None:
+                    result.audit_event_ids.append(
+                        self._audit.record(
+                            tenant_id=ctx.tenant_id,
+                            user_id=ctx.user_id,
+                            action=MEMORY_CONTENT_COMPACTED,
+                            reason="retrievable content cleared for soft-deleted memory",
+                            memory_id=memory.id,
+                            trace_id=ctx.trace_id,
+                            metadata={"deleted_age_days": self._deleted_age_days(memory, ctx.now)},
+                        ).id
+                    )
+                    result.audit_event_ids.append(
+                        self._audit.record(
+                            tenant_id=ctx.tenant_id,
+                            user_id=ctx.user_id,
+                            action=MEMORY_VECTOR_PURGE_ATTEMPTED,
+                            reason="vector material cleared; verifying exclusion",
+                            memory_id=memory.id,
+                            trace_id=ctx.trace_id,
+                        ).id
+                    )
             if row is None:
                 # Lost a race (no longer deleted): skip rather than force.
                 result.skipped_count += 1
@@ -141,27 +169,6 @@ class DeletionCompactionWorker(LifecycleWorker):
 
             compacted += 1
             result.changed_count += 1
-            result.audit_event_ids.append(
-                self._audit.record(
-                    tenant_id=ctx.tenant_id,
-                    user_id=ctx.user_id,
-                    action=MEMORY_CONTENT_COMPACTED,
-                    reason="retrievable content cleared for soft-deleted memory",
-                    memory_id=memory.id,
-                    trace_id=ctx.trace_id,
-                    metadata={"deleted_age_days": self._deleted_age_days(memory, ctx.now)},
-                ).id
-            )
-            result.audit_event_ids.append(
-                self._audit.record(
-                    tenant_id=ctx.tenant_id,
-                    user_id=ctx.user_id,
-                    action=MEMORY_VECTOR_PURGE_ATTEMPTED,
-                    reason="vector material cleared; verifying exclusion",
-                    memory_id=memory.id,
-                    trace_id=ctx.trace_id,
-                ).id
-            )
 
             check = verify_purged(
                 self._repo,

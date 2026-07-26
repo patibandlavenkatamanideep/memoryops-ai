@@ -3,6 +3,21 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## Unreleased — worker mutation atomicity
+Additive; completes invariant #7 across the whole system.
+
+- **Background workers now commit mutation + audit atomically.** v2.3 made the
+  API/governance write paths transactional but the lifecycle workers still mutated
+  memory and then wrote the audit event as two separate commits. `LifecycleWorker._atomic`
+  now wraps each worker's mutation and its audit evidence in one `repo.transaction(...)`
+  — opened *before* the in-place mutation so the in-memory backend's rollback snapshot
+  predates it. Covers decay, archive, retention (held + expired/consent soft-delete),
+  and deletion-compaction (destructive content/vector clear + evidence);
+  verification/conflict-scan/reflection are audit-only. Proven by
+  `tests/test_worker_atomicity.py` (injected audit failure → neither the mutation nor
+  its evidence survives). README/limitations/CLAUDE invariant #7 updated to reflect that
+  the guarantee now holds on the worker paths too.
+
 ## v2.3 — Transactional Evidence + Production Guardrails (2026-07-26)
 Additive under the `1.x` compatibility promise. Closes the gap between the
 auditability *claim* and the transaction *boundary*, makes insecure defaults
