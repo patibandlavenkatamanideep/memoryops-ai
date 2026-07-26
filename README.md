@@ -13,7 +13,7 @@ governed state, not just a vector database.
 &nbsp;![License](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![API](https://img.shields.io/badge/API%20%2B%20SDK-1.x%20stable-green)
 
-> **Two version tracks:** the **platform release** (`v2.2`, the repo's feature
+> **Two version tracks:** the **platform release** (`v2.3`, the repo's feature
 > milestone) is separate from the **public API + SDK contract** (`1.x`, an additive-
 > compatibility promise). See [docs/api-stability.md](docs/api-stability.md#two-version-tracks).
 
@@ -106,13 +106,15 @@ Postgres + pgvector in CI (the `api-postgres` job). Current
 
 ## What's shipped
 
-All capabilities v1.3 → v2.2 are shipped: Context Admission Gate + Memory Usage Trace,
+All capabilities v1.3 → v2.3 are shipped: Context Admission Gate + Memory Usage Trace,
 deletion-proof tombstone lineage, deleted-memory leakage evals, auth/authorization
 adapters (JWT/JWKS + trusted header), vector-backend abstraction (Postgres/pgvector ·
 in-memory · Qdrant · LanceDB · Weaviate), distributed tracing + Prometheus metrics,
 Recall/Output gates, the Enterprise Evidence Layer (tamper-evident audit + evidence
-bundles), agent-framework integrations, and a public governance benchmark. Details in
-the **[CHANGELOG](CHANGELOG.md)** and **[docs/architecture.md](docs/architecture.md)**.
+bundles), agent-framework integrations, a public governance benchmark, transactional
+mutation+audit with a fork-proof audit chain, and a fail-closed production profile
+(`MEMORYOPS_PROFILE=production`) with dependency-aware readiness. Details in the
+**[CHANGELOG](CHANGELOG.md)** and **[docs/architecture.md](docs/architecture.md)**.
 
 **Adapter honesty:** Postgres/pgvector and in-memory are *fully tested in CI* (suite +
 evals + benchmark + enforced RLS). Qdrant/LanceDB/Weaviate are *contract-tested*.
