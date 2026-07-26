@@ -71,15 +71,15 @@ re-deriving their own caveats.
   **Langfuse** LLM-trace integration) is left to the operator, not in the box.
 - Workers run on a thin lease/scheduler runtime, not Celery/Temporal; there is no
   external queue/broker.
-- **API + governance mutations commit atomically with their audit evidence** (v2.3,
-  ADR-027): each write path runs inside one `repo.transaction(...)`, so a crash between
-  the memory write (`create_memory`) and its audit event (`add_audit`) can no longer
-  persist one without the other, and the audit hash chain is fork-proof under
-  concurrency. **Background lifecycle workers still mutate then audit separately** —
-  decay/archive/retention/deletion-compaction do not yet share a single transaction
-  boundary — so the invariant #7 partial-failure gap remains *on the worker paths only*,
-  tracked as the next hardening item. Retrieval/degradation and the deletion guarantee
-  are already proven under injected failure (`tests/test_chaos.py`).
+- **Mutation + audit atomicity is complete** (v2.3, ADR-027) — no longer a gap. Every
+  write path runs inside one `repo.transaction(...)`, so a crash between the memory
+  write (`create_memory`) and its audit event (`add_audit`) can no longer persist one
+  without the other, and the audit hash chain is fork-proof under concurrency. This now
+  covers **both** the API/governance routes **and** the background lifecycle workers
+  (decay/archive/retention/deletion-compaction), each proven by injected-failure
+  rollback tests (`tests/test_worker_atomicity.py`, `tests/test_transactional_evidence.py`).
+  Retrieval/degradation and the deletion guarantee are likewise proven under injected
+  failure (`tests/test_chaos.py`).
 
 ## Demo surfaces
 

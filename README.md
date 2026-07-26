@@ -84,9 +84,9 @@ Full design, diagrams, and where each invariant is enforced:
 4. **Graceful degradation** — retrieval failure never blocks a response.
 5. **Policy-before-storage** — unsafe/secret-like content is filtered before storage.
 6. **Temporary chat** — temporary sessions never read or write memory.
-7. **Auditability** — user-facing and governance-API mutations commit atomically with
-   their audit evidence in one transaction, as an append-only, tamper-evident chain.
-   Background lifecycle-worker transaction hardening remains in progress.
+7. **Auditability** — every lifecycle mutation and its audit event commit together in
+   one transaction, across both the API/governance write paths and the background
+   lifecycle workers, as an append-only, tamper-evident chain.
 8. **Explainability** — the system can show which memories affected a response.
 9. **Typed memory** — episodic/semantic/procedural/project/knowledge/system differ.
 10. **Evaluation** — memory quality is testable via a golden set, not manual inspection.
