@@ -38,24 +38,42 @@ fixed before results. Where a numeric threshold would be arbitrary, the result i
 reported **descriptively** with a 95% confidence interval (CI) and no pass/fail label.
 
 ### H1 — Governance correctness
-- **Prediction.** MemoryOps has a strictly lower lifecycle-violation rate than every
-  ungoverned baseline, and **zero** violations on the two *critical* invariant
-  families (deletion & leakage; tenant/user isolation).
-- **Primary metric.** Violation rate = violating cases / applicable cases, per family.
-- **Decision rule (pre-registered).** H1 is **supported** iff (a) MemoryOps critical-
-  family violation rate = 0, **and** (b) MemoryOps aggregate violation rate < that of
-  each ungoverned baseline (non-overlapping 95% CIs). Otherwise reported descriptively.
+- **Prediction.** MemoryOps has **zero** violations on the two *critical* invariant
+  families (deletion & leakage; tenant/user isolation) and a lower **paired** violation
+  rate than each *comparable* ungoverned baseline on their common supported cases.
+- **Metrics (two dimensions, reported separately).** A system that supports almost no
+  governance operation must not appear "safe" by attempting nothing, so coverage and
+  correctness are never collapsed into one rate:
+  - **Capability coverage** = supported governance cases / all governance cases;
+  - **Conditional correctness** = passed cases / *attempted supported* cases;
+  - plus the overall **pass / fail / unsupported / error** outcome distribution.
+  `unsupported` is reported separately and **never** enters the conditional-violation
+  denominator.
+- **Decision rule (pre-registered, paired).** H1 is **supported** iff MemoryOps
+  (a) has **zero** violations on deletion/leakage and tenant-isolation cases;
+  (b) supports all required critical operations; and (c) has a **lower paired violation
+  rate than each comparable ungoverned baseline on their common supported subset**,
+  tested with **McNemar's exact test** (paired binary outcomes) and **Holm** correction
+  across baseline comparisons — *not* non-overlapping CIs. For a baseline with no
+  meaningful common supported subset, report *"inferential comparison unavailable;
+  capability unsupported"* rather than forcing an artificial p-value.
 
 ### H2 — Utility preservation
-- **Prediction.** Governance preserves most of the retrieval/answer quality of an
-  equivalent ungoverned retrieval system.
-- **Primary metric.** Answer correctness on the utility suite (§6, H2); secondary:
-  retrieval precision/recall.
-- **Decision rule (pre-registered, non-inferiority).** H2 is **supported** iff
-  MemoryOps answer correctness is non-inferior to the strongest ungoverned retrieval
-  baseline within a margin **Δ = 0.05 (absolute)** — i.e. `mo_correct ≥ best_baseline_correct − 0.05`
-  with the CI respecting the margin. Δ is fixed now and revisable **only** before any
-  utility result is generated. Retrieval metrics reported descriptively.
+- **Prediction.** Governance preserves the retrieval/answer quality of the *identical*
+  system with governance turned off.
+- **Comparator (fixed, not post-hoc).** **S0-U** — MemoryOps governance-disabled,
+  mechanism-matched (§3). The comparator is chosen *now*, not "the strongest baseline
+  after results are visible" (which would be a moving target / selection bias).
+- **Primary metric.** Per-case answer correctness on the utility suite; secondary:
+  retrieval precision/recall (descriptive).
+- **Decision rule (pre-registered, paired non-inferiority).** Define, per utility case,
+  `d_case = correctness(S0 governed) − correctness(S0-U governance-disabled)`. H2 is
+  **supported** iff the **lower bound of the one-sided 95% CI on mean `d_case` exceeds
+  −0.05** (Δ = 0.05 absolute, approved). The CI is a **paired, case-level bootstrap**
+  (both systems answer the same cases). **Seeds are repeated measurements within a
+  case, not independent examples**: either average the seed outcomes per case before
+  bootstrapping, **or** resample **cases as clusters** carrying all their seed runs
+  together. Δ is fixed now and revisable only before any utility result exists.
 
 ### H3 — Evidence integrity
 - **Prediction.** Every mutation and its audit evidence stay consistent under partial
@@ -69,12 +87,17 @@ reported **descriptively** with a 95% confidence interval (CI) and no pass/fail 
 ### H4 — Operational overhead
 - **Prediction.** Governance adds measurable latency/storage overhead but remains a
   small fraction of provider-generation latency.
-- **Primary metric.** Governance-attributable overhead: `latency(MemoryOps) −
-  latency(plain-vector baseline)`, plus tokens, cost, and DB/audit growth.
-- **Decision rule (descriptive + directional).** Reported descriptively (p50/p95/p99
-  with CIs). The directional claim tested: governance-attributable **p50** overhead is
-  **less than** provider-generation p50 (governance is not the dominant cost). No
-  arbitrary absolute threshold.
+- **Comparator (fixed).** Governance-attributable overhead = `metric(S0 governed) −
+  metric(S0-U governance-disabled)` — the mechanism-matched difference, which isolates
+  governance from orchestration / retrieval implementation / prompt / storage
+  differences. The `MemoryOps − plain-vector` (S2) and `− Mem0` (S4) differences are
+  kept only as *secondary* end-to-end system comparisons.
+- **Primary metric.** The paired **S0 − S0-U** difference in latency (stage-broken:
+  ingest / retrieve / generate), tokens, cost, and DB/audit growth.
+- **Decision rule (descriptive + directional).** Governance-attributable **p50**
+  overhead is **less than** provider-generation p50 (governance is not the dominant
+  cost). p95/p99 reported descriptively even though the directional rule is defined at
+  p50. No arbitrary absolute threshold.
 
 ## 3. Systems under test
 
@@ -83,15 +106,23 @@ receives identical inputs and is scored by the identical rubric.
 
 | # | System | Governance | Role |
 |---|--------|-----------|------|
-| S0 | MemoryOps (governed) @ baseline tag | full | subject |
-| S1 | Full-context (all history to the model) | none | ungoverned ceiling on recall |
-| S2 | Plain vector memory (embed → top-k → compose) | none | standard RAG memory |
+| S0 | MemoryOps (governed) @ baseline tag | full | system under study |
+| **S0-U** | **MemoryOps governance-disabled (mechanism-matched)** | none | **primary matched comparator for H2 & H4 (mandatory)** |
+| S1 | Full-context (all history to the model) | none | utility *ceiling* — not a persistent-memory governance baseline |
+| S2 | Plain vector memory (embed → top-k → compose) | none | controlled standard-memory baseline |
 | S3 | Summary memory (rolling conversation summary) | none | compression baseline |
-| S4 | Mem0 | partial (product-defined) | external memory system |
-| S5 *(optional)* | Zep/Graphiti or other structured memory | partial | second external system |
+| S4 | Mem0 | partial (product-defined) | required external system |
+| S5 *(optional)* | Zep/Graphiti or other structured memory | partial | optional second external system (never blocks the paper) |
 
-Four controlled baselines (S1–S4) are the primary comparison; S5 is optional. Fewer,
-correctly-controlled baselines beat many partially-working integrations.
+**S0-U is mandatory and is the fixed comparator for H2 and H4.** It shares S0's
+extractor, embedding model, storage backend, retrieval algorithm, top-k, answer
+prompt, LLM, and temperature, and **disables only the mechanisms under study**: policy-
+broker enforcement, admission/output gates, governance lifecycle controls,
+transactional audit evidence, and tombstone propagation (where the experiment requires
+it). Without it, a reviewer can attribute any observed difference to different
+retrieval implementations, prompts, or storage designs rather than to governance;
+S0-U isolates the governance effect. S1–S4 are the primary *external* comparison and
+S5 is optional — fewer, correctly-controlled baselines beat many partial integrations.
 
 ## 4. Held-constant controls
 
@@ -153,13 +184,18 @@ estimated cost, database growth, audit-event growth, failure-recovery status.
   deployment): no policy broker; no admission gate; no output gate; no tombstone
   propagation; no hybrid retrieval; no conflict detection; no transactional evidence.
   Attributes each result to a mechanism.
-- **D — Reliability & systems performance → H3, H4.** Injected scenarios: failure
-  after mutation before audit; failure after audit insert before commit; concurrent
-  audit appends; worker failure mid-batch; database outage; embedding-provider
-  failure; LLM-provider failure; process restart; lease loss *(only if runtime
-  hardening enters the study)*. Plus the stage-level latency/token/cost/growth profile.
+- **D — Reliability & systems performance → H3, H4.** State–audit consistency
+  scenarios (H3), each executed on **Postgres + pgvector** (not only the in-memory
+  backend): **API mutation rollback**; **worker mutation rollback**; **failure after
+  mutation before audit**; **failure after audit insertion before commit**;
+  **multi-item worker partial failure** (earlier items stay committed); **concurrent
+  audit appends**; **continuous audit-chain verification**; **process termination**
+  *(only if runtime hardening enters the study)*. Provider-side faults (embedding/LLM
+  failure, database outage) are included for graceful-degradation coverage. H4: the
+  stage-level latency / token / cost / growth profile, computed as the paired S0 − S0-U
+  difference.
 
-## 8. Benchmark composition (target ≈ 300 cases)
+## 8. Benchmark composition (provisional ≈ 430–580 cases)
 
 | Suite | Cases |
 |---|---|
@@ -167,10 +203,21 @@ estimated cost, database growth, audit-event growth, failure-recovery status.
 | Tenant / user isolation | 50 |
 | Retention, consent & legal hold | 50 |
 | Admission & disclosure policy | 50 |
-| Provenance & evidence integrity | 40 |
-| Retrieval utility & updates | 30 |
-| Failure & concurrency | 20 |
-| **Total** | **300** |
+| Provenance & evidence | 40 |
+| Utility & updates | **150–300** *(fixed by power analysis, below)* |
+| Failure & concurrency | 30 |
+| **Expected total** | **430–580** |
+
+**Utility-suite sizing (pre-result power analysis).** The distinct utility-case count
+is **not** frozen at a small value. With only 30 distinct cases a single case moves
+accuracy ≈ 3.3 pts, two cases ≈ 6.7 pts, so the Δ = 0.05 non-inferiority boundary is
+smaller than two cases and the paired CI would usually be too wide to support H2. Five
+seeds do **not** fix this — repeated runs of the same question are correlated, not
+independent examples. Therefore: **the number of distinct utility cases is fixed by a
+simulation-based power analysis run *before* any utility result is generated** (target:
+adequate power for the one-sided paired non-inferiority test at Δ = 0.05 under plausible
+per-case effect sizes). Expected range **150–300 distinct utility cases**; seeds are
+within-case repeated measurements and do not increase the independent case count.
 
 Three sources: hand-authored deterministic cases; templated adversarial variants
 (direct + paraphrased leakage, derived-memory leakage, tenant-id manipulation,
@@ -180,15 +227,24 @@ Invariant (model-independent) cases are tagged separately from quality cases.
 
 ## 9. Statistical analysis plan
 
-- Proportions (violation/leakage/compliance rates) reported with **95% CIs**
-  (Wilson interval); between-system differences via non-overlapping CIs (and a
-  two-proportion test where a p-value is reported).
-- Model-dependent quality metrics run over **N = 5 seeds**; report mean ± 95% CI
-  (bootstrap). Deterministic invariant cases run once.
-- Latency reported as p50/p95/p99 over a fixed request count; overhead as the paired
-  difference vs S2 with a bootstrap CI.
-- **No post-hoc thresholds.** The only numeric decision rules are H1 (0 / strict
-  inequality) and H2 (Δ = 0.05 non-inferiority), both fixed above.
+- **H1 (correctness).** Report capability coverage, conditional correctness, and the
+  pass/fail/unsupported/error distribution, each with 95% **Wilson** CIs. Between-system
+  inference is **paired on the common supported subset** via **McNemar's exact test**
+  with **Holm** correction across baselines — never non-overlapping CIs. Where no common
+  supported subset exists, the comparison is reported *unavailable* (no forced p-value).
+- **H2 (utility).** One-sided **paired case-level bootstrap** CI on the mean per-case
+  correctness difference `d_case = S0 − S0-U`; supported iff the lower bound > −0.05.
+  Seeds are within-case repeated measures: **average per case before bootstrapping, or
+  cluster-resample cases** with all their seed runs together (never treat 5 seeds of one
+  case as 5 independent examples). The distinct utility-case count is set by the §8
+  power analysis. Retrieval precision/recall are descriptive.
+- **H4 (overhead).** Paired **S0 − S0-U** differences; latency as p50/p95/p99 over a
+  fixed request count with bootstrap CIs; S2 and S4 kept as secondary end-to-end
+  comparisons. Deterministic invariant cases run once; model-dependent metrics run over
+  **N = 5 seeds** aggregated per case as above.
+- **No post-hoc thresholds.** The only numeric decision rules are H1 (zero critical
+  violations + paired inequality) and H2 (Δ = 0.05 paired non-inferiority), both fixed
+  above; H3 is binary (100%); H4 is descriptive + directional.
 
 ## 10. Reproducibility (Phase 6 preview)
 
