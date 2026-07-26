@@ -3,10 +3,39 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
-## Unreleased — post-v2.2 hardening
-Additive under the `1.x` compatibility promise. Consolidates the operational and
-evidence hardening that landed after the v2.2 tag but has not yet been cut as a release:
+## v2.3 — Transactional Evidence + Production Guardrails (2026-07-26)
+Additive under the `1.x` compatibility promise. Closes the gap between the
+auditability *claim* and the transaction *boundary*, makes insecure defaults
+fail-closed in production, and consolidates the operational + evidence hardening
+that landed after the v2.2 tag.
 
+### Transactional evidence
+- **Atomic mutation + audit**: every mutation-plus-evidence path (save/update/merge,
+  approve/reject/archive, manual edit, soft-delete + tombstone, legal-hold, pin,
+  protect, consent) now runs inside a single `repo.transaction(...)` — a crash between
+  the memory write and its audit event can no longer persist one without the other.
+- **Fork-proof audit chain**: a tenant-locked `audit_chain_heads` table (migration 011)
+  with `SELECT ... FOR UPDATE` serializes concurrent audited mutations onto one
+  continuous hash chain (the in-memory backend uses an equivalent per-repo lock).
+- **Worker-health regression fixed**: global worker health reads via an explicit
+  cross-tenant *operational* connection (`OPERATIONAL_DATABASE_URL`, a monitoring role),
+  fail-closed and clearly reported when unconfigured — never weakening tenant RLS.
+- **Teeth**: `tests/test_transactional_evidence.py` proves rollback (neither side
+  survives a partial failure) and chain continuity under 40 concurrent appends.
+
+### Production guardrails
+- **Production profile (fail-closed startup)**: `MEMORYOPS_PROFILE=production` makes
+  the demo-friendly defaults hard startup errors — the API refuses to boot while the
+  store is in-memory, auth is off, CORS is open (`*`), the DSN uses the bundled demo
+  credentials, or the public-eval trigger is enabled. `MEMORYOPS_CORS_ALLOW_ORIGINS`
+  now drives the real CORS allow-list. `dev` is unchanged. See
+  `Settings.production_readiness_errors()` + `tests/test_production_profile.py`.
+- **Dependency-specific readiness**: `GET /readyz` now reports per-dependency states
+  (`storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
+  `embedding_provider`) — each `ok`/`skipped`/`error` — instead of one combined
+  detail string; `ready` is false iff a dependency is in `error`. All probes no-throw.
+
+### Operational + evidence hardening
 - **SDK published** to PyPI (`memoryops-sdk`) with a tag-only, version-locked
   publish workflow (`.github/workflows/publish-sdk.yml`).
 - **Dependency security fixes**, including the PyJWT/`pyjwt[crypto]` path for the
@@ -22,32 +51,6 @@ evidence hardening that landed after the v2.2 tag but has not yet been cut as a 
 - **Async decision recorded**: defer a blanket async conversion; tune and measure the
   synchronous path against real Postgres/provider workloads first
   (`docs/performance.md`, ADR).
-
-### In progress — v2.3 Transactional Evidence (this branch, not yet tagged)
-Closes the gap between the auditability *claim* and the transaction *boundary*:
-
-- **Atomic mutation + audit**: every mutation-plus-evidence path (save/update/merge,
-  approve/reject/archive, manual edit, soft-delete + tombstone, legal-hold, pin,
-  protect, consent) now runs inside a single `repo.transaction(...)` — a crash between
-  the memory write and its audit event can no longer persist one without the other.
-- **Fork-proof audit chain**: a tenant-locked `audit_chain_heads` table (migration 011)
-  with `SELECT ... FOR UPDATE` serializes concurrent audited mutations onto one
-  continuous hash chain (the in-memory backend uses an equivalent per-repo lock).
-- **Worker-health regression fixed**: global worker health reads via an explicit
-  cross-tenant *operational* connection (`OPERATIONAL_DATABASE_URL`, a monitoring role),
-  fail-closed and clearly reported when unconfigured — never weakening tenant RLS.
-- **Teeth**: `tests/test_transactional_evidence.py` proves rollback (neither side
-  survives a partial failure) and chain continuity under 40 concurrent appends.
-- **Production profile (fail-closed startup)**: `MEMORYOPS_PROFILE=production` makes
-  the demo-friendly defaults hard startup errors — the API refuses to boot while the
-  store is in-memory, auth is off, CORS is open (`*`), the DSN uses the bundled demo
-  credentials, or the public-eval trigger is enabled. `MEMORYOPS_CORS_ALLOW_ORIGINS`
-  now drives the real CORS allow-list. `dev` is unchanged. See
-  `Settings.production_readiness_errors()` + `tests/test_production_profile.py`.
-- **Dependency-specific readiness**: `GET /readyz` now reports per-dependency states
-  (`storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
-  `embedding_provider`) — each `ok`/`skipped`/`error` — instead of one combined
-  detail string; `ready` is false iff a dependency is in `error`. All probes no-throw.
 
 ## v2.2 — Public Benchmark + Examples
 Additive under the `1.x` compatibility promise. Turns MemoryOps' *measured* governance
