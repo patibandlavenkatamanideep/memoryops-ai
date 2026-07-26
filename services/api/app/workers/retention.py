@@ -90,44 +90,50 @@ class RetentionWorker(LifecycleWorker):
             result.scanned_count += 1
             decision = evaluate(memory, now=ctx.now, policy=self._policy)
 
-            # Stamp the computed window so the API/admin can read it without re-evaluating.
-            gov.set_retention(
-                memory, policy=self._policy.name,
-                expires_at=decision.retention_expires_at, now=ctx.now,
-            )
+            # Each item's decision/outcome audit and its persistence (stamped window
+            # or soft-delete) commit together (invariant #7, ADR-027). The transaction
+            # is opened before `gov.set_retention` mutates the memory in place, so an
+            # in-memory rollback undoes it (see LifecycleWorker._atomic).
+            with self._atomic(ctx):
+                # Stamp the computed window so the API/admin can read it without
+                # re-evaluating.
+                gov.set_retention(
+                    memory, policy=self._policy.name,
+                    expires_at=decision.retention_expires_at, now=ctx.now,
+                )
 
-            if decision.outcome is RetentionOutcome.held:
-                held += 1
-                result.skipped_count += 1
-                self._record_decision(ctx, result, decision, MEMORY_RETENTION_HOLD_RESPECTED)
-                if not preview_only:
-                    self._repo.update_memory(memory)
-                continue
+                if decision.outcome is RetentionOutcome.held:
+                    held += 1
+                    result.skipped_count += 1
+                    self._record_decision(ctx, result, decision, MEMORY_RETENTION_HOLD_RESPECTED)
+                    if not preview_only:
+                        self._repo.update_memory(memory)
+                    continue
 
-            if not decision.eligible_for_deletion:
-                result.skipped_count += 1
-                if not preview_only:
-                    self._repo.update_memory(memory)  # persist stamped retention window
-                continue
+                if not decision.eligible_for_deletion:
+                    result.skipped_count += 1
+                    if not preview_only:
+                        self._repo.update_memory(memory)  # persist stamped window
+                    continue
 
-            # Eligible: expired window or revoked consent.
-            if decision.outcome is RetentionOutcome.expired:
-                expired += 1
-            else:
-                consent_revoked += 1
+                # Eligible: expired window or revoked consent.
+                if decision.outcome is RetentionOutcome.expired:
+                    expired += 1
+                else:
+                    consent_revoked += 1
 
-            self._record_decision(ctx, result, decision, _OUTCOME_ACTION[decision.outcome])
+                self._record_decision(ctx, result, decision, _OUTCOME_ACTION[decision.outcome])
 
-            if preview_only:
-                result.changed_count += 1  # candidate only; nothing deleted
-                continue
+                if preview_only:
+                    result.changed_count += 1  # candidate only; nothing deleted
+                    continue
 
-            row = self._repo.soft_delete(ctx.tenant_id, ctx.user_id, memory.id)
-            if row is None:
-                result.skipped_count += 1
-                continue
-            deleted += 1
-            result.changed_count += 1
+                row = self._repo.soft_delete(ctx.tenant_id, ctx.user_id, memory.id)
+                if row is None:
+                    result.skipped_count += 1
+                    continue
+                deleted += 1
+                result.changed_count += 1
 
         result.details = {
             "policy": self._policy.name,

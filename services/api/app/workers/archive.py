@@ -101,18 +101,21 @@ class ArchiveWorker(LifecycleWorker):
                 result.changed_count += 1  # candidate proposed
                 continue
 
-            memory.status = Status.archived
-            memory.archived_at = ctx.now
-            set_lifecycle_meta(memory, {"archived_by_worker": True})
-            self._repo.update_memory(memory)
-            event = self._audit.record(
-                tenant_id=ctx.tenant_id,
-                user_id=ctx.user_id,
-                action=MEMORY_ARCHIVED_BY_WORKER,
-                reason="stale memory archived by lifecycle worker",
-                memory_id=memory.id,
-                trace_id=ctx.trace_id,
-                metadata={"age_days": age_days(memory, ctx.now)},
-            )
+            # Atomic (invariant #7): archival + its audit event commit together;
+            # opened before the in-place mutation (see LifecycleWorker._atomic).
+            with self._atomic(ctx):
+                memory.status = Status.archived
+                memory.archived_at = ctx.now
+                set_lifecycle_meta(memory, {"archived_by_worker": True})
+                self._repo.update_memory(memory)
+                event = self._audit.record(
+                    tenant_id=ctx.tenant_id,
+                    user_id=ctx.user_id,
+                    action=MEMORY_ARCHIVED_BY_WORKER,
+                    reason="stale memory archived by lifecycle worker",
+                    memory_id=memory.id,
+                    trace_id=ctx.trace_id,
+                    metadata={"age_days": age_days(memory, ctx.now)},
+                )
             result.audit_event_ids.append(event.id)
             result.changed_count += 1
