@@ -71,13 +71,15 @@ re-deriving their own caveats.
   **Langfuse** LLM-trace integration) is left to the operator, not in the box.
 - Workers run on a thin lease/scheduler runtime, not Celery/Temporal; there is no
   external queue/broker.
-- **Write + audit are not yet a single transaction.** On the Postgres backend the
-  memory write (`create_memory`) and its audit event (`add_audit`) commit separately,
-  so a process crash *between* them could leave a stored memory without its audit row
-  (an invariant #7 gap under partial failure — surfaced by `tests/test_chaos.py`). The
-  happy path always audits; the fix is a repository unit-of-work that spans both
-  writes, tracked for a future release. Retrieval/degradation and the deletion
-  guarantee are already proven under injected failure (`tests/test_chaos.py`).
+- **API + governance mutations commit atomically with their audit evidence** (v2.3,
+  ADR-027): each write path runs inside one `repo.transaction(...)`, so a crash between
+  the memory write (`create_memory`) and its audit event (`add_audit`) can no longer
+  persist one without the other, and the audit hash chain is fork-proof under
+  concurrency. **Background lifecycle workers still mutate then audit separately** —
+  decay/archive/retention/deletion-compaction do not yet share a single transaction
+  boundary — so the invariant #7 partial-failure gap remains *on the worker paths only*,
+  tracked as the next hardening item. Retrieval/degradation and the deletion guarantee
+  are already proven under injected failure (`tests/test_chaos.py`).
 
 ## Demo surfaces
 

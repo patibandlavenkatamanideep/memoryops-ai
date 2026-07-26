@@ -62,6 +62,11 @@ def readyz() -> dict:
     dependency is unhealthy. Every probe is no-throw (invariant #4); the top-level
     ``ready`` is false iff any dependency is in an ``error`` state (``skipped`` —
     e.g. a backend not selected — never blocks readiness).
+
+    The pre-v2.3 top-level fields (``storage``, ``llm_provider``,
+    ``embeddings_provider``, ``embedding_dim``, ``detail``) are retained alongside the
+    new ``profile`` + ``checks`` so the response stays additive under the ``1.x``
+    compatibility promise — existing consumers keep working, new ones read ``checks``.
     """
     settings = get_settings()
     checks: dict[str, dict] = {
@@ -77,10 +82,18 @@ def readyz() -> dict:
         },
     }
     ready = all(c["status"] != "error" for c in checks.values())
+    errored = [name for name, c in checks.items() if c["status"] == "error"]
+    detail = "ready" if ready else "not ready: " + ", ".join(errored)
     return {
         "ready": ready,
         "profile": settings.profile,
+        # ── retained pre-v2.3 top-level fields (additive-compat) ──────────────
         "storage": settings.storage,
+        "llm_provider": settings.llm_provider,
+        "embeddings_provider": settings.embeddings_provider,
+        "embedding_dim": settings.embedding_dim,
+        "detail": detail,
+        # ── v2.3 dependency-specific view ─────────────────────────────────────
         "checks": checks,
     }
 

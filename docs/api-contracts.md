@@ -202,7 +202,14 @@ See [docs/enterprise-evidence.md](enterprise-evidence.md), ADR-024.
   (v2.3, ADR-027). When that connection is unconfigured it returns
   `{ healthy: null, detail: "operational access not configured", hint: … }` — an
   actionable, non-fatal state, not a `500`.
-- `GET /readyz` → `{ ready, storage, llm_provider, embeddings_provider, embedding_dim, detail }`
+- `GET /readyz` → `{ ready, profile, storage, llm_provider, embeddings_provider,
+  embedding_dim, detail, checks }` (v2.3). `checks` is a per-dependency map —
+  `storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
+  `embedding_provider` — each `{ status: ok|skipped|error, … }`; `ready` is false iff
+  any dependency is in `error` (a `skipped`, unselected backend never blocks it). The
+  pre-v2.3 top-level fields (`storage`, `llm_provider`, `embeddings_provider`,
+  `embedding_dim`, `detail`) are **retained** alongside `profile`/`checks` so the
+  response stays additive under the `1.x` promise. Every probe is no-throw.
 - `GET /metrics` → **Prometheus text exposition** (v1.1; format `0.0.4`). Process-wide,
   content-free, low-cardinality (no `tenant_id`/`user_id` labels): HTTP traffic,
   retrieval latency/mode, policy-decision rate, worker run counts. Toggle with

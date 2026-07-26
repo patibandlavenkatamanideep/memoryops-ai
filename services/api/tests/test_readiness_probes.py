@@ -37,6 +37,18 @@ def test_readyz_reports_per_dependency_states(api_client):
     assert checks["storage"]["status"] == "ok"
 
 
+def test_readyz_retains_legacy_top_level_fields(api_client):
+    """1.x additive-compat: the pre-v2.3 top-level fields are still present alongside
+    the new ``profile`` + ``checks`` (responses only gain fields, never lose them)."""
+    client, _repo = api_client
+    body = client.get("/readyz").json()
+    for legacy in ("ready", "storage", "llm_provider", "embeddings_provider",
+                   "embedding_dim", "detail"):
+        assert legacy in body, legacy
+    assert body["detail"] == "ready"  # nothing errored in the dev stack
+    assert isinstance(body["embedding_dim"], int)
+
+
 def test_readyz_error_in_a_required_dependency_sets_not_ready(api_client, monkeypatch):
     """If a required dependency probe fails, ready=false — but the endpoint still
     returns 200 with a structured body (no-throw)."""
