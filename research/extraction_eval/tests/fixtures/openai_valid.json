@@ -1,0 +1,1 @@
+{"memories": [{"memory_text": "User prefers metric units.", "memory_type": "preference", "subject": "user", "operation": "create", "should_store": true, "policy_disposition": "save", "supersedes": null, "source_turn_ids": ["t1"]}]}

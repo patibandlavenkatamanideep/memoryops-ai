@@ -1,0 +1,3 @@
+```json
+{"memories": [{"memory_text": "User is vegetarian.", "memory_type": "constraint", "subject": "user", "operation": "create", "should_store": true, "policy_disposition": "save", "supersedes": null, "source_turn_ids": ["t1"]}]}
+```
