@@ -15,6 +15,15 @@ from pathlib import Path
 from typing import Any
 
 _RUNTIME_TAG = "paper-v0.1-governance-runtime"
+# The frozen commit the protocol pins (Amendment 001). `paper-v0.1-governance-runtime`
+# is an *annotated* tag: `rev-parse <tag>` returns the tag OBJECT
+# (9e8ecae4c06bc8d4558eef0de2f7c8362d32fad2), which dereferences via `^{commit}` to this
+# commit. Manifests + validation must record the commit, never the tag object.
+EXPECTED_FROZEN_COMMIT = "54deeefa2f6776a429ae64750c268af8fd8d0e38"
+
+
+class FrozenCommitMismatch(RuntimeError):
+    pass
 
 
 def _git(*args: str) -> str:
@@ -29,8 +38,25 @@ def repo_commit() -> str:
 
 
 def runtime_tag_commit() -> str:
-    # Records the frozen tag's commit at run time (does not move the tag).
-    return _git("rev-list", "-n", "1", _RUNTIME_TAG)
+    """The frozen tag dereferenced to its COMMIT (``^{commit}``) — not the annotated-tag
+    object, not a stale ref. Does not move the tag."""
+    return _git("rev-parse", f"{_RUNTIME_TAG}^{{commit}}")
+
+
+def validate_frozen_commit(expected: str = EXPECTED_FROZEN_COMMIT) -> str:
+    """Startup guard: resolve the frozen tag to its commit and fail hard if it differs
+    from the protocol-pinned commit. Returns the resolved commit on success."""
+    resolved = runtime_tag_commit()
+    if not resolved:
+        raise FrozenCommitMismatch(
+            f"cannot resolve frozen tag {_RUNTIME_TAG}^{{commit}} — is the tag fetched?"
+        )
+    if resolved != expected:
+        raise FrozenCommitMismatch(
+            f"frozen commit mismatch: {_RUNTIME_TAG}^{{commit}} resolves to {resolved}, "
+            f"expected {expected} (Amendment 001). Refusing to run against a changed subject."
+        )
+    return resolved
 
 
 @dataclass

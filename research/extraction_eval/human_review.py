@@ -34,17 +34,27 @@ def stratified_sample(cases: list[Case], *, n: int, seed: int) -> list[Case]:
     return picked[:n]
 
 
+# Fields that must NEVER appear in a blinded reviewer export (anchoring / leakage).
+_FORBIDDEN_EXPORT_KEYS = frozenset(
+    {"gold", "atoms_gold", "accepted_phrasings", "provider", "model", "model_output",
+     "prediction", "annotator_notes", "authoring_status", "review_status"}
+)
+
+
 def export_annotation_package(cases: list[Case]) -> list[dict]:
-    """One record per case: content + gold + blank reviewer fields. Provider-blind
-    (there is no provider identity in dataset annotation)."""
+    """One record per case: **case content only** + blank reviewer fields.
+
+    Deliberately excludes gold labels, accepted phrasings, any provider identity, any
+    model output, and author-only notes so the reviewer annotates independently. Gold
+    comparison happens only after `import_annotations` (see `compute_agreement`)."""
     package = []
     for c in cases:
         package.append({
             "case_id": c.case_id,
             "category": c.category,
-            "conversation": [t.model_dump() for t in c.conversation],
+            "conversation": [{"turn_id": t.turn_id, "role": t.role, "content": t.content}
+                             for t in c.conversation],
             "target_turn_id": c.target_turn_id,
-            "gold": c.gold.model_dump(),
             "reviewer": {
                 "expected_noop": None,
                 "atoms": [],  # reviewer lists atoms with memory_type/operation/should_store/policy
@@ -93,18 +103,19 @@ class Agreement:
     kappa: float
 
 
-def compute_agreement(package: list[dict], annotations: dict[str, dict]) -> list[Agreement]:
-    """Agreement on ``expected_noop`` between gold and reviewer (the field every case
-    has). Atom-level fields are compared where the reviewer supplied atoms."""
+def compute_agreement(cases: list[Case], annotations: dict[str, dict]) -> list[Agreement]:
+    """Gold-vs-reviewer agreement — computed **after** import, comparing the reviewer
+    annotations against the cases' gold (never exposed to the reviewer). Reports
+    ``expected_noop`` agreement + Cohen's kappa (the field every case has; atom-level
+    fields are compared where reviewers supply atoms)."""
+    gold_by_id = {c.case_id: c.gold for c in cases}
     gold_noop, rev_noop = [], []
-    for rec in package:
-        ann = annotations.get(rec["case_id"])
-        if not ann:
+    for cid, ann in annotations.items():
+        gold = gold_by_id.get(cid)
+        rn = ann.get("reviewer", {}).get("expected_noop") if ann else None
+        if gold is None or rn is None:
             continue
-        rn = ann.get("reviewer", {}).get("expected_noop")
-        if rn is None:
-            continue
-        gold_noop.append(bool(rec["gold"]["expected_noop"]))
+        gold_noop.append(bool(gold.expected_noop))
         rev_noop.append(bool(rn))
     results = []
     if gold_noop:

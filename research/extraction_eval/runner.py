@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,7 @@ from .config import ExperimentConfig
 from .costs import estimate_cost, load_pricing
 from .dataset import load_cases
 from .locking import sha256_text
-from .manifests import CallRecord, ExperimentManifest
+from .manifests import CallRecord, ExperimentManifest, validate_frozen_commit
 from .providers import build_provider
 from .schema import Case
 
@@ -47,12 +48,47 @@ def plan_runs(config: ExperimentConfig, cases: list[Case]) -> list[PlannedRun]:
     return plan
 
 
-def randomize(plan: list[PlannedRun], seed: int) -> tuple[list[PlannedRun], dict]:
-    """Shuffle case order per repetition and rotate provider order; record the seed."""
-    rng = random.Random(seed)
-    ordered = list(plan)
-    rng.shuffle(ordered)  # global shuffle interleaves providers + cases + reps
-    return ordered, {"seed": seed, "strategy": "global_shuffle", "n": len(ordered)}
+def build_schedule(plan: list[PlannedRun], seed: int) -> tuple[list[PlannedRun], dict]:
+    """One randomised execution order over ALL cases × repetitions × providers.
+
+    Per repetition the case order is shuffled (seeded), and within each case the
+    provider order is rotated — so no provider ever runs to completion before the next
+    (§13). Deterministic under ``seed``; the same schedule is persisted and reused on
+    resume so an interrupted run continues in the identical order.
+    """
+    by_rep: dict[int, list[PlannedRun]] = defaultdict(list)
+    for run in plan:
+        by_rep[run.repetition].append(run)
+
+    ordered: list[PlannedRun] = []
+    for r in sorted(by_rep):
+        by_case: dict[str, list[PlannedRun]] = defaultdict(list)
+        for run in by_rep[r]:
+            by_case[run.case.case_id].append(run)
+        case_ids = sorted(by_case)
+        random.Random(seed * 1000 + r).shuffle(case_ids)  # case order per repetition
+        for i, cid in enumerate(case_ids):
+            case_runs = sorted(by_case[cid], key=lambda x: x.provider)
+            rot = (r - 1 + i) % len(case_runs) if case_runs else 0
+            ordered.extend(case_runs[rot:] + case_runs[:rot])  # rotate provider order
+    meta = {"seed": seed, "strategy": "per_rep_case_shuffle+provider_rotation", "n": len(ordered)}
+    return ordered, meta
+
+
+def _schedule_path(raw_dir: Path) -> Path:
+    return raw_dir / "schedule.json"
+
+
+def persist_schedule(raw_dir: Path, ordered: list[PlannedRun], meta: dict) -> None:
+    payload = {"meta": meta, "order": [[r.case.case_id, r.provider, r.repetition] for r in ordered]}
+    _schedule_path(raw_dir).write_text(json.dumps(payload, indent=2))
+
+
+def load_schedule(raw_dir: Path, plan: list[PlannedRun]) -> tuple[list[PlannedRun], dict]:
+    data = json.loads(_schedule_path(raw_dir).read_text())
+    index = {r.key(): r for r in plan}
+    ordered = [index[tuple(k)] for k in data["order"] if tuple(k) in index]
+    return ordered, data["meta"]
 
 
 def experiment_id(config: ExperimentConfig, dataset_hash: str) -> str:
@@ -89,7 +125,12 @@ def execute(
     only_provider: str | None = None,
     only_cases: set[str] | None = None,
     resume: bool = True,
+    validate_frozen: bool = True,
 ) -> RunStats:
+    # Startup guard (#1): refuse to run against a changed frozen subject.
+    if validate_frozen:
+        validate_frozen_commit()
+
     cases = load_cases(dataset_path)
     if only_cases:
         cases = [c for c in cases if c.case_id in only_cases]
@@ -105,9 +146,29 @@ def execute(
         pricing = {}
 
     plan = plan_runs(config, cases)
+    # Provider-specific execution is for the pilot / debugging only; the full study runs
+    # the single persisted, interleaved schedule.
     if only_provider:
         plan = [p for p in plan if p.provider == only_provider]
-    ordered, rand_meta = randomize(plan, config.seed)
+
+    runs_path = raw_dir / "runs.jsonl"
+    errors_path = raw_dir / "errors.jsonl"
+    stats = RunStats(planned=len(plan))
+
+    if dry_run:
+        # No API calls, no writes at all; just report the full plan count.
+        stats.skipped_not_live = sum(1 for p in plan if p.live and not live)
+        return stats
+
+    # Build (or, on resume, reuse) the one randomised schedule for the whole study.
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    if only_provider:
+        ordered, rand_meta = build_schedule(plan, config.seed)  # subset; not persisted as the master
+    elif resume and _schedule_path(raw_dir).exists():
+        ordered, rand_meta = load_schedule(raw_dir, plan)
+    else:
+        ordered, rand_meta = build_schedule(plan, config.seed)
+        persist_schedule(raw_dir, ordered, rand_meta)
 
     manifest = ExperimentManifest(
         experiment_id=exp_id, config_name=config.name, dataset_hash=dataset_hash,
@@ -119,17 +180,7 @@ def execute(
         randomization=rand_meta,
     )
 
-    runs_path = raw_dir / "runs.jsonl"
-    errors_path = raw_dir / "errors.jsonl"
-    stats = RunStats(planned=len(ordered))
-
-    if dry_run:
-        # No API calls, no writes at all; just report the plan.
-        stats.skipped_not_live = sum(1 for p in ordered if p.live and not live)
-        return stats
-
     # Write experiment provenance once.
-    raw_dir.mkdir(parents=True, exist_ok=True)
     manifest.write(raw_dir / "manifest.json")
     (raw_dir / "prompt.txt").write_text(prompt_text)
     (raw_dir / "config.snapshot.yaml").write_text(_dump_yaml(config.raw))

@@ -45,19 +45,34 @@ def test_stratified_sample_size_and_determinism():
     assert len(a) == 9 and [c.case_id for c in a] == [c.case_id for c in b]
 
 
-def test_export_is_provider_blind_and_has_reviewer_fields():
+_FORBIDDEN = ("gold", "atoms", "accepted_phrasings", "provider", "model", "model_output",
+              "prediction", "annotator_notes", "authoring_status", "review_status")
+
+
+def test_export_is_fully_blinded():
+    import json
+
     pkg = export_annotation_package(_cases(3))
-    assert all("provider" not in rec for rec in pkg)
-    assert all(rec["reviewer"]["expected_noop"] is None for rec in pkg)
+    for rec in pkg:
+        # no gold/phrasings/provider/model-output/author-notes anywhere in the record.
+        top = set(rec) - {"reviewer"}
+        assert "gold" not in top and "annotator_notes" not in top
+        blob = json.dumps(rec)
+        for forbidden in ("accepted_phrasings", "policy_disposition", "should_store", "memory_text",
+                          "authoring_status", "review_status", "provider"):
+            assert forbidden not in blob, f"{forbidden} leaked into blinded export"
+        assert rec["reviewer"]["expected_noop"] is None  # blank for the reviewer to fill
+        assert set(rec) == {"case_id", "category", "conversation", "target_turn_id", "reviewer"}
 
 
-def test_agreement_and_completeness():
+def test_gold_compared_only_after_import():
     cases = _cases(4)
     pkg = export_annotation_package(cases)
-    # reviewer agrees with gold on expected_noop for all.
-    anns = {rec["case_id"]: {**rec, "reviewer": {"expected_noop": rec["gold"]["expected_noop"], "atoms": []}}
+    # Reviewer annotates independently; here they agree with gold on expected_noop.
+    gold_noop = {c.case_id: c.gold.expected_noop for c in cases}
+    anns = {rec["case_id"]: {"reviewer": {"expected_noop": gold_noop[rec["case_id"]], "atoms": []}}
             for rec in pkg}
     assert validate_completeness(pkg, anns) == []
-    agr = compute_agreement(pkg, anns)
+    agr = compute_agreement(cases, anns)  # gold comes from cases, not the package
     noop = next(a for a in agr if a.field == "expected_noop")
     assert noop.percent_agreement == 1.0 and noop.kappa == 1.0

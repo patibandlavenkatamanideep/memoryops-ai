@@ -12,13 +12,20 @@ Do **not** start until every box is checked.
 - [ ] Pilot green for all three providers; error taxonomy sane.
 - [ ] Seed recorded; dry-run shows 2,250 live + 150 stub planned.
 
-## Run (2,250 live calls — costs money)
+## Run (2,400 total: 150 stub + 2,250 live — live calls cost money)
+Run the **single interleaved schedule** — do NOT run one provider fully before the next.
+The first live invocation builds and persists `results/raw/<exp>/schedule.json` (case
+order shuffled per repetition, provider order rotated); every resume reuses it.
 ```bash
-python -m research.extraction_eval.run --config configs/final.yaml --provider stub
-for p in gemini openai anthropic; do
-  python -m research.extraction_eval.run --config configs/final.yaml --provider $p --live
-done   # each resumes; order is randomised + seed-recorded
+# Verify the plan first (offline; must report planned=2400):
+python -m research.extraction_eval.run --config configs/final.yaml --dry-run
+
+# Execute the whole randomised schedule (stub control + all live providers interleaved):
+python -m research.extraction_eval.run --config configs/final.yaml --live   # resumes if interrupted
+
 python -m research.extraction_eval.analyse --config configs/final.yaml
 python -m research.extraction_eval.build_paper_artifacts --config configs/final.yaml
 ```
+`--provider <name>` is for the **pilot / debugging only** — it runs a single-provider
+subset and does not persist the master schedule.
 No thresholds change after seeing results. Dataset errors → errata + new version, never in-place edits.

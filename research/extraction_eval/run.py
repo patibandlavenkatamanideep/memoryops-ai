@@ -25,15 +25,16 @@ def _resolve(rel: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run the extraction-quality experiment")
     ap.add_argument("--config", required=True)
+    ap.add_argument("--dataset", help="override the config's dataset path (e.g. offline dry-run)")
     ap.add_argument("--dry-run", action="store_true", help="plan only; no API calls, no writes")
     ap.add_argument("--live", action="store_true", help="REQUIRED to make real provider calls")
-    ap.add_argument("--provider", help="run only this provider (stub|gemini|openai|anthropic)")
+    ap.add_argument("--provider", help="run only this provider (pilot/debug only)")
     ap.add_argument("--cases", nargs="*", help="run only these case_ids")
     ap.add_argument("--no-resume", action="store_true", help="do not skip completed runs")
     args = ap.parse_args(argv)
 
     config = load_config(args.config)
-    dataset_path = _resolve(config.dataset)
+    dataset_path = _resolve(args.dataset) if args.dataset else _resolve(config.dataset)
     if not dataset_path.exists():
         print(f"dataset not found: {dataset_path}")
         return 2

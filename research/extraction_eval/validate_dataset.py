@@ -5,17 +5,34 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .dataset import DEVELOPMENT_COMPOSITION, LOCKED_COMPOSITION, category_counts, load_cases, validate_cases
+from .dataset import (
+    DEVELOPMENT_COMPOSITION,
+    LOCKED_COMPOSITION,
+    PILOT_COMPOSITION,
+    category_counts,
+    load_cases,
+    validate_cases,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate extraction-eval dataset cases")
     ap.add_argument("--dataset", required=True)
-    ap.add_argument("--expect", choices=["locked", "development", "none"], default="none")
+    ap.add_argument(
+        "--expect", default="none",
+        choices=["none", "draft", "pilot", "development", "locked"],
+        help="draft = structural only (never enforces the locked composition); "
+             "pilot/development/locked enforce their fixed composition.",
+    )
     args = ap.parse_args(argv)
 
     cases = load_cases(args.dataset)
-    expected = {"locked": LOCKED_COMPOSITION, "development": DEVELOPMENT_COMPOSITION}.get(args.expect)
+    # 'draft' and 'none' impose NO composition — draft data is never validated as locked.
+    expected = {
+        "pilot": PILOT_COMPOSITION,
+        "development": DEVELOPMENT_COMPOSITION,
+        "locked": LOCKED_COMPOSITION,
+    }.get(args.expect)
     problems = validate_cases(cases, expected_counts=expected)
     print(f"cases: {len(cases)}  category_counts: {category_counts(cases)}")
     if problems:

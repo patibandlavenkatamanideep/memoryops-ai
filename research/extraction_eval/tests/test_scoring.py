@@ -75,6 +75,19 @@ def test_policy_disposition_scored_separately():
     assert s.tp == 1 and s.policy_correct == 0 and s.should_store_correct == 0
 
 
+def test_sensitive_correctly_blocked_gets_extraction_and_policy_credit():
+    # A sensitive candidate correctly extracted AND marked block/should_store=false is an
+    # extraction success and a policy success — never scored as a stored memory (#6).
+    gold = _gold(_ga("User shared an AWS key.", disp="block", store=False))
+    s = _score(_out("User shared an AWS key.", disp="block", store=False), gold)
+    assert s.tp == 1  # extraction credit
+    assert s.policy_correct == 1  # policy credit (block matched)
+    assert s.should_store_correct == 1  # correctly NOT stored
+    assert s.fp == 0 and s.fn == 0
+    # `should_store=false` is tracked, not folded into any "stored" count.
+    assert not s.expected_noop
+
+
 def test_error_case_is_not_zero():
     s = _score(None, _gold(_ga("x")), error_class="refusal")
     assert s.scored is False and s.error_class == "refusal"

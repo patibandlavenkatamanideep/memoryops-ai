@@ -20,8 +20,15 @@ Rules: a no-op case has **no** atoms; every `source_turn_ids` must exist; use ca
 `memory_type`; give `accepted_phrasings` so deterministic matching is fair; for sensitive
 content set `should_store=false`, `policy_disposition=block` (extraction still succeeds).
 
-## Validate
+## Stages & validation
+- `datasets/development/cases.jsonl` — 15-case pilot/integration set (`--expect pilot`).
+- `datasets/draft/candidate_cases.jsonl` — authoring workspace toward the locked set
+  (`--expect draft` = structural only; **draft is never validated as locked**).
+- `datasets/locked/extraction_eval_v1.jsonl` — created by `lock_dataset` (`--expect locked`).
+
 ```bash
-python -m research.extraction_eval.validate_dataset --dataset <file> --expect development
+python -m research.extraction_eval.validate_dataset --dataset <file> --expect draft   # structural
+python -m research.extraction_eval.validate_dataset --dataset <file> --expect locked  # 150 composition
 ```
-Fix every reported problem before requesting review.
+Fix every reported problem before requesting review. A model-generated draft (e.g. from
+`author_candidates`) is **not gold** and must be human-authored + approved before locking.
