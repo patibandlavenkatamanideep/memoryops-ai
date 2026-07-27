@@ -1,0 +1,13 @@
+# Ruff config for the research extraction-eval harness (isolated from the app config).
+# Run: ruff check research/extraction_eval
+line-length = 110
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[lint.per-file-ignores]
+# Tests + provider adapters use guarded imports / path bridges after `from __future__`.
+"tests/*" = ["E402"]
+"providers/stub.py" = ["E402"]
+"providers/*.py" = ["E501"]

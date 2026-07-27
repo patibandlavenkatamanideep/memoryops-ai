@@ -1,0 +1,17 @@
+# Prices are NULL until manually verified from official provider docs immediately
+# before execution. Null price -> no estimated cost (never a fabricated number).
+# Raw token usage is the primary evidence; cost is derived metadata.
+pricing_version: "2026-07-unverified"
+providers:
+  gemini:
+    model: gemini-2.5-flash
+    input_per_million: null
+    output_per_million: null
+  openai:
+    model: gpt-4.1-mini-2025-04-14
+    input_per_million: null
+    output_per_million: null
+  anthropic:
+    model: claude-haiku-4-5
+    input_per_million: null
+    output_per_million: null

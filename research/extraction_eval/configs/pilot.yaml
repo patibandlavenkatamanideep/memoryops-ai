@@ -1,0 +1,15 @@
+# 15-case integration pilot — validates auth/connectivity/parsing/accounting/layout.
+# NOT for model selection or accuracy claims (see amendment 001 §12).
+name: pilot
+dataset: datasets/development/cases.jsonl
+prompt_file: prompts/extraction_v1.txt
+repetitions: 1
+seed: 20260727
+matching_version: v1
+matching_threshold: 0.85
+pricing_file: configs/pricing.yaml
+providers:
+  - {name: stub,      model_id: stub,                       live: false}
+  - {name: gemini,    model_id: gemini-2.5-flash,           live: true}
+  - {name: openai,    model_id: gpt-4.1-mini-2025-04-14,    live: true}
+  - {name: anthropic, model_id: claude-haiku-4-5,           live: true}

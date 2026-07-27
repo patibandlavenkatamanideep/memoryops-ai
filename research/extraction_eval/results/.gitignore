@@ -1,0 +1,5 @@
+# Generated experiment output is not committed (regenerate from raw runs).
+raw/
+processed/
+figures/
+tables/
