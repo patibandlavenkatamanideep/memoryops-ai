@@ -18,6 +18,22 @@ class Settings(BaseSettings):
     service_name: str = "memoryops-api"
     log_level: str = "INFO"
 
+    # Governance profile (paper study apparatus). "full" (default) is the frozen,
+    # fully-governed system (== tag paper-v0.1-governance-runtime — no behavior change).
+    # "disabled" produces the mechanism-matched *ungoverned* twin (S0-U) and is the
+    # umbrella the Experiment-C ablations build on: it turns OFF policy-broker
+    # enforcement, the admission/recall/output gates, transactional audit evidence, and
+    # tombstone propagation, while keeping the SAME extractor, embeddings, storage,
+    # retrieval, top-k, prompt, LLM, and temperature. Per-control flags below default
+    # from the profile so a single ablation can be toggled independently. Off by
+    # default → the frozen subject is untouched. See paper/protocol.md §3.
+    governance_profile: Literal["full", "disabled"] = "full"
+    # Resolved per-control switches (default True; the profile / env can force off).
+    # Kept as real fields so an ablation can disable exactly one mechanism.
+    govern_policy_enforcement: bool = True
+    govern_transactional_evidence: bool = True
+    govern_tombstone_propagation: bool = True
+
     # Deployment profile (v2.3). "dev" keeps the demo-friendly defaults (in-memory
     # store, auth off, open CORS) so the app runs with no infra. "production" turns
     # those same defaults into *fail-closed startup errors*: the app refuses to boot
@@ -347,6 +363,40 @@ def get_settings() -> Settings:
         overrides["output_gate_enabled"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_OUTPUT_GATE_MODE")) in ("redact", "refuse"):
         overrides["output_gate_mode"] = val
+    # Governance profile (paper study apparatus). MEMORYOPS_GOVERNANCE_PROFILE=disabled
+    # produces the ungoverned twin S0-U; "full" (default) is the frozen behavior. The
+    # profile sets the per-control defaults; an individual MEMORYOPS_ABLATE_* env var
+    # then overrides exactly one control (Experiment C). A control is *off* when the
+    # profile is disabled OR its ablation flag is set.
+    profile_disabled = os.getenv("MEMORYOPS_GOVERNANCE_PROFILE") == "disabled"
+    if os.getenv("MEMORYOPS_GOVERNANCE_PROFILE") in ("full", "disabled"):
+        overrides["governance_profile"] = os.getenv("MEMORYOPS_GOVERNANCE_PROFILE")
+
+    def _ablated(control_env: str) -> bool:
+        v = os.getenv(control_env)
+        return profile_disabled or (v is not None and v.lower() not in ("0", "false", "no"))
+
+    if profile_disabled or os.getenv("MEMORYOPS_ABLATE_POLICY_BROKER") is not None:
+        overrides["govern_policy_enforcement"] = not _ablated("MEMORYOPS_ABLATE_POLICY_BROKER")
+    if profile_disabled or os.getenv("MEMORYOPS_ABLATE_TRANSACTIONAL_EVIDENCE") is not None:
+        overrides["govern_transactional_evidence"] = not _ablated(
+            "MEMORYOPS_ABLATE_TRANSACTIONAL_EVIDENCE"
+        )
+    if profile_disabled or os.getenv("MEMORYOPS_ABLATE_TOMBSTONE_PROPAGATION") is not None:
+        overrides["govern_tombstone_propagation"] = not _ablated(
+            "MEMORYOPS_ABLATE_TOMBSTONE_PROPAGATION"
+        )
+    # The disabled profile also turns the context gates off (unless an env var already
+    # set them). Individual gate toggles remain the per-control ablation knobs.
+    if profile_disabled:
+        for env_name, field_name in (
+            ("MEMORYOPS_ADMISSION_GATE", "admission_gate_enabled"),
+            ("MEMORYOPS_RECALL_GATE", "recall_gate_enabled"),
+            ("MEMORYOPS_OUTPUT_GATE", "output_gate_enabled"),
+        ):
+            if os.getenv(env_name) is None:
+                overrides[field_name] = False
+
     if (val := os.getenv("MEMORYOPS_STORAGE")) in ("memory", "postgres"):
         overrides["storage"] = val
     # v2.3 deployment profile + CORS allow-list. Public operator knobs.

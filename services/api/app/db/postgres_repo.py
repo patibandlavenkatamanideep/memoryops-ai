@@ -177,6 +177,12 @@ class PostgresRepository(Repository):
 
     @contextmanager
     def transaction(self, tenant_id: str, user_id: str = "") -> Iterator[None]:
+        # Ablation / S0-U: with transactional evidence disabled the unit of work is a
+        # passthrough — no shared session, so each nested repo call commits on its own
+        # (the pre-v2.3, non-atomic behavior). Frozen default keeps it enabled.
+        if not get_settings().govern_transactional_evidence:
+            yield
+            return
         active = self._active_session.get()
         if active is not None:
             self._validate_active_scope(tenant_id, user_id)

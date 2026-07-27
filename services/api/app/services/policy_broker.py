@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..core.config import get_settings as get_app_settings
 from ..core.redaction import scan
 from ..db.entities import StoredSettings
 from ..db.repository import Repository
@@ -39,6 +40,13 @@ class PolicyBroker:
         user_id: str,
         settings: StoredSettings,
     ) -> PolicyOutcome:
+        # Ablation / S0-U (paper study): with policy enforcement disabled the broker is
+        # permissive — no secret/injection block, no sensitivity elevation, no dedup or
+        # approval — the "no policy broker" ablation. Frozen default enforces as before.
+        if not get_app_settings().govern_policy_enforcement:
+            return PolicyOutcome(
+                Decision.SAVE, candidate, "policy enforcement disabled (ablation / S0-U)"
+            )
         scan_result = scan(candidate.content)
 
         # 1) Hard safety rules (deterministic, verifiable).

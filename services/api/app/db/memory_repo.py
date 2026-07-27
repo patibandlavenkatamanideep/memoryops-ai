@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 
+from ..core.config import get_settings as get_app_settings
 from ..loops.metrics import summarize_loop_runs
 from ..loops.types import LoopEvent, LoopRun
 from .entities import (
@@ -83,6 +84,12 @@ class InMemoryRepository(Repository):
         mutation also takes it, no other thread can mutate the store while it is
         being deep-copied (which would otherwise raise "dictionary changed size
         during iteration" under concurrent load)."""
+        # Ablation / S0-U: transactional evidence disabled → passthrough (no snapshot,
+        # no rollback); mutations + audits commit independently. Frozen default keeps
+        # the atomic unit of work.
+        if not get_app_settings().govern_transactional_evidence:
+            yield
+            return
         with self._lock:
             if self._transaction_depth:
                 self._transaction_depth += 1
