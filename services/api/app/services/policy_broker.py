@@ -40,30 +40,31 @@ class PolicyBroker:
         user_id: str,
         settings: StoredSettings,
     ) -> PolicyOutcome:
-        # Ablation / S0-U (paper study): with policy enforcement disabled the broker is
-        # permissive — no secret/injection block, no sensitivity elevation, no dedup or
-        # approval — the "no policy broker" ablation. Frozen default enforces as before.
-        if not get_app_settings().govern_policy_enforcement:
-            return PolicyOutcome(
-                Decision.SAVE, candidate, "policy enforcement disabled (ablation / S0-U)"
-            )
+        # Ablation / S0-U (paper study): "enforcement" = the governance *decisions*
+        # (secret/injection BLOCK, sensitive-content approval gating). With enforcement
+        # disabled those are skipped, but memory *hygiene* — sensitivity labelling,
+        # dedup/update-existing, and the low-utility floor — is KEPT, so S0-U stays a
+        # fair, mechanism-matched ungoverned twin (disabling dedup too would let S0-U
+        # accumulate duplicates and bias H2 utility toward the governed system). Frozen
+        # default (`govern_policy_enforcement=True`) enforces exactly as before.
+        enforce = get_app_settings().govern_policy_enforcement
         scan_result = scan(candidate.content)
 
-        # 1) Hard safety rules (deterministic, verifiable).
-        if scan_result.has_secret:
+        # 1) Hard safety rules (deterministic, verifiable) — governance enforcement.
+        if enforce and scan_result.has_secret:
             return PolicyOutcome(
                 Decision.BLOCK,
                 candidate,
                 f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
             )
-        if scan_result.injection:
+        if enforce and scan_result.injection:
             return PolicyOutcome(
                 Decision.BLOCK,
                 candidate,
                 "blocked: prompt-injection / memory-poisoning pattern detected",
             )
 
-        # 2) Sensitivity (PII elevates; may require approval).
+        # 2) Sensitivity (PII elevates; may require approval). Labelling — kept.
         final_sensitivity = max(
             candidate.sensitivity,
             Sensitivity(scan_result.sensitivity),
@@ -89,9 +90,10 @@ class PolicyBroker:
                 f"dropped: importance {candidate.importance} below threshold {_MIN_IMPORTANCE}",
             )
 
-        # 5) Sensitive content gated behind approval.
+        # 5) Sensitive content gated behind approval — governance enforcement.
         if (
-            final_sensitivity in (Sensitivity.medium, Sensitivity.high)
+            enforce
+            and final_sensitivity in (Sensitivity.medium, Sensitivity.high)
             and settings.require_approval_for_sensitive
         ):
             return PolicyOutcome(
