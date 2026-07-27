@@ -85,6 +85,22 @@ def test_policy_broker_blocks_secret_when_full_but_saves_when_disabled(load_sett
     ).decision == Decision.SAVE
 
 
+def test_dedup_hygiene_preserved_when_enforcement_disabled(load_settings):
+    # S0-U disables governance *enforcement* but keeps memory hygiene: a duplicate
+    # still updates the existing memory rather than accumulating (otherwise S0-U would
+    # look artificially worse on utility — biasing H2 toward the governed system).
+    repo = InMemoryRepository()
+    broker = PolicyBroker(repo)
+    stored = repo.get_settings("t1", "u1")
+    seed_memory(repo, tenant_id="t1", user_id="u1", content="I love hiking in the alps")
+
+    load_settings(MEMORYOPS_GOVERNANCE_PROFILE="disabled")
+    dup = CandidateMemory(content="I love hiking in the alps")
+    out = broker.evaluate(dup, tenant_id="t1", user_id="u1", settings=stored)
+    assert out.decision == Decision.UPDATE_EXISTING  # dedup kept
+    assert out.existing_id is not None
+
+
 # ── behavioral: transactional evidence off → no rollback ─────────────────────
 def _ctx() -> WorkerContext:
     return WorkerContext(tenant_id="t1", user_id="u1", now=NOW)
