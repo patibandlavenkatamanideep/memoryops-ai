@@ -52,7 +52,9 @@ def _require_approved(cases: list[Case]) -> list[str]:
     problems = []
     for c in cases:
         if c.authoring_status != "approved":
-            problems.append(f"{c.case_id}: authoring_status={c.authoring_status!r} (must be 'approved' to lock)")
+            problems.append(
+                f"{c.case_id}: authoring_status={c.authoring_status!r} (must be 'approved' to lock)"
+            )
     return problems
 
 
@@ -118,7 +120,9 @@ def verify_lock(locked_path: str | Path) -> bool:
     return recorded == actual
 
 
-def append_errata(errata_path: str | Path, *, dataset_version: str, case_id: str, issue: str, resolution: str) -> None:
+def append_errata(
+    errata_path: str | Path, *, dataset_version: str, case_id: str, issue: str, resolution: str
+) -> None:
     """Append an errata entry (JSONL). Locked data is never edited in place; errata +
     a new version are how post-lock issues are handled."""
     entry = {

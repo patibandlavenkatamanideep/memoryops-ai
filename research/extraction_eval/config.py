@@ -45,7 +45,8 @@ class ExperimentConfig:
 
     @property
     def prompt_path(self) -> Path:
-        return (_ROOT / self.prompt_file) if not Path(self.prompt_file).is_absolute() else Path(self.prompt_file)
+        p = Path(self.prompt_file)
+        return p if p.is_absolute() else (_ROOT / self.prompt_file)
 
     def prompt_text(self) -> str:
         return self.prompt_path.read_text()

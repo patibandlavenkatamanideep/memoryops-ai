@@ -50,7 +50,8 @@ def _case(cid: str, category: str, i: int) -> dict:
                 {"turn_id": "t2", "role": "user", "content": f"[draft {cid}] actually value is Y{i} now."}],
                 "target_turn_id": "t2", "gold": {"expected_noop": False, "atoms": [
                     {"atom_id": f"{cid}_a", "memory_text": f"User value is Y{i}.", "accepted_phrasings": [],
-                     "memory_type": "semantic", "subject": "user", "operation": "update", "should_store": True,
+                     "memory_type": "semantic", "subject": "user", "operation": "update",
+                     "should_store": True,
                      "policy_disposition": "update_existing", "supersedes": f"User value is X{i}.",
                      "source_turn_ids": ["t2"]}]}}
     if category == "sensitive_policy_boundary":

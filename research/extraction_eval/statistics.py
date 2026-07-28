@@ -68,7 +68,8 @@ def provider_f1_ci(scores: list[CaseScore], *, seed: int, n_boot: int = 2000) ->
 
 
 def paired_f1_diff_ci(
-    scores_a: list[CaseScore], scores_b: list[CaseScore], *, seed: int, n_boot: int = 2000, alpha: float = 0.05
+    scores_a: list[CaseScore], scores_b: list[CaseScore], *, seed: int, n_boot: int = 2000,
+    alpha: float = 0.05,
 ) -> CI:
     """Bootstrap CI for mean per-case F1 difference (A − B) over the shared cases."""
     fa, fb = _percase_f1(scores_a), _percase_f1(scores_b)

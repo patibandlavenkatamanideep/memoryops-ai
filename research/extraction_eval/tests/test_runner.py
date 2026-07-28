@@ -109,9 +109,10 @@ def test_final_design_plans_2400_runs():
     cfg = ExperimentConfig(name="final", dataset="u", prompt_file="prompts/extraction_v1.txt", repetitions=5,
                            seed=1, matching_version="v1", matching_threshold=0.85,
                            pricing_file="configs/pricing.yaml",
-                           providers=[ProviderSpec("stub", "stub", False), ProviderSpec("gemini", "g", True),
-                                      ProviderSpec("openai", "o", True), ProviderSpec("anthropic", "a", True)],
-                           raw={})
+                           providers=[
+                               ProviderSpec("stub", "stub", False), ProviderSpec("gemini", "g", True),
+                               ProviderSpec("openai", "o", True), ProviderSpec("anthropic", "a", True),
+                           ], raw={})
     cases = [Case.model_validate({**_CASE, "case_id": f"c{i}"}) for i in range(150)]
     plan = plan_runs(cfg, cases)
     assert len(plan) == 2400

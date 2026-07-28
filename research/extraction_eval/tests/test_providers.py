@@ -27,8 +27,8 @@ def test_stub_conforms_to_schema():
 
 
 def test_stub_noop_on_chitchat():
-    r = StubProvider().extract(prompt="", conversation=[{"turn_id": "t1", "role": "user", "content": "haha nice"}],
-                               target_turn_id="t1")
+    conv = [{"turn_id": "t1", "role": "user", "content": "haha nice"}]
+    r = StubProvider().extract(prompt="", conversation=conv, target_turn_id="t1")
     assert r.ok and r.output.is_noop
 
 

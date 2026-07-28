@@ -51,7 +51,8 @@ def test_false_positive():
 
 
 def test_false_negative():
-    s = _score(_out("User likes tea."), _gold(_ga("User likes tea.", aid="a"), _ga("User owns a boat.", aid="b")))
+    gold = _gold(_ga("User likes tea.", aid="a"), _ga("User owns a boat.", aid="b"))
+    s = _score(_out("User likes tea."), gold)
     assert s.tp == 1 and s.fn == 1
 
 
@@ -101,4 +102,5 @@ def test_bipartite_prefers_exact_over_lexical():
 
 
 def test_pair_score_below_threshold_is_zero():
-    assert pair_score("completely different sentence", "User prefers metric units.", [], threshold=0.85) == 0.0
+    score = pair_score("completely different sentence", "User prefers metric units.", [], threshold=0.85)
+    assert score == 0.0

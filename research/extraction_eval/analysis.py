@@ -58,7 +58,9 @@ def _case_score_row(s: CaseScore) -> dict:
     }
 
 
-def write_processed(scores: list[CaseScore], out_dir: str | Path, *, seed: int, matching_version: str) -> dict:
+def write_processed(
+    scores: list[CaseScore], out_dir: str | Path, *, seed: int, matching_version: str
+) -> dict:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

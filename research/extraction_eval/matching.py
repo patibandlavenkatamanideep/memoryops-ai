@@ -63,7 +63,9 @@ class MatchResult:
     borderline: list[tuple[int, int, float]]  # near-threshold pairs for adjudication
 
 
-def match_atoms(pred_texts_and_meta, gold_atoms, *, threshold: float, borderline_band: float = 0.05) -> MatchResult:
+def match_atoms(
+    pred_texts_and_meta, gold_atoms, *, threshold: float, borderline_band: float = 0.05
+) -> MatchResult:
     """Greedy max-weight one-to-one matching. ``pred_texts_and_meta`` is a list of
     predicted ``memory_text`` strings; ``gold_atoms`` is a list of gold atoms."""
     edges: list[tuple[float, bool, int, int]] = []
