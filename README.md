@@ -9,9 +9,9 @@ governed state, not just a vector database.
 [![CI](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/ci.yml)
 &nbsp;[![Benchmark](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/benchmark.yml/badge.svg)](https://github.com/patibandlavenkatamanideep/memoryops-ai/actions/workflows/benchmark.yml)
 &nbsp;[![PyPI](https://img.shields.io/pypi/v/memoryops-sdk)](https://pypi.org/project/memoryops-sdk/)
-&nbsp;![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-&nbsp;![License](https://img.shields.io/badge/license-MIT-green)
-&nbsp;![API](https://img.shields.io/badge/API%20%2B%20SDK-1.x%20stable-green)
+&nbsp;[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](docs/quickstart.md)
+&nbsp;[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+&nbsp;[![API](https://img.shields.io/badge/API%20%2B%20SDK-1.x%20stable-green)](docs/api-stability.md)
 
 > **Two version tracks:** the **platform release** (`v2.3`, the repo's feature
 > milestone) is separate from the **public API + SDK contract** (`1.x`, an additive-
