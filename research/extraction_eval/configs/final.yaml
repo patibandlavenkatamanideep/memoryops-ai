@@ -1,0 +1,18 @@
+# Final locked run: 150 locked cases x 3 live models x 5 reps + 1 stub control/case.
+# The dataset path resolves only AFTER the dataset is locked (§7).
+name: final
+# Pre-registered composition (dataset.COMPOSITIONS['locked'] = 150 cases). Lets
+# `--dry-run` validate the 2,400-run plan shape before the dataset is authored/locked.
+composition: locked
+dataset: datasets/locked/extraction_eval_v1.jsonl
+prompt_file: prompts/extraction_v1.txt
+repetitions: 5
+seed: 20260727
+matching_version: v1
+matching_threshold: 0.85
+pricing_file: configs/pricing.yaml
+providers:
+  - {name: stub,      model_id: stub,                       live: false}
+  - {name: gemini,    model_id: gemini-2.5-flash,           live: true}
+  - {name: openai,    model_id: gpt-4.1-mini-2025-04-14,    live: true}
+  - {name: anthropic, model_id: claude-haiku-4-5,           live: true}
