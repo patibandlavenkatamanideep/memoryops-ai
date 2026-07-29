@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from research.extraction_eval.dataset import (
     DEVELOPMENT_COMPOSITION,
@@ -32,12 +33,12 @@ def test_valid_case_loads():
 
 def test_missing_field_rejected():
     bad = {k: v for k, v in _MINIMAL.items() if k != "target_turn_id"}
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Case.model_validate(bad)
 
 
 def test_invalid_enum_rejected():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _case(category="bogus_category")
 
 
@@ -45,12 +46,12 @@ def test_invalid_source_turn_reference_rejected():
     bad = {**_MINIMAL, "gold": {"expected_noop": False, "atoms": [{
         "atom_id": "c1_a", "memory_text": "x", "memory_type": "semantic",
         "operation": "create", "policy_disposition": "save", "source_turn_ids": ["tNOPE"]}]}}
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Case.model_validate(bad)
 
 
 def test_noop_cannot_have_atoms():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Case.model_validate({**_MINIMAL, "gold": {"expected_noop": True, "atoms": _MINIMAL["gold"]["atoms"]}})
 
 

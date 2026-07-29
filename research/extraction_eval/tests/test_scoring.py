@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from research.extraction_eval.matching import match_atoms, pair_score
-from research.extraction_eval.schema import ExtractionOutput, Gold, GoldAtom, MemoryAtom, PolicyDisposition
+from research.extraction_eval.schema import ExtractionOutput, Gold, GoldAtom, MemoryAtom
 from research.extraction_eval.scoring import ScoringConfig, score_case
 
 

@@ -62,8 +62,8 @@ def test_empty_response_classified():
 
 
 def test_refusal_and_truncation_classified():
-    from research.extraction_eval.providers.openai import _result_from_raw as oai
     from research.extraction_eval.providers.anthropic import _result_from_raw as ant
+    from research.extraction_eval.providers.openai import _result_from_raw as oai
 
     assert oai("", OpenAIProvider("m"), "length").error_class == ErrorClass.truncation.value
     assert oai("", OpenAIProvider("m"), "content_filter").error_class == ErrorClass.refusal.value

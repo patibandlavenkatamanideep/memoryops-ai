@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from research.extraction_eval.schema import (
     MEMORY_TYPES,
@@ -30,9 +31,9 @@ def test_policy_disposition_maps_to_real_decisions():
 
 
 def test_atom_rejects_unknown_type_and_extra_keys():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         MemoryAtom(memory_text="x", memory_type="not_a_type")
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         MemoryAtom(memory_text="x", memory_type="semantic", bogus=1)
 
 

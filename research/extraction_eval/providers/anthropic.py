@@ -80,7 +80,9 @@ class AnthropicProvider:
 
 def _result_from_raw(raw: str, provider, stop_reason: str) -> ProviderResult:
     if stop_reason == "max_tokens":
-        return ProviderResult(raw_text=raw, error_class=ErrorClass.truncation.value, finish_reason=stop_reason)
+        return ProviderResult(
+            raw_text=raw, error_class=ErrorClass.truncation.value, finish_reason=stop_reason
+        )
     if stop_reason == "refusal":
         return ProviderResult(raw_text=raw, error_class=ErrorClass.refusal.value, finish_reason=stop_reason)
     output, err, detail = provider.parse(raw)

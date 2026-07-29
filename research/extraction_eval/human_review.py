@@ -26,7 +26,7 @@ def stratified_sample(cases: list[Case], *, n: int, seed: int) -> list[Case]:
         by_cat[c.category].append(c)
     total = len(cases)
     picked: list[Case] = []
-    for cat, group in sorted(by_cat.items()):
+    for _cat, group in sorted(by_cat.items()):
         k = max(1, round(n * len(group) / total)) if group else 0
         rng.shuffle(group)
         picked.extend(group[:k])
