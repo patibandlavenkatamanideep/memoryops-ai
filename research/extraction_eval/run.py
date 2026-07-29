@@ -11,7 +11,9 @@ import sys
 from pathlib import Path
 
 from .config import load_config
-from .runner import execute
+from .dataset import COMPOSITIONS, composition_total
+from .manifests import validate_frozen_commit
+from .runner import dry_run_plan, execute
 
 _PKG = Path(__file__).resolve().parent
 _RESULTS = _PKG / "results"
@@ -36,6 +38,22 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     dataset_path = _resolve(args.dataset) if args.dataset else _resolve(config.dataset)
     if not dataset_path.exists():
+        # Plan-shape validation before the dataset is authored/locked: derive the planned
+        # count from the config's declared pre-registered composition. No gold is
+        # fabricated; a real (non-dry) run still requires the dataset file to exist.
+        if args.dry_run and not args.dataset and config.composition:
+            if config.composition not in COMPOSITIONS:
+                print(f"unknown composition {config.composition!r} in {args.config}")
+                return 2
+            validate_frozen_commit()  # frozen-subject guard still applies to plan checks
+            n_cases = composition_total(config.composition)
+            stats = dry_run_plan(config, n_cases)
+            print(f"[DRY-RUN:PLAN] planned={stats.planned} "
+                  f"stub={stats.planned - stats.skipped_not_live} "
+                  f"live={stats.skipped_not_live} "
+                  f"(composition={config.composition}, n_cases={n_cases}; "
+                  f"dataset not yet authored)")
+            return 0
         print(f"dataset not found: {dataset_path}")
         return 2
 

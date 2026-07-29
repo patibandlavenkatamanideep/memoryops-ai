@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from research.extraction_eval.config import ExperimentConfig, ProviderSpec
 from research.extraction_eval.runner import build_schedule, execute, plan_runs
+
+_CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 
 _CASE = {
     "case_id": "c1", "category": "single_memory", "difficulty": "easy",
@@ -119,6 +122,48 @@ def test_final_design_plans_2400_runs():
     stub = sum(1 for p in plan if p.provider == "stub")
     live = sum(1 for p in plan if p.live)
     assert stub == 150 and live == 2250
+
+
+def test_dry_run_plan_matches_real_plan_over_n_cases():
+    # The no-data plan estimate must equal an actual plan_runs over N authored cases.
+    from research.extraction_eval.runner import dry_run_plan
+    from research.extraction_eval.schema import Case
+
+    cfg = _config()  # stub (control) + gemini (live), repetitions=2
+    n = 7
+    real = plan_runs(cfg, [Case.model_validate({**_CASE, "case_id": f"c{i}"}) for i in range(n)])
+    est = dry_run_plan(cfg, n)
+    assert est.planned == len(real)
+    assert est.skipped_not_live == sum(1 for p in real if p.live)
+
+
+def test_locked_composition_dry_run_plans_2400():
+    # The CLI's pre-lock plan validation: locked composition (150) -> 2,400 / 150 / 2,250.
+    from research.extraction_eval.config import ExperimentConfig, ProviderSpec
+    from research.extraction_eval.dataset import composition_total
+    from research.extraction_eval.runner import dry_run_plan
+
+    cfg = ExperimentConfig(name="final", dataset="datasets/locked/x.jsonl",
+                           prompt_file="prompts/extraction_v1.txt", repetitions=5, seed=1,
+                           matching_version="v1", matching_threshold=0.85,
+                           pricing_file="configs/pricing.yaml", composition="locked",
+                           providers=[
+                               ProviderSpec("stub", "stub", False), ProviderSpec("gemini", "g", True),
+                               ProviderSpec("openai", "o", True), ProviderSpec("anthropic", "a", True),
+                           ], raw={})
+    assert composition_total(cfg.composition) == 150
+    est = dry_run_plan(cfg, composition_total(cfg.composition))
+    assert est.planned == 2400
+    assert est.planned - est.skipped_not_live == 150  # stub control
+    assert est.skipped_not_live == 2250  # live provider runs
+
+
+def test_final_config_declares_locked_composition():
+    # Guards the pre-lock dry-run path: final.yaml must target the locked composition.
+    from research.extraction_eval.config import load_config
+
+    cfg = load_config(_CONFIGS / "final.yaml")
+    assert cfg.composition == "locked"
 
 
 def test_resume_reuses_persisted_schedule(tmp_path):

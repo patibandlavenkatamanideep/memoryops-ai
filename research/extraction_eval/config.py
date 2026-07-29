@@ -40,6 +40,9 @@ class ExperimentConfig:
     matching_version: str
     matching_threshold: float
     pricing_file: str
+    # Pre-registered composition this experiment targets (see dataset.COMPOSITIONS).
+    # Lets --dry-run validate the plan shape before the dataset is authored/locked.
+    composition: str | None = None
     providers: list[ProviderSpec] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -77,6 +80,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
         matching_version=str(data.get("matching_version", "v1")),
         matching_threshold=float(data.get("matching_threshold", 0.85)),
         pricing_file=data.get("pricing_file", "configs/pricing.yaml"),
+        composition=data.get("composition"),
         providers=providers,
         raw=data,
     )

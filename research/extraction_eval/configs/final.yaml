@@ -1,6 +1,9 @@
 # Final locked run: 150 locked cases x 3 live models x 5 reps + 1 stub control/case.
 # The dataset path resolves only AFTER the dataset is locked (§7).
 name: final
+# Pre-registered composition (dataset.COMPOSITIONS['locked'] = 150 cases). Lets
+# `--dry-run` validate the 2,400-run plan shape before the dataset is authored/locked.
+composition: locked
 dataset: datasets/locked/extraction_eval_v1.jsonl
 prompt_file: prompts/extraction_v1.txt
 repetitions: 5

@@ -48,6 +48,23 @@ def plan_runs(config: ExperimentConfig, cases: list[Case]) -> list[PlannedRun]:
     return plan
 
 
+def dry_run_plan(config: ExperimentConfig, n_cases: int) -> RunStats:
+    """Plan-shape counts for a hypothetical dataset of ``n_cases`` cases, authoring and
+    reading no data. Used to validate the execution plan (e.g. the final 2,400) *before*
+    the locked dataset exists. Mirrors ``plan_runs``' per-provider repetition rule
+    (control providers run once; live providers run ``repetitions`` times). A real
+    (non-dry) run still requires the actual dataset file."""
+    live_runs = 0
+    control_runs = 0
+    for spec in config.providers:
+        reps = config.repetitions if spec.live else 1
+        if spec.live:
+            live_runs += n_cases * reps
+        else:
+            control_runs += n_cases * reps
+    return RunStats(planned=live_runs + control_runs, skipped_not_live=live_runs)
+
+
 def build_schedule(plan: list[PlannedRun], seed: int) -> tuple[list[PlannedRun], dict]:
     """One randomised execution order over ALL cases × repetitions × providers.
 

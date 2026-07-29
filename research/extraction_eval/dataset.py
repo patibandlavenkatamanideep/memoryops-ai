@@ -92,6 +92,20 @@ PILOT_COMPOSITION = {
     "sensitive_policy_boundary": 2,
 }
 
+# Named pre-registered compositions, referenced by config (`composition:`) so the
+# execution-plan shape (e.g. the final 2,400) can be validated before the dataset is
+# authored/locked. The names are the single source of truth for expected case counts.
+COMPOSITIONS = {
+    "locked": LOCKED_COMPOSITION,
+    "development": DEVELOPMENT_COMPOSITION,
+    "pilot": PILOT_COMPOSITION,
+}
+
+
+def composition_total(name: str) -> int:
+    """Expected total case count for a named composition (raises on unknown name)."""
+    return sum(COMPOSITIONS[name].values())
+
 
 def category_counts(cases: list[Case]) -> dict[str, int]:
     return dict(Counter(c.category for c in cases))
