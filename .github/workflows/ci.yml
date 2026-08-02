@@ -292,8 +292,11 @@ jobs:
         run: pytest -q
 
   web:
-    name: Web — build
+    name: Web — lint + typecheck + tests + build (both modes)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@v7
 
@@ -305,14 +308,53 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install
-        working-directory: apps/web
         # Strict: fail if package-lock.json is out of sync rather than silently
         # regenerating it (the old `|| npm install` fallback masked lockfile drift).
         run: npm ci
 
-      - name: Build
-        working-directory: apps/web
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Covers the BFF scope-sanitisation rules and the role model — the two pieces
+      # that decide whether a browser can address another tenant.
+      - name: Unit tests
+        run: npm test
+
+      # The demo identity was hardcoded in the client (`DEMO_TENANT = "tenant_demo"`)
+      # and attached to every request from the browser. `no-client-identity.test.ts`
+      # asserts it cannot return; this is the coarse belt-and-braces check.
+      - name: No demo identity in client source
+        run: |
+          if grep -rn "export const DEMO_TENANT\|export const DEMO_USER" \
+               app components lib --include="*.ts" --include="*.tsx"; then
+            echo "::error::hardcoded demo identity is back in client source"
+            exit 1
+          fi
+          echo "no hardcoded client identity"
+
+      # Both modes must build: demo is the public showcase, authenticated is the
+      # real control plane. A change that only works in one is a broken deploy.
+      # No AUTH_SECRET here on purpose: it is a *runtime* signing key, and the
+      # build must not depend on one. Baking a placeholder secret into an image
+      # would be the wrong habit to establish.
+      - name: Build (demo mode)
+        env:
+          MEMORYOPS_WEB_MODE: demo
         run: npm run build
+
+      - name: Build (authenticated mode)
+        env:
+          MEMORYOPS_WEB_MODE: authenticated
+        run: |
+          rm -rf .next
+          npm run build
+
+      - name: Production Docker image builds
+        working-directory: .
+        run: docker build -t memoryops-web:ci apps/web
 
   perf-smoke:
     name: Perf — HTTP load smoke

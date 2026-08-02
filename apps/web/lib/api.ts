@@ -1,11 +1,23 @@
 // Thin API client for the MemoryOps AI backend.
+//
+// This client carries NO identity. Every request goes to the same-origin BFF at
+// /api/memoryops/*, which resolves tenant/user/role on the server (lib/identity.ts)
+// and attaches them there.
+//
+// Previously this module exported hardcoded `DEMO_TENANT` / `DEMO_USER` constants
+// and put them in the query string or body of every call, straight from the
+// browser. That meant the tenant scope was client-controlled request data — anyone
+// could edit it in devtools — and no credential was sent at all, so the official UI
+// only worked against `MEMORYOPS_AUTH_MODE=none`, which the production profile
+// refuses to run. The UI and the production security profile were mutually
+// exclusive.
+//
+// Do not reintroduce a tenant_id/user_id argument here. The BFF strips any that
+// arrive from the client (see app/api/memoryops/[...path]/route.ts); adding one
+// back would be silently ignored at best and misleading at worst.
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-// Demo identity. In production these come from auth/session.
-export const DEMO_TENANT = "tenant_demo";
-export const DEMO_USER = "user_demo";
+/** Same-origin BFF base. The upstream API URL is server-only. */
+export const API_BASE = "/api/memoryops";
 
 export type Decision =
   | "SAVE"
@@ -146,13 +158,28 @@ export interface LoopTrace {
   events: LoopEvent[];
 }
 
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { "content-type": "application/json" },
     cache: "no-store",
+    credentials: "same-origin",
     ...init,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // 401 = no session, 403 = role too low. Surfaced so the UI can route to
+    // sign-in or show a permission message instead of a generic failure.
+    throw new ApiError(res.status, `${res.status} ${res.statusText}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -160,49 +187,35 @@ export const api = {
   chat: (message: string, temporary_chat = false) =>
     http<ChatResponse>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({
-        tenant_id: DEMO_TENANT,
-        user_id: DEMO_USER,
-        message,
-        temporary_chat,
-      }),
+      body: JSON.stringify({ message, temporary_chat }),
     }),
 
   memories: (filters?: { status?: string; memory_type?: string }) => {
-    const qs = new URLSearchParams({ tenant_id: DEMO_TENANT, user_id: DEMO_USER });
+    const qs = new URLSearchParams();
     if (filters?.status) qs.set("status", filters.status);
     if (filters?.memory_type) qs.set("memory_type", filters.memory_type);
     return http<MemoryRecord[]>(`/api/memories?${qs.toString()}`);
   },
 
-  memory: (id: string) =>
-    http<MemoryRecord>(
-      `/api/memories/${id}?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
-    ),
+  memory: (id: string) => http<MemoryRecord>(`/api/memories/${id}`),
 
-  memoryAudit: (id: string) =>
-    http<AuditEvent[]>(
-      `/api/memories/${id}/audit?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
-    ),
+  memoryAudit: (id: string) => http<AuditEvent[]>(`/api/memories/${id}/audit`),
 
   memoryProvenance: (id: string) =>
-    http<MemoryProvenance>(
-      `/api/memories/${id}/provenance?tenant_id=${DEMO_TENANT}&user_id=${DEMO_USER}`
-    ),
+    http<MemoryProvenance>(`/api/memories/${id}/provenance`),
 
   patchMemory: (id: string, patch: Record<string, unknown>) =>
     http<MemoryRecord>(`/api/memories/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ tenant_id: DEMO_TENANT, user_id: DEMO_USER, ...patch }),
+      body: JSON.stringify(patch),
     }),
 
   deleteMemory: (id: string) =>
     http<{ id: string; status: string }>(`/api/memories/${id}`, {
       method: "DELETE",
-      body: JSON.stringify({ tenant_id: DEMO_TENANT, user_id: DEMO_USER }),
     }),
 
-  audit: () => http<AuditEvent[]>(`/api/audit?tenant_id=${DEMO_TENANT}`),
+  audit: () => http<AuditEvent[]>("/api/audit"),
 
   metrics: () =>
     http<{
@@ -218,7 +231,7 @@ export const api = {
         safe_degraded: number;
         most_common_failure_mode?: string | null;
       };
-    }>(`/api/metrics?tenant_id=${DEMO_TENANT}`),
+    }>("/api/metrics"),
 
   runEvals: () =>
     http<{
@@ -231,7 +244,7 @@ export const api = {
 
   loops: () => http<LoopDefinition[]>("/api/loops"),
 
-  loopRuns: () => http<LoopRun[]>(`/api/loops/runs?tenant_id=${DEMO_TENANT}`),
+  loopRuns: () => http<LoopRun[]>("/api/loops/runs"),
 
   loopEvents: () => http<LoopEvent[]>("/api/loops/events"),
 
@@ -244,6 +257,8 @@ export const api = {
       llm_provider: string;
       embeddings_provider: string;
       embedding_dim: number;
+      degraded?: boolean;
       detail: string;
+      checks?: Record<string, { status: string; reason_code?: string }>;
     }>("/readyz"),
 };
