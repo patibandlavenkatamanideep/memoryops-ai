@@ -57,6 +57,116 @@ def test_production_profile_passes_when_hardened():
     assert safe.production_readiness_errors() == []
 
 
+# ── provider packaging readiness (fail-closed) ───────────────────────────────
+# Every provider adapter imports its SDK lazily and degrades to a stub when the SDK
+# or key is missing, so the service starts and looks healthy while serving stub
+# output. In production that silent substitution is a hard error instead.
+def _hardened(**overrides) -> Settings:
+    """A settings object that is production-clean apart from `overrides`."""
+    base = dict(
+        profile="production",
+        storage="postgres",
+        auth_mode="jwt",
+        cors_allow_origins="https://app.example.com",
+        database_url="postgresql+psycopg://real:secret@db.internal:5432/memoryops",
+        public_evals=False,
+    )
+    return Settings(**{**base, **overrides})
+
+
+def _all_sdks_present(monkeypatch) -> None:
+    """Pretend every optional SDK is installed, isolating key/selection checks."""
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+
+
+def _no_sdks_present(monkeypatch) -> None:
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+
+def test_production_rejects_llm_provider_without_api_key(monkeypatch):
+    _all_sdks_present(monkeypatch)
+    errors = _hardened(llm_provider="openai", openai_api_key="").production_readiness_errors()
+    assert any("OPENAI_API_KEY is unset" in e for e in errors)
+
+
+def test_production_rejects_llm_provider_without_sdk(monkeypatch):
+    _no_sdks_present(monkeypatch)
+    errors = _hardened(
+        llm_provider="anthropic", anthropic_api_key="sk-real"
+    ).production_readiness_errors()
+    assert any("'anthropic' SDK is not installed" in e for e in errors)
+    assert any("memoryops-api[anthropic]" in e for e in errors)
+
+
+def test_production_gemini_checks_the_module_the_adapter_imports(monkeypatch):
+    """The adapter imports `google.generativeai` (legacy SDK), not `google.genai`.
+
+    Guards against the extras pinning a package whose module the adapter can't use.
+    """
+    seen: list[str] = []
+    import importlib.util
+
+    def fake(name):
+        seen.append(name)
+        return object()
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake)
+    _hardened(llm_provider="gemini", gemini_api_key="k").production_readiness_errors()
+    assert "google.generativeai" in seen
+
+
+def test_production_rejects_openai_embeddings_without_key_or_sdk(monkeypatch):
+    _all_sdks_present(monkeypatch)
+    errors = _hardened(
+        embeddings_provider="openai", openai_api_key=""
+    ).production_readiness_errors()
+    # Embeddings are stricter than the LLM path: a stub vector is *persisted* in the
+    # wrong space, so the message must say so.
+    assert any("different vector space" in e for e in errors)
+
+    _no_sdks_present(monkeypatch)
+    errors = _hardened(
+        embeddings_provider="openai", openai_api_key="sk-real"
+    ).production_readiness_errors()
+    assert any("'openai' SDK is not installed" in e for e in errors)
+
+
+def test_production_rejects_external_vector_backend_without_client(monkeypatch):
+    _no_sdks_present(monkeypatch)
+    errors = _hardened(vector_index="qdrant").production_readiness_errors()
+    assert any("qdrant_client" in e and "not installed" in e for e in errors)
+
+
+def test_production_allows_stub_providers_and_memory_index(monkeypatch):
+    """The offline default selection must stay clean — no SDKs required."""
+    _no_sdks_present(monkeypatch)
+    assert _hardened(
+        llm_provider="stub", embeddings_provider="stub", vector_index="memory"
+    ).production_readiness_errors() == []
+
+
+def test_production_allows_fully_configured_provider(monkeypatch):
+    _all_sdks_present(monkeypatch)
+    assert _hardened(
+        llm_provider="openai",
+        embeddings_provider="openai",
+        openai_api_key="sk-real",
+        vector_index="qdrant",
+    ).production_readiness_errors() == []
+
+
+def test_provider_checks_are_production_only(monkeypatch):
+    """Dev must keep booting with no keys and no SDKs (offline tests, demos)."""
+    _no_sdks_present(monkeypatch)
+    assert Settings(
+        profile="dev", llm_provider="openai", embeddings_provider="openai"
+    ).production_readiness_errors() == []
+
+
 def test_cors_origins_parsing():
     assert Settings(cors_allow_origins="*").cors_origins_list() == ["*"]
     assert Settings(cors_allow_origins="").cors_origins_list() == ["*"]

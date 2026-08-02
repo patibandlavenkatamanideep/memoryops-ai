@@ -7,9 +7,16 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install runtime + postgres deps first for layer caching.
-COPY requirements.txt requirements-postgres.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-postgres.txt
+# Install runtime + production deps first for layer caching. All requirements files
+# are generated from pyproject.toml (scripts/sync_dependencies.py) and drift-checked
+# in CI, so this image and `pip install .` resolve the same set.
+#
+# requirements-production.txt carries Postgres *and* the openai/anthropic/gemini SDKs:
+# the provider adapters import their SDK lazily, so an image without them silently
+# degraded MEMORYOPS_LLM_PROVIDER=openai to the stub. Under MEMORYOPS_PROFILE=production
+# that combination is now a startup error, so the image must be able to honour it.
+COPY requirements.txt requirements-production.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-production.txt
 
 COPY . .
 

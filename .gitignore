@@ -6,6 +6,9 @@ venv/
 .pytest_cache/
 .mypy_cache/
 *.egg-info/
+# setuptools/`python -m build` artifacts (the packaging CI job builds a wheel).
+build/
+dist/
 
 # Node
 node_modules/
