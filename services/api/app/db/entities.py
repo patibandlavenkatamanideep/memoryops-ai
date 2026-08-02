@@ -43,6 +43,11 @@ class StoredMemory:
     metadata: dict = field(default_factory=dict)
     weight: float = 1.0
     reinforcement_count: int = 0
+    # Optimistic-concurrency counter, bumped on every governed content update. A
+    # caller that read revision N and sends `expected_revision=N` is rejected with
+    # 409 if anything changed underneath — preventing lost updates between two
+    # users, a user and a worker, or a governance action and a content edit.
+    revision: int = 1
     id: str = field(default_factory=new_id)
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
@@ -64,6 +69,7 @@ class StoredMemory:
             metadata=self.metadata,
             weight=self.weight,
             reinforcement_count=self.reinforcement_count,
+            revision=self.revision,
             created_at=self.created_at,
             updated_at=self.updated_at,
         )

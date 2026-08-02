@@ -88,6 +88,10 @@ class MemoryRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     weight: float = 1.0
     reinforcement_count: int = 0
+    #: Optimistic-concurrency token. Send it back as `expected_revision` on a
+    #: content edit to be rejected (409) rather than silently overwrite a
+    #: concurrent change.
+    revision: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -239,6 +243,10 @@ class MemoryPatch(BaseModel):
     importance: int | None = Field(None, ge=0, le=10)
     confidence: float | None = Field(None, ge=0.0, le=1.0)
     status: Status | None = None  # approve→active, reject→rejected, archive→archived
+    #: Optimistic-concurrency guard for content edits. Send the `revision` you read;
+    #: a 409 is returned if the memory changed underneath. Omitting it preserves the
+    #: previous last-write-wins behaviour, so existing clients are unaffected.
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class DeleteRequest(BaseModel):

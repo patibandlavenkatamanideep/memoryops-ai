@@ -128,3 +128,46 @@ def test_scheduler_run_forever_bounded_by_max_ticks(repo) -> None:
     # Sleeps only between ticks, not after the last one.
     assert slept == [5, 5]
     assert len(repo.list_worker_runs(tenant_id="t1", user_id="u1")) == 3
+
+
+def test_every_repository_mutation_bumps_the_memory_revision(repo) -> None:
+    """`revision` (migration 012) is a genuine *row* revision, not a content counter.
+
+    The repository owns the bump, so worker jobs, governance transitions, retention
+    changes, and content edits all advance it. That is what makes it a shared
+    concurrency contract: a content edit holding `expected_revision=N` is correctly
+    rejected after a worker has touched the same row.
+
+    The caller cannot dictate the value — a revision computed before a slow step
+    (embedding generation) would be stale by the time it reached the database.
+    """
+    m = seed_memory(repo, content="dark mode")
+    assert m.revision == 1
+
+    m.content = "dark mode, larger fonts"
+    repo.update_memory(m)
+    assert repo.get_memory("t1", "u1", m.id).revision == 2
+
+    m.content = "dark mode, larger fonts, high contrast"
+    repo.update_memory(m)
+    assert repo.get_memory("t1", "u1", m.id).revision == 3
+
+    # NOTE: on Postgres the increment is `revision = revision + 1` in SQL, so a
+    # caller-supplied value is genuinely ignored. The in-memory backend hands back
+    # the *live* stored object, so a caller that assigns `m.revision` has already
+    # mutated the stored state — an aliasing property of that backend, not a
+    # difference in the concurrency contract. The real request flow never assigns
+    # the field (the repository owns it), which is what the CAS test below covers.
+
+
+def test_checked_update_rejects_a_stale_revision(repo) -> None:
+    """Compare-and-swap: exactly one of two writers holding the same revision wins."""
+    m = seed_memory(repo, content="dark mode")
+    assert m.revision == 1
+
+    first = repo.update_memory_checked(m, expected_revision=1)
+    assert first is not None and first.revision == 2
+
+    # A second writer still holding revision 1 must lose, not clobber.
+    assert repo.update_memory_checked(m, expected_revision=1) is None
+    assert repo.get_memory("t1", "u1", m.id).revision == 2
