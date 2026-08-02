@@ -29,7 +29,7 @@ def test_readyz_reports_per_dependency_states(api_client):
     checks = body["checks"]
     for name in _DEPENDENCIES:
         assert name in checks, name
-        assert checks[name]["status"] in ("ok", "skipped", "error")
+        assert checks[name]["status"] in ("ok", "degraded", "skipped", "error")
     # In-memory dev store: schema + worker runtime are not applicable → skipped,
     # not error (an unselected/optional dependency must never block readiness).
     assert checks["schema"]["status"] == "skipped"

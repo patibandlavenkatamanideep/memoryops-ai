@@ -18,23 +18,12 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   api:
     build:
       context: ./services/api
     environment:
       MEMORYOPS_STORAGE: postgres
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-memoryops}:${POSTGRES_PASSWORD:-memoryops}@db:5432/${POSTGRES_DB:-memoryops}
-      REDIS_URL: redis://redis:6379/0
       LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
       EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-heuristic}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -42,8 +31,6 @@ services:
       - "8000:8000"
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
   worker:
@@ -53,11 +40,8 @@ services:
     environment:
       MEMORYOPS_STORAGE: postgres
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-memoryops}:${POSTGRES_PASSWORD:-memoryops}@db:5432/${POSTGRES_DB:-memoryops}
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
   web:
