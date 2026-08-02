@@ -48,3 +48,30 @@ See [worker-runtime.md](../worker-runtime.md).
 - `scripts/pr_invariant_gate.py` (worker-runtime evidence rules)
 
 ## Status: ✅ Implemented (v0.8)
+
+## Gate re-verification: heartbeat, per-job retry, graceful shutdown, packaging
+
+Reopened because three claims in this gate were not actually held by the code.
+
+| Claim previously marked green | Reality | Now |
+| --- | --- | --- |
+| "Duplicate concurrent runs prevented by the lease" | true only for scopes shorter than the lease TTL — `renew()` existed but was never called, so longer scopes lost exclusivity mid-run and a second replica could mutate the same tenant/user | heartbeat renews at `ttl/3` and fails closed on loss (`lease_lost` + `aborted` jobs) |
+| "Retried with backoff, dead-lettered on exhausted retries" | retry wrapped `run_jobs`, but workers return `failed` rather than raising, so job failures were never retried or dead-lettered | per-job retry keyed off the returned status; new terminal `dead_letter` |
+| "The worker process is operable" | `run_forever` used an uninterruptible `time.sleep` with no signal handling, so every deploy hard-killed it mid-tick and left the lease held for the rest of the TTL | cooperative SIGTERM/SIGINT stop; scope finishes, lease released, exit 0 |
+
+Evidence:
+
+- `services/api/tests/test_worker_reliability.py` — 18 tests. The lease test has teeth:
+  without the heartbeat a second worker demonstrably acquires the same scope after the
+  TTL elapses.
+- `services/api/tests/test_worker_locks.py` — renewal holds a scope past its original
+  expiry, and cannot resurrect a lease another worker has taken over.
+- `services/api/tests/test_worker_orchestrator.py` — dead-lettering surfaces in run
+  history; the lease is released even when every job dead-letters.
+- CI `worker` job — installs the API and worker as distributions, asserts the entrypoint
+  contains no `sys.path`/`PYTHONPATH` manipulation, then boots the `memoryops-worker`
+  console script and SIGTERMs it mid-interval, requiring exit 0 well inside the interval.
+
+Still open (tracked, not claimed): fencing tokens (the heartbeat is cooperative, so a
+stalled-then-resumed worker can still finish an in-flight write), a dead-letter replay
+command, and dynamic scope discovery.

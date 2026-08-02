@@ -73,8 +73,11 @@ Stored via `worker_runs` (migration `006_worker_runtime.sql`); query with
 ## Running
 
 ```bash
+# install the API + worker as distributions (no PYTHONPATH, no sys.path)
+pip install ./services/api ./services/worker
+
 # the worker process (interval scheduler over configured scopes)
-cd services/worker && python main.py
+memoryops-worker
 
 # one pass, programmatically
 from app.workers import WorkerScheduler, Scope
@@ -84,12 +87,71 @@ WorkerScheduler(repo, scopes=[Scope("t1", "u1")]).tick()
 curl localhost:8000/healthz/workers
 ```
 
+The worker previously mutated `sys.path` at import time to reach `services/api`,
+which tied it to the repository layout and blocked shipping it as a wheel. It now
+declares an ordinary dependency on the `memoryops-api` distribution and exposes a
+`memoryops-worker` console script.
+
+## Lease heartbeat (long-running scopes)
+
+`WorkerLeaseManager.renew()` existed from v0.8 but nothing called it: the
+orchestrator acquired a lease once and ran the whole scope. Any scope whose jobs
+outlived `worker_lease_ttl_seconds` (default 300s) silently lost exclusivity
+mid-run, and a second replica could acquire the same tenant/user and mutate it
+concurrently. Idempotency limits the damage; it does not make it correct.
+
+`app/workers/heartbeat.py` renews the lease on a background thread at `ttl/3`, and
+**fails closed** if renewal ever fails: the scope stops between jobs, remaining jobs
+are recorded as `aborted`, and the run is recorded as `lease_lost`.
+
+> **Residual risk, stated plainly.** This is cooperative, not fencing. The abort flag
+> is observed *between* jobs, so a worker that stalls (long GC pause, VM freeze)
+> after its check and resumes past expiry can still finish the write it was in.
+> Closing that needs a monotonic fence token checked at the storage write itself —
+> a schema change plus threading the fence through every job's writes. Tracked as
+> follow-up. What is closed now is the common, previously *guaranteed* case: a job
+> that simply takes longer than the TTL.
+
+## Retry granularity
+
+Retry used to wrap `run_jobs` as a whole. But lifecycle workers catch their own
+errors and **return** `status=failed` rather than raising, so the wrapper only ever
+saw clean returns — a failing job was recorded as failed and then dropped: never
+retried, never dead-lettered.
+
+Retry is now per job, keyed off the returned status:
+
+| Job status | Retried? | Why |
+| --- | --- | --- |
+| `failed` | yes, to `worker_max_attempts` | transient fault |
+| `dead_letter` | terminal | budget exhausted; replayable, not lost |
+| `completed_with_findings` | **no** | a finding is a real result, not a fault; retrying would multiply audit events and mask it |
+| `skipped` / `completed` | no | nothing to retry |
+| `aborted` | no | lease lost or shutdown; deliberately not started |
+
+## Graceful shutdown
+
+`run_forever` looped on a bare `time.sleep` with no signal handling, so every deploy
+hard-killed the worker mid-tick and left its lease held for the rest of the TTL —
+and with a 60s interval the process spent nearly all its life unable to react to
+SIGTERM at all.
+
+SIGTERM/SIGINT now set a cooperative stop flag (`app/workers/shutdown.py`). The
+inter-tick wait is an interruptible `Event.wait`, so the signal is acted on
+immediately: the scope in flight finishes, its lease is released, remaining scopes
+are left for the next replica, and the process exits 0. Verified end to end in the
+`worker` CI job.
+
 ## Guarantees (enforced in code + tests)
 
-- **Duplicate runs prevented** by the lease; **never deadlocked** (leases expire).
+- **Duplicate runs prevented** by the lease, **including for jobs that outlive the
+  lease TTL** (heartbeat renewal); **never deadlocked** (leases expire).
+- **Lease loss fails closed** — no further mutation once ownership is unprovable.
 - **Tenant scoped** — explicit scopes only; no unbounded cross-tenant scan.
-- **Failures durable, not fatal** — retry → dead-letter; a bad tick never crashes
-  the scheduler; one scope's failure never blocks another.
+- **Failures durable, not fatal** — per-job retry → dead-letter; a bad tick never
+  crashes the scheduler; one scope's failure never blocks another.
+- **Clean termination** — SIGTERM finishes the current scope, releases the lease,
+  exits 0.
 - **Content-free** run history + health.
 - **Off the chat path** — maintenance only.
 
@@ -97,6 +159,10 @@ curl localhost:8000/healthz/workers
 
 - Single-process interval scheduler — not a distributed cron; multiple replicas are
   safe (the lease arbitrates) but there is no central schedule coordinator.
+- Lease protection is cooperative, not fenced (see the residual risk above).
 - No external queue/broker (Celery/Temporal). The orchestrator interface is
   queue-shaped so one can be added later without touching the lifecycle workers.
-- Scope enumeration is explicit (operator-configured), not auto-discovered.
+- Scope enumeration is explicit (operator-configured), not auto-discovered — a
+  dynamic scope registry is separate follow-up work.
+- Dead-lettered jobs are recorded and queryable, but there is no one-command
+  **replay** yet; re-running the scope re-attempts the work.
