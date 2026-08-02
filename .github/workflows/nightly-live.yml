@@ -44,7 +44,35 @@ jobs:
         working-directory: services/api
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          # requirements-providers.txt is REQUIRED here: the OpenAI adapter imports the
+          # `openai` SDK lazily and degrades to the deterministic stub when it is absent.
+          # This job previously installed only requirements.txt (no provider SDKs) while
+          # setting MEMORYOPS_LLM_PROVIDER=openai, so the "live provider" recall gate was
+          # silently scoring stub output rather than OpenAI.
+          python -m pip install -r requirements.txt -r requirements-providers.txt
+
+      # Fail loudly rather than re-run a stub smoke test dressed up as a live one.
+      - name: Assert the OpenAI provider is genuinely selected
+        if: steps.check.outputs.has_key == 'true'
+        working-directory: services/api
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MEMORYOPS_LLM_PROVIDER: openai
+        run: |
+          python - <<'PY'
+          from importlib.util import find_spec
+
+          from app.core.config import get_settings
+          from app.llm.registry import build_llm_provider
+
+          assert find_spec("openai") is not None, "openai SDK not installed"
+          provider = build_llm_provider(get_settings())
+          assert provider.name == "openai", (
+              f"expected the openai provider, got {provider.name!r} — this run would "
+              "have scored the stub, not a live model"
+          )
+          print("live provider confirmed:", provider.name)
+          PY
 
       - name: Extraction quality vs OpenAI (recall gate)
         if: steps.check.outputs.has_key == 'true'

@@ -13,6 +13,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  packaging:
+    name: Packaging — dependency source of truth + installable wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # services/api/pyproject.toml is authoritative; every requirements*.txt is
+      # generated from it. Before this gate the two had silently diverged (pyproject
+      # pinned fastapi 0.139.2 / uvicorn 0.37.0 / pydantic-settings 2.6.1 while
+      # requirements.txt pinned 0.140.0 / 0.51.0 / 2.14.2), so Docker+CI and the
+      # published wheel resolved different dependency sets and a green run proved
+      # nothing about either.
+      - name: Dependency files match pyproject.toml
+        run: python scripts/sync_dependencies.py --check
+
+      # A wheel that imports only because the repo is on sys.path is not a wheel.
+      # Build it, install into a clean venv with no source checkout on the path, and
+      # boot the real app from site-packages.
+      - name: Build the API wheel
+        working-directory: services/api
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist
+
+      - name: Install the wheel into a clean environment and boot it
+        working-directory: services/api
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install --upgrade pip
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          # cd out of the source tree so a missing packaged file cannot be masked by
+          # the local checkout — which is exactly how the missing prompt assets went
+          # unnoticed: app/llm/prompts/*.md are read from disk at runtime and were
+          # absent from the wheel, so every structured-intelligence call raised
+          # PromptNotFoundError in a wheel deployment while passing from a checkout.
+          cd /tmp
+          MEMORYOPS_STORAGE=memory /tmp/wheel-env/bin/python - <<'PY'
+          import app.main  # noqa: F401
+          from app.llm.prompt_registry import available_tasks, get_prompt
+
+          for task in available_tasks():
+              assert get_prompt(task).strip(), f"empty prompt asset: {task}"
+          print("wheel import ok; prompt assets loaded:", available_tasks())
+          PY
+
+      # The provider adapters import their SDKs lazily, so a missing SDK shows up only
+      # at call time (as a silent stub degradation). Prove each advertised extra
+      # actually resolves and exposes the module its adapter imports.
+      - name: Optional extras resolve to the modules the adapters import
+        working-directory: services/api
+        run: |
+          set -euo pipefail
+          # extra:module — module names must match the adapter imports exactly.
+          for pair in "openai:openai" \
+                      "anthropic:anthropic" \
+                      "gemini:google.generativeai" \
+                      "qdrant:qdrant_client" \
+                      "lancedb:lancedb" \
+                      "weaviate:weaviate"; do
+            extra="${pair%%:*}"; module="${pair##*:}"
+            echo "::group::extra '$extra' -> module '$module'"
+            python -m venv "/tmp/extra-$extra"
+            "/tmp/extra-$extra/bin/pip" install --quiet --upgrade pip
+            "/tmp/extra-$extra/bin/pip" install --quiet ".[$extra]"
+            "/tmp/extra-$extra/bin/python" -c "import importlib; importlib.import_module('$module'); print('$extra ok')"
+            rm -rf "/tmp/extra-$extra"
+            echo "::endgroup::"
+          done
+
   api:
     name: API — tests + lint + evals
     runs-on: ubuntu-latest

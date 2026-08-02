@@ -40,3 +40,31 @@ def test_related_text_more_similar_than_unrelated():
     related = embed("dark mode dashboards are my preference")
     unrelated = embed("the capital of France is Paris")
     assert cosine(base, related) > cosine(base, unrelated)
+
+
+# ── embedding-space integrity ────────────────────────────────────────────────
+# A failed network provider must never substitute a stub vector. The stub lives in
+# a *different* embedding space but is indistinguishable from a real vector once
+# persisted, so a transient outage used to permanently poison the index with
+# meaningless distances. Full coverage in tests/test_embedding_integrity.py.
+def test_failed_provider_raises_rather_than_returning_a_stub_vector():
+    import pytest
+
+    from app.embeddings.providers import EmbeddingUnavailable, OpenAIEmbeddingProvider
+
+    class _Down(OpenAIEmbeddingProvider):
+        def _client(self):
+            raise RuntimeError("provider unreachable")
+
+    provider = _Down(api_key="sk-test", model="text-embedding-3-small", dim=64)
+    with pytest.raises(EmbeddingUnavailable):
+        provider.embed_text("dark mode dashboards")
+
+
+def test_openai_selection_without_a_key_still_degrades_to_stub_offline():
+    # Selection-time fallback is retained so the app always starts in dev; it is the
+    # *call-time* fallback that fabricated cross-space vectors. Production rejects
+    # this combination at startup (Settings.production_readiness_errors).
+    from app.embeddings.providers import build_provider
+
+    assert build_provider().name == "stub"

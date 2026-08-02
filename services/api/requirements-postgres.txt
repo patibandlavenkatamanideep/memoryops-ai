@@ -1,4 +1,13 @@
-# Postgres + pgvector backend (MEMORYOPS_STORAGE=postgres)
+# ─────────────────────────────────────────────────────────────────────────
+# GENERATED FILE — DO NOT EDIT BY HAND.
+#
+# Source of truth: services/api/pyproject.toml
+# Regenerate:      python scripts/sync_dependencies.py
+# Verify:          python scripts/sync_dependencies.py --check   (CI gate)
+#
+# Hand-edits are reverted by the next regeneration and fail the CI drift gate.
+# ─────────────────────────────────────────────────────────────────────────
+# [project.optional-dependencies].postgres
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
 pgvector==0.3.6

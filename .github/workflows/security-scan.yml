@@ -28,6 +28,13 @@ jobs:
             req: services/api/requirements.txt
           - label: api-postgres
             req: services/api/requirements-postgres.txt
+          # The provider SDKs and the full production set are what the API and worker
+          # images actually install, so they must be audited too — auditing only the
+          # base set would leave the deployed dependency tree unscanned.
+          - label: api-providers
+            req: services/api/requirements-providers.txt
+          - label: api-production
+            req: services/api/requirements-production.txt
           - label: sdk
             # No `req`: the SDK declares deps in pyproject, so we audit the package
             # directory instead of a requirements file (empty `req` selects that path).

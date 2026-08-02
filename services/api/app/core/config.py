@@ -302,6 +302,86 @@ class Settings(BaseSettings):
                 "public_evals=true: the eval trigger is a denial-of-wallet vector when "
                 "public — set MEMORYOPS_PUBLIC_EVALS=false."
             )
+        errors.extend(self._provider_readiness_errors())
+        return errors
+
+    def _provider_readiness_errors(self) -> list[str]:
+        """Fail-closed checks for provider selection (production profile only).
+
+        Every provider adapter imports its SDK lazily and degrades to a stub/no-op
+        when the SDK or key is missing, so the app always starts. That is right for
+        dev and for tests (which must run offline), but in production it means an
+        operator can set MEMORYOPS_LLM_PROVIDER=openai, see a healthy service, and
+        be served deterministic stub output indefinitely with only a log line. A
+        deployment that asked for a real provider must fail loudly instead.
+        """
+        from importlib.util import find_spec
+
+        errors: list[str] = []
+
+        def missing(module: str) -> bool:
+            # find_spec only resolves the module; it does not import the SDK, so this
+            # stays cheap and side-effect-free at startup.
+            try:
+                return find_spec(module) is None
+            except (ImportError, ValueError):  # namespace/partial install
+                return True
+
+        # ── LLM provider ────────────────────────────────────────────────────
+        llm_requirements = {
+            "openai": ("openai", "openai", self.openai_api_key, "OPENAI_API_KEY"),
+            "anthropic": ("anthropic", "anthropic", self.anthropic_api_key, "ANTHROPIC_API_KEY"),
+            # Legacy SDK module — matches app/llm/gemini_provider.py's actual import.
+            "gemini": ("google.generativeai", "gemini", self.gemini_api_key, "GEMINI_API_KEY"),
+        }
+        if self.llm_provider in llm_requirements:
+            module, extra, key, key_env = llm_requirements[self.llm_provider]
+            if not key:
+                errors.append(
+                    f"llm_provider={self.llm_provider!r} but {key_env} is unset: the provider "
+                    "would silently degrade to the deterministic stub — set the key or "
+                    "MEMORYOPS_LLM_PROVIDER=stub."
+                )
+            if missing(module):
+                errors.append(
+                    f"llm_provider={self.llm_provider!r} but the {module!r} SDK is not "
+                    f"installed: the provider would silently degrade to the deterministic "
+                    f"stub — install it (pip install 'memoryops-api[{extra}]')."
+                )
+
+        # ── Embedding provider ──────────────────────────────────────────────
+        # Stricter than the LLM path: a wrong embedding does not just degrade one
+        # answer, it persists a vector in the wrong space (see app/embeddings/providers.py).
+        if self.embeddings_provider == "openai":
+            if not self.openai_api_key:
+                errors.append(
+                    "embeddings_provider='openai' but OPENAI_API_KEY is unset: memories "
+                    "would be embedded with the stub and stored in a different vector "
+                    "space than the configured model — set the key or "
+                    "MEMORYOPS_EMBEDDING_PROVIDER=stub."
+                )
+            if missing("openai"):
+                errors.append(
+                    "embeddings_provider='openai' but the 'openai' SDK is not installed: "
+                    "memories would be embedded with the stub — install it "
+                    "(pip install 'memoryops-api[openai]')."
+                )
+
+        # ── External vector backend (ADR-021) ───────────────────────────────
+        vector_requirements = {
+            "qdrant": ("qdrant_client", "qdrant"),
+            "lancedb": ("lancedb", "lancedb"),
+            "weaviate": ("weaviate", "weaviate"),
+        }
+        if self.vector_index in vector_requirements:
+            module, extra = vector_requirements[self.vector_index]
+            if missing(module):
+                errors.append(
+                    f"vector_index={self.vector_index!r} but the {module!r} client is not "
+                    f"installed: the factory would fall back to the in-memory index, which "
+                    f"loses all vectors on restart — install it "
+                    f"(pip install 'memoryops-api[{extra}]')."
+                )
         return errors
 
 
