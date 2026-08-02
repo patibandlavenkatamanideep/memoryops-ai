@@ -20,6 +20,13 @@ from ..schemas.memory import (
     MemoryRecord,
     Status,
 )
+from ..services.status_transitions import (
+    TRANSITION_AUDIT,
+    UNSUPPORTED_PATCH_STATUSES,
+    InvalidTransition,
+    UnsupportedStatus,
+    validate_transition,
+)
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 
@@ -233,6 +240,27 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
     if not m or m.status == Status.deleted:
         raise HTTPException(status_code=404, detail="memory not found")
 
+    # ── status transition validation (before any mutation) ────────────────────
+    # Route-level defence in depth: even if the schema were widened again, an
+    # unsupported target is refused here. `status="deleted"` previously fell
+    # through the handler's elif chain and was assigned verbatim, producing a row
+    # that was hidden from retrieval but had no `deleted_at`, no tombstone, no
+    # lineage, and a generic `memory_updated` audit action — and it succeeded even
+    # under a legal hold that the real DELETE route refuses with 409.
+    transition: str | None = None
+    if patch.status is not None:
+        if patch.status in UNSUPPORTED_PATCH_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail="status must be changed through its dedicated governance workflow",
+            )
+        try:
+            transition = validate_transition(m.status, patch.status)
+        except UnsupportedStatus as exc:  # pragma: no cover - guarded above
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except InvalidTransition as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     # Mutation + audit are one atomic unit of work (P0): a crash mid-way can no
     # longer persist the edit without its audit evidence, or vice versa. The
     # transaction must open *before* the in-place field mutations — the in-memory
@@ -248,14 +276,13 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             m.importance = patch.importance
         if patch.confidence is not None:
             m.confidence = patch.confidence
-        if patch.status is not None:
+        if patch.status is not None and transition is not None:
+            # `transition` was resolved from (current, requested) above, so the audit
+            # action reflects what actually happened. The old elif chain keyed off the
+            # target alone, so pending→active and archived→active were both recorded
+            # as "memory_approved" — a restore was indistinguishable from an approval.
             m.status = patch.status
-            if patch.status == Status.active:
-                action, reason = "memory_approved", "pending memory approved"
-            elif patch.status == Status.rejected:
-                action, reason = "memory_rejected", "pending memory rejected"
-            elif patch.status == Status.archived:
-                action, reason = "memory_archived", "memory archived"
+            action, reason = TRANSITION_AUDIT[transition]
 
         repo.update_memory(m)
         emit_loop_event_sync(

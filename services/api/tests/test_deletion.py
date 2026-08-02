@@ -253,3 +253,76 @@ def test_loop_traces_do_not_resurrect_deleted_memory(gateway, repo):
     # ... but the deletion guarantee continues to hold.
     assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
     assert mem.id not in {m.id for m in repo.list_memories("t1", "u1")}
+
+
+def test_patch_cannot_produce_a_deleted_row_outside_the_deletion_workflow(api_client):
+    """The deletion guarantee has exactly one entry point.
+
+    `PATCH {"status": "deleted"}` used to write `status=deleted` directly, producing
+    a row that satisfied the *retrieval* half of invariant #2 (hidden) while
+    violating everything the deletion workflow exists to provide: `deleted_at` was
+    null, so retention and compaction never reclaimed it; no tombstone was stamped,
+    so lineage could not propagate it to derived memories; and the audit trail
+    recorded a generic `memory_updated`. Full coverage in
+    tests/test_status_transition_bypass.py.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    mem = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="dark mode",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="dark mode"),
+        )
+    )
+
+    r = client.patch(
+        f"/api/memories/{mem.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "status": "deleted"},
+    )
+    assert r.status_code == 422
+
+    after = repo.get_memory("t1", "u1", mem.id)
+    assert after.status is Status.active
+    assert after.deleted_at is None
+    # Still retrievable: the row was never deleted, so it must not have been hidden.
+    assert mem.id in {m.id for m in repo.retrieve_active("t1", "u1")}
+
+
+def test_the_deletion_workflow_still_satisfies_the_invariant(api_client):
+    """Closing the PATCH bypass must not weaken real deletion."""
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    mem = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="dark mode",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="dark mode"),
+        )
+    )
+
+    r = client.request(
+        "DELETE", f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1"}
+    )
+    assert r.status_code == 200
+
+    after = repo.get_memory("t1", "u1", mem.id)
+    assert after.status is Status.deleted
+    assert after.deleted_at is not None, "the workflow stamps deleted_at; PATCH never did"
+    assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
