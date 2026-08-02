@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from ..core.config import get_settings as get_app_settings
 from ..core.redaction import scan
+from ..core.sensitivity import BLOCK, is_memory_control_instruction
 from ..db.entities import StoredSettings
 from ..db.repository import Repository
 from ..schemas.memory import CandidateMemory, Decision, Sensitivity
@@ -51,11 +52,31 @@ class PolicyBroker:
         scan_result = scan(candidate.content)
 
         # 1) Hard safety rules (deterministic, verifiable) — governance enforcement.
+        # A memory-control instruction ("do not remember my password") is not a fact.
+        # The extractor already declines to emit a candidate for it; this is the
+        # independent second guard, so a malformed or LLM-provided extractor that
+        # emits one anyway still cannot store it. DROP, not BLOCK: there was never a
+        # candidate here worth recording as a refusal.
+        if is_memory_control_instruction(candidate.content):
+            return PolicyOutcome(
+                Decision.DROP_LOW_UTILITY,
+                candidate,
+                "dropped: memory-control instruction, not a fact to store",
+            )
         if enforce and scan_result.has_secret:
             return PolicyOutcome(
                 Decision.BLOCK,
                 candidate,
                 f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
+            )
+        if enforce and scan_result.assessment.recommended_disposition == BLOCK:
+            # A disclosed credential the structural patterns cannot see — e.g.
+            # "my password is …", which has no key-like shape.
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                "blocked: disclosed credential or identifier "
+                f"({', '.join(scan_result.assessment.categories)})",
             )
         if enforce and scan_result.injection:
             return PolicyOutcome(
@@ -139,6 +160,13 @@ class PolicyBroker:
                 Decision.BLOCK,
                 candidate,
                 f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
+            )
+        if enforce and scan_result.assessment.recommended_disposition == BLOCK:
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                "blocked: disclosed credential or identifier "
+                f"({', '.join(scan_result.assessment.categories)})",
             )
         if enforce and scan_result.injection:
             return PolicyOutcome(

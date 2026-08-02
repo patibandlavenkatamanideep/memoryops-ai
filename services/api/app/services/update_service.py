@@ -46,6 +46,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from ..core.redaction import scan
 from ..core.reliability import safe_call
 from ..db import governance as gov
 from ..db.entities import StoredMemory, StoredSettings
@@ -185,7 +186,14 @@ def apply_content_update(
         memory.status = Status.pending
         audit_action = "memory_content_update_pending_approval"
 
+    assessment = scan(new_content).assessment
     evidence = {
+        # Classification evidence is category/rule identifiers only — never the
+        # matched password, diagnosis, salary, address, or regex excerpt. The audit
+        # trail is read by operators who may not be cleared for the memory itself.
+        "sensitivity_categories": list(assessment.categories),
+        "sensitivity_rule_ids": list(assessment.rule_ids),
+        "sensitivity_finding_count": len(assessment.findings),
         "previous_content_hash": previous_hash,
         "new_content_hash": content_hash(new_content),
         "previous_sensitivity": previous_sensitivity.value,

@@ -88,15 +88,31 @@ def test_evaluate_update_blocks_injection(repo):
 
 
 def test_evaluate_update_elevates_sensitivity_and_gates_approval(repo):
+    """A medical disclosure is high-sensitivity but storable behind approval."""
     from app.db.entities import StoredSettings
     from app.schemas.memory import Decision, Sensitivity
     from app.services.policy_broker import PolicyBroker
 
     outcome = PolicyBroker(repo).evaluate_update(
-        _candidate("my ssn is 555-01-9999"), settings=StoredSettings(tenant_id="t1", user_id="u1")
+        _candidate("I was diagnosed with diabetes"),
+        settings=StoredSettings(tenant_id="t1", user_id="u1"),
     )
     assert outcome.decision is Decision.PENDING_APPROVAL
-    assert outcome.candidate.sensitivity is not Sensitivity.low
+    assert outcome.candidate.sensitivity is Sensitivity.high
+
+
+def test_evaluate_update_blocks_a_disclosed_government_identifier(repo):
+    """Government identifiers are BLOCK, not approval-gated (category policy)."""
+    from app.db.entities import StoredSettings
+    from app.schemas.memory import Decision
+    from app.services.policy_broker import PolicyBroker
+
+    outcome = PolicyBroker(repo).evaluate_update(
+        _candidate("my ssn is 555-01-9999"),
+        settings=StoredSettings(tenant_id="t1", user_id="u1"),
+    )
+    assert outcome.decision is Decision.BLOCK
+    assert "government_id" in outcome.reason
 
 
 def test_evaluate_update_never_dedups_against_an_existing_memory(repo):

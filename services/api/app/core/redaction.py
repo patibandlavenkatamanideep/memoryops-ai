@@ -10,6 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..schemas.memory import Sensitivity
+from .sensitivity import BLOCK, SensitivityAssessment, classify
+
 # ── Secret patterns ──────────────────────────────────────────────────────────
 # Each entry: (label, compiled regex). Order is not significant.
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -52,14 +55,33 @@ class ScanResult:
     secret_labels: list[str] = field(default_factory=list)
     pii_labels: list[str] = field(default_factory=list)
     injection: bool = False
+    #: Semantic-pattern classification (app/core/sensitivity.py). Structural
+    #: patterns above catch *shapes* — key formats, SSN and card digits. They said
+    #: nothing about "my password is hunter2" or "my HIV status is positive", which
+    #: scored `low` and were stored active, leaving every sensitivity-keyed control
+    #: inert for exactly the categories they exist to protect.
+    assessment: SensitivityAssessment = field(default_factory=SensitivityAssessment)
 
     @property
     def sensitivity(self) -> str:
         if self.has_secret:
             return "high"
+        # A semantic disclosure outranks a structural PII hit.
+        if self.assessment.sensitivity is Sensitivity.high:
+            return "high"
         if self.pii_labels:
             return "medium"
+        if self.assessment.sensitivity is Sensitivity.medium:
+            return "medium"
         return "low"
+
+    @property
+    def blocks(self) -> bool:
+        """Deterministic hard-block signal: a secret shape *or* a disclosed credential.
+
+        The broker still decides; this only reports what detection recommends.
+        """
+        return self.has_secret or self.assessment.recommended_disposition == BLOCK
 
 
 def scan(text: str) -> ScanResult:
@@ -78,6 +100,7 @@ def scan(text: str) -> ScanResult:
                     continue
             result.pii_labels.append(label)
     result.injection = any(p.search(text) for p in _INJECTION_PATTERNS)
+    result.assessment = classify(text)
     return result
 
 

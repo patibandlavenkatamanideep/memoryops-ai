@@ -132,3 +132,40 @@ def test_a_blocked_content_edit_does_not_emit_an_executed_state(api_client):
         states = {e.state_to.value for e in repo.list_loop_events(loop_run_id=run.id)}
         assert "executed" not in states, "a blocked edit must not record an execution"
     assert repo.get_memory("t1", "u1", m.id).content == "prefers dark mode"
+
+
+def test_a_blocked_credential_disclosure_records_no_write(api_client):
+    """A semantic credential disclosure is refused before storage, and the loop
+    evidence must not suggest a write happened.
+
+    "my password is hunter2" has no key-like *shape*, so the structural scanner
+    never saw it; it was stored active at `low` sensitivity, which left every
+    sensitivity-keyed control inert for it.
+    """
+    client, repo = api_client
+    r = client.post(
+        "/api/chat",
+        json={
+            "tenant_id": "t1",
+            "user_id": "u1",
+            "message": "Remember: my password is hunter2.",
+        },
+    )
+    assert r.status_code == 200
+
+    # Nothing stored, and the chat response records the refusal as a decision.
+    assert [m for m in repo.list_memories("t1", "u1")] == []
+    decisions = {c["decision"] for c in r.json()["candidate_memories"]}
+    assert "BLOCK" in decisions
+
+
+def test_a_memory_control_instruction_records_no_stored_candidate(api_client):
+    """No memory, and no BLOCK either — there was never a candidate to refuse."""
+    client, repo = api_client
+    r = client.post(
+        "/api/chat",
+        json={"tenant_id": "t1", "user_id": "u1", "message": "do not remember my password"},
+    )
+    assert r.status_code == 200
+    assert repo.list_memories("t1", "u1") == []
+    assert r.json()["candidate_memories"] == []

@@ -149,7 +149,9 @@ def test_editing_low_sensitivity_content_into_pii_re_gates_the_memory(api_client
     client, repo = api_client
     m = _seed(repo, content="prefers dark mode", sensitivity=Sensitivity.low)
 
-    r = _patch(client, m.id, content="my social security number is 555-01-9999")
+    # A medical disclosure is high-sensitivity but storable behind approval.
+    # (A government identifier would be BLOCKed outright — see the block tests.)
+    r = _patch(client, m.id, content="I was diagnosed with diabetes")
     assert r.status_code == 200
 
     after = repo.get_memory("t1", "u1", m.id)
@@ -281,7 +283,7 @@ def test_audit_records_before_and_after_hashes_without_the_content(api_client):
 def test_a_sensitive_edit_is_audited_distinctly(api_client):
     client, repo = api_client
     m = _seed(repo)
-    _patch(client, m.id, content="my social security number is 555-01-9999")
+    _patch(client, m.id, content="I was diagnosed with diabetes")
     actions = {e["action"] for e in client.get(f"/api/memories/{m.id}/audit{_Q}").json()}
     assert "memory_content_update_pending_approval" in actions
     assert "memory_updated" not in actions, "the generic action no longer stands in for an edit"
