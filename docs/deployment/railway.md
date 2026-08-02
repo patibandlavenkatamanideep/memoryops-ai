@@ -18,11 +18,19 @@ networking, and the deploy story in a single place.
 | 2 | `memoryops-api` | FastAPI backend | `services/api/Dockerfile` | `GET /healthz`, `GET /readyz` |
 | 3 | `memoryops-worker` | Background jobs (decay/reflection/learning loop) | `services/worker/Dockerfile` | process liveness (no HTTP) |
 | 4 | Railway **Postgres** | Primary store + pgvector | Railway plugin | managed |
-| 5 | Railway **Redis** | Queue / cache | Railway plugin | managed |
 
-All five run inside the same project so they share Railway's private network and
-reference each other through Railway-provided variables (e.g. `DATABASE_URL`,
-`REDIS_URL`). See [railway-env.md](railway-env.md) for the full variable matrix.
+All four run inside the same project so they share Railway's private network and
+reference each other through Railway-provided variables (e.g. `DATABASE_URL`).
+See [railway-env.md](railway-env.md) for the full variable matrix.
+
+> **Redis was removed from the topology.** It was previously listed as a required
+> fifth service, started by Compose, and health-gated by both the API and the worker
+> — but no runtime code ever read `REDIS_URL`, and no Redis client was imported
+> anywhere in the repo. A declared-but-unused dependency is pure cost: another
+> managed service to pay for, another health check that can fail a deploy, and a
+> misleading architecture diagram. Reinstate it when something actually uses it
+> (distributed rate limiting, job queueing, caching, pub/sub, cross-replica
+> coordination).
 
 ## Config-as-code
 
@@ -75,16 +83,54 @@ config files is resolved relative to the service **Root Directory**.
 
 Provision and deploy in this order so dependencies are ready:
 
-1. **Postgres** plugin — then run migrations from `infra/db/migrations` (apply
-   `001…007` in order; `007_retention_legal_hold_consent.sql` is the latest).
-2. **Redis** plugin.
-3. **`memoryops-api`** — set `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`,
-   `REDIS_URL`. Wait for `/readyz` to report `ready: true`.
-4. **`memoryops-worker`** — same `DATABASE_URL` / `REDIS_URL` / `MEMORYOPS_STORAGE`.
-5. **`memoryops-web`** — set `NEXT_PUBLIC_API_URL` to the public API domain, then
+1. **Postgres** plugin — then apply every migration in `infra/db/migrations` in
+   lexical order:
+
+   ```bash
+   for f in infra/db/migrations/*.sql; do
+     echo "-- applying $f"
+     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+   done
+   ```
+
+   Do **not** hand-maintain a migration list here. This guide previously said to
+   apply `001…007` and called `007_retention_legal_hold_consent.sql` "the latest"
+   while the repository had migrations through `011` — following it produced a
+   database missing the scope-id, operational-evidence, transactional audit-chain,
+   and chain-head schema. The glob above cannot go stale.
+
+2. **`memoryops-api`** — set the production variables below. Wait for `/readyz` to
+   report `ready: true` (and check `degraded: false`).
+3. **`memoryops-worker`** — same `DATABASE_URL` / `MEMORYOPS_STORAGE`, plus
+   `MEMORYOPS_WORKER_SCOPES`.
+4. **`memoryops-web`** — set `NEXT_PUBLIC_API_URL` to the public API domain, then
    deploy (build-time inline).
 
-After all five are up, run the smoke test
+### Minimum production variables
+
+`MEMORYOPS_PROFILE=production` is fail-closed: the API refuses to start if any of
+these is unsafe (`Settings.production_readiness_errors`). The previous "minimum
+set" in this guide omitted several values the profile itself requires, so following
+it produced a service that would not boot.
+
+```bash
+MEMORYOPS_PROFILE=production
+MEMORYOPS_STORAGE=postgres
+MEMORYOPS_AUTH_MODE=jwt              # or trusted_header; 'none' is rejected
+MEMORYOPS_CORS_ALLOW_ORIGINS=https://<your-web-domain>   # '*' is rejected
+MEMORYOPS_PUBLIC_EVALS=false
+DATABASE_URL=<reference the Postgres plugin>
+OPERATIONAL_DATABASE_URL=<restricted monitoring role>    # enables /healthz/workers
+MEMORYOPS_WORKER_SCOPES=<tenant:user,…>                  # worker service
+NEXT_PUBLIC_API_URL=https://<your-api-domain>            # web service, build-time
+```
+
+If you select a networked provider, its SDK ships in the production image but the
+key must be set — `MEMORYOPS_LLM_PROVIDER=openai` without `OPENAI_API_KEY` is a
+startup error in this profile rather than a silent downgrade to the stub. See
+[dependency-management.md](../dependency-management.md).
+
+After all four are up, run the smoke test
 ([railway-smoke-test.md](railway-smoke-test.md)).
 
 ## Optional: Playground demo service (v0.12)

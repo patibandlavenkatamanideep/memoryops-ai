@@ -40,7 +40,6 @@ docker compose up --build
 # web  → http://localhost:3000
 # api  → http://localhost:8000/docs
 # db   → localhost:5432 (postgres/pgvector)
-# redis→ localhost:6379
 ```
 
 Compose runs migrations from `infra/db/migrations` on first boot and sets

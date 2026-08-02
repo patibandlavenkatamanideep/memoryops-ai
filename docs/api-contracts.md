@@ -202,14 +202,34 @@ See [docs/enterprise-evidence.md](enterprise-evidence.md), ADR-024.
   (v2.3, ADR-027). When that connection is unconfigured it returns
   `{ healthy: null, detail: "operational access not configured", hint: … }` — an
   actionable, non-fatal state, not a `500`.
-- `GET /readyz` → `{ ready, profile, storage, llm_provider, embeddings_provider,
-  embedding_dim, detail, checks }` (v2.3). `checks` is a per-dependency map —
-  `storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
-  `embedding_provider` — each `{ status: ok|skipped|error, … }`; `ready` is false iff
-  any dependency is in `error` (a `skipped`, unselected backend never blocks it). The
-  pre-v2.3 top-level fields (`storage`, `llm_provider`, `embeddings_provider`,
-  `embedding_dim`, `detail`) are **retained** alongside `profile`/`checks` so the
-  response stays additive under the `1.x` promise. Every probe is no-throw.
+- `GET /readyz` → `{ ready, degraded, profile, storage, llm_provider,
+  embeddings_provider, embedding_dim, detail, checks }`. `checks` is a per-dependency
+  map — `storage`, `schema`, `vector_backend`, `worker_runtime`, `llm_provider`,
+  `embedding_provider` — each `{ status: ok|degraded|error|skipped, reason_code?, … }`.
+  `ready` is false iff any dependency is in `error` (a `skipped`, unselected backend
+  never blocks it); `degraded` is true iff any dependency is `degraded` — a new
+  top-level boolean, additive under the `1.x` promise.
+
+  **Provider checks report capability, not configuration.** `llm_provider` and
+  `embedding_provider` previously returned a hardcoded `ok` derived from the
+  configured provider *name*, so `MEMORYOPS_LLM_PROVIDER=openai` with no key and no
+  SDK reported fully green while every request was served by the deterministic stub.
+  `vector_backend` likewise reported `ok` for any external backend. They now verify
+  key + SDK presence, and the vector probe calls the backend's real `available()`.
+  Severity is profile-aware: selected-but-unusable is `degraded` in `dev` (the
+  fallback is the intended offline experience) and `error` in `production`.
+  `worker_runtime` also reports freshness — `worker_heartbeat_stale` (an `error`)
+  once the newest run is older than three scheduler intervals, so a silently dead
+  worker no longer reports `ok` indefinitely.
+
+  Responses carry a `reason_code` (`missing_api_key`, `sdk_not_installed`,
+  `client_not_installed`, `backend_unreachable`, `probe_failed`, `probe_raised`,
+  `worker_heartbeat_stale`, `dead_lettered_jobs`, `no_runs_recorded`) and never a
+  key, DSN, or raw provider error. The pre-v2.3 top-level fields (`storage`,
+  `llm_provider`, `embeddings_provider`, `embedding_dim`, `detail`) are **retained**
+  alongside `profile`/`checks`. Every probe is no-throw *and* individually wrapped,
+  so `/readyz` — the endpoint operators hit when things are broken — cannot itself
+  return a `500`.
 - `GET /metrics` → **Prometheus text exposition** (v1.1; format `0.0.4`). Process-wide,
   content-free, low-cardinality (no `tenant_id`/`user_id` labels): HTTP traffic,
   retrieval latency/mode, policy-decision rate, worker run counts. Toggle with
