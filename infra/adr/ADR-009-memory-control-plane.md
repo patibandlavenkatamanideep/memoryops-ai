@@ -133,3 +133,27 @@ editing (a `content` PATCH still bypasses the policy broker, secret scanning,
 sensitivity reclassification, and leaves the old embedding attached to new content),
 explicit transition endpoints, and API-level RBAC are follow-up work. The demo
 identity note above is superseded by the authenticated BFF control plane.
+
+## Amendment: the control plane's edit path is governed
+
+The control plane exposed `content` on `PATCH /api/memories/{id}` as a direct
+assignment. Editing was therefore the one write path that never met the policy
+broker, so an operator UI action could introduce content the same system would
+refuse at creation, silently keep a stale sensitivity label, ignore a legal hold,
+and leave the previous embedding attached to the new text.
+
+**Decision.** Content edits route through `app/services/update_service.py`. The
+control plane keeps its shape — same endpoint, same fields — but the write is
+governed: legal hold and revision are checked first, the proposed content is
+evaluated by `PolicyBroker.evaluate_update`, sensitivity is recomputed rather than
+inherited, the embedding is invalidated and regenerated, and the audit event carries
+before/after hashes plus the policy decision instead of a bare `memory_updated`.
+
+`MemoryRecord` gains `revision` and the patch body gains an optional
+`expected_revision`, both additive. The UI can now surface a genuine edit conflict
+rather than silently clobbering a concurrent change.
+
+**Still open for the control plane:** explicit transition endpoints (approve /
+reject / archive / restore / delete) to replace status-through-PATCH, versioned
+content history and supersession, and API-level RBAC — the web-tier roles introduced
+alongside the authenticated BFF are not a security boundary.

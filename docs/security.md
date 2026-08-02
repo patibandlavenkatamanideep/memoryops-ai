@@ -237,3 +237,64 @@ Security-relevant properties:
   eligibility; the policy broker stays authoritative and is never bypassed
   (invariant #5). All mutations are tenant-scoped (invariant #1) and audited
   (invariant #7). Retention auto-deletion is **OFF by default**.
+
+## Content edits are a governed write path
+
+`PATCH /api/memories/{id}` previously assigned edited content straight onto the
+stored row. The policy broker — the choke point invariant #5 requires before *any*
+write — ran on creation and not on editing, so the edit path was a way around every
+control that creation enforces:
+
+| Control | Bypassed how |
+| --- | --- |
+| Secret scanning | Content that creation BLOCKs (API keys, tokens, private keys) could be introduced by editing an innocuous memory |
+| Prompt-injection guard | Same — an injection payload could be edited in |
+| Sensitivity classification | Sensitivity was **inherited** from the stored row, not recomputed, so an edit into PII kept a `low` label and approval gating, recall-gate audience clearance, and the admission gate all stopped applying |
+| Legal hold | Ignored entirely; a hold preserves content, and editing destroys it as effectively as deleting |
+| Embedding integrity | The vector was never touched, so the row kept the embedding of its *previous* content — dense retrieval matched the old text and returned the new text |
+
+On Postgres this was worse: `update_memory` never persisted `normalized_content` or
+`embedding` at all, so both stayed stale permanently once content changed.
+
+Edits now run through `app/services/update_service.py`:
+legal hold → revision check → policy evaluation on the **proposed** content →
+apply → invalidate and regenerate the embedding → bump revision → audit.
+
+Refusals are fail-closed and leave the stored memory byte-identical: `422` for a
+secret or injection, `409` under legal hold or on a stale `expected_revision`, `404`
+for a deleted memory. A sensitive edit is applied but returns the memory to
+`pending`.
+
+**Audit evidence is content-free.** The event records `previous_content_hash` /
+`new_content_hash`, the before/after sensitivity, the decision, the revision, and a
+`policy_version` — never the before/after text. The audit trail is read by operators
+who may not be cleared for the memory itself, and a deleted memory's content must
+not survive in its audit events.
+
+**Known gap.** Sensitivity classification still only matches *structural* patterns
+(SSN, card numbers, key formats). An edit into `my password is hunter2`, a medical
+diagnosis, or salary information is not yet detected, so those still classify `low`.
+The governed path is now in place to enforce whatever the classifier decides —
+expanding the classifier is separate, tracked work.
+
+## Optimistic concurrency
+
+Memories carry a `revision` (migration 012), incremented by the repository on
+**every** mutation — content edits, governance transitions, retention and consent
+changes, and lifecycle worker jobs. That makes it a genuine row revision and one
+shared concurrency contract, rather than a content-only counter.
+
+A caller may send `expected_revision` on a content edit and receives `409 Conflict`
+if the memory changed underneath, instead of silently overwriting a concurrent
+change. Omitting it preserves last-write-wins.
+
+The guard is enforced **in the write**, not before it: `update_memory_checked`
+issues `UPDATE ... WHERE revision = :expected` and treats `rowcount == 0` as the
+conflict. An application-side `if revision == expected` would be a
+time-of-check/time-of-use race — two requests can both read revision N, both pass,
+and both write — and embedding generation sits between the read and the write,
+widening the window considerably.
+
+The 409 is raised **after** tenant scoping, so it is not a cross-tenant oracle: a
+request for another tenant's memory returns `404` whether or not the revision would
+have matched.

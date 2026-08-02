@@ -13,6 +13,8 @@ import pytest
 from app.db.entities import StoredMemory
 from app.schemas.memory import MemoryType, Sensitivity, Source, Status
 
+from ._secret_fixtures import FAKE_PROVIDER_KEY
+
 
 def _seed(
     repo,
@@ -317,3 +319,29 @@ def test_memory_audit_timeline_is_scoped_to_that_memory(api_client):
     assert all(e["memory_id"] == a.id for e in events)
     assert "memory_archived" in {e["action"] for e in events}
     assert "memory_rejected" not in {e["action"] for e in events}
+
+
+def test_content_edit_goes_through_governance(api_client):
+    """The governance API's edit path is no longer a direct assignment.
+
+    Full coverage in tests/test_governed_content_update.py; this pins the API
+    surface: a credential edit is refused and the memory is left untouched, and a
+    benign edit bumps the revision returned to the client.
+    """
+    client, repo = api_client
+    m = _seed(repo, content="prefers dark mode")
+
+    blocked = client.patch(
+        f"/api/memories/{m.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": FAKE_PROVIDER_KEY},
+    )
+    assert blocked.status_code == 422
+    assert repo.get_memory("t1", "u1", m.id).content == "prefers dark mode"
+
+    ok = client.patch(
+        f"/api/memories/{m.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "prefers light mode"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["content"] == "prefers light mode"
+    assert ok.json()["revision"] == 2

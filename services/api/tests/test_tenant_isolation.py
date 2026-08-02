@@ -197,3 +197,69 @@ def test_governance_flags_are_tenant_scoped(gateway, repo):
     assert not gov.is_legal_hold(repo.get_memory("t2", "bob", b.id))
     # Wrong-scope read cannot see the held memory at all.
     assert repo.get_memory("t2", "bob", a.id) is None
+
+
+def test_governed_content_update_cannot_reach_another_tenant(api_client):
+    """The edit path is tenant-scoped like every other repository access (#1).
+
+    The governed update service reads and writes through `repo.get_memory` /
+    `repo.update_memory`, both tenant+user scoped, so a caller cannot edit — or
+    learn the existence of — another tenant's memory.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    victim = repo.create_memory(
+        StoredMemory(
+            tenant_id="victim",
+            user_id="v1",
+            memory_type=MemoryType.preference,
+            content="victim secret preference",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="victim secret preference"),
+        )
+    )
+
+    r = client.patch(
+        f"/api/memories/{victim.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "overwritten by attacker"},
+    )
+    assert r.status_code == 404, "another tenant's memory must not be addressable"
+    assert repo.get_memory("victim", "v1", victim.id).content == "victim secret preference"
+
+
+def test_revision_is_not_a_cross_tenant_oracle(api_client):
+    """A stale-revision 409 must not distinguish 'wrong revision' from 'not yours'."""
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    victim = repo.create_memory(
+        StoredMemory(
+            tenant_id="victim",
+            user_id="v1",
+            memory_type=MemoryType.preference,
+            content="victim preference",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="victim preference"),
+        )
+    )
+    r = client.patch(
+        f"/api/memories/{victim.id}",
+        json={
+            "tenant_id": "t1",
+            "user_id": "u1",
+            "content": "probe",
+            "expected_revision": 1,
+        },
+    )
+    # 404 (not 409): scope is checked before the revision, so the response is
+    # identical whether or not the revision would have matched.
+    assert r.status_code == 404

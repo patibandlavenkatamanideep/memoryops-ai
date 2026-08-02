@@ -20,12 +20,18 @@ from ..schemas.memory import (
     MemoryRecord,
     Status,
 )
+from ..services.policy_broker import PolicyBroker
 from ..services.status_transitions import (
     TRANSITION_AUDIT,
     UNSUPPORTED_PATCH_STATUSES,
     InvalidTransition,
     UnsupportedStatus,
     validate_transition,
+)
+from ..services.update_service import (
+    LegalHoldActive,
+    UpdateRejected,
+    apply_content_update,
 )
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
@@ -268,10 +274,29 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
     # made after the unit of work's snapshot is taken.
     action = "memory_updated"
     reason = "memory edited"
+    update_evidence: dict = {}
     with repo.transaction(patch.tenant_id, patch.user_id):
         if patch.content is not None:
-            m.content = patch.content
-            m.normalized_content = " ".join(patch.content.lower().split())
+            # Content edits go through the governed update service (invariant #5:
+            # the policy broker runs before any write). This path previously
+            # assigned `patch.content` straight onto the row, so an edit could
+            # introduce content that creation would have BLOCKed, kept the stale
+            # sensitivity label, and left the previous embedding attached to the
+            # new text.
+            try:
+                result = apply_content_update(
+                    m,
+                    patch.content,
+                    broker=PolicyBroker(repo),
+                    settings=repo.get_settings(patch.tenant_id, patch.user_id),
+                    expected_revision=patch.expected_revision,
+                )
+            except LegalHoldActive as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except UpdateRejected as exc:
+                raise HTTPException(status_code=422, detail=exc.reason) from exc
+            action, reason = result.audit_action, result.reason
+            update_evidence = result.evidence
         if patch.importance is not None:
             m.importance = patch.importance
         if patch.confidence is not None:
@@ -284,7 +309,27 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             m.status = patch.status
             action, reason = TRANSITION_AUDIT[transition]
 
-        repo.update_memory(m)
+        # Persist. When the caller supplied `expected_revision`, the write is a
+        # compare-and-swap so the *database* arbitrates concurrency — a Python-side
+        # check would be a time-of-check/time-of-use race, and embedding generation
+        # sits between the read and this write. `rowcount == 0` means another writer
+        # got there first.
+        if patch.expected_revision is not None:
+            saved = repo.update_memory_checked(m, expected_revision=patch.expected_revision)
+            if saved is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"memory changed since revision {patch.expected_revision}; "
+                        "re-read it and retry"
+                    ),
+                )
+            m = saved
+        else:
+            # No expectation supplied → last-write-wins, unchanged behaviour.
+            m = repo.update_memory(m)
+        if update_evidence:
+            update_evidence = {**update_evidence, "revision": m.revision}
         emit_loop_event_sync(
             repo,
             loop,
@@ -308,6 +353,10 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             action=action,
             reason=reason,
             trace_id=trace_id,
+            # Before/after *hashes* plus the policy decision — never the content
+            # itself: the audit trail is read by operators who may not be cleared
+            # for the memory, and a deleted memory's text must not survive here.
+            metadata=update_evidence or None,
         )
     emit_loop_event_sync(
         repo,

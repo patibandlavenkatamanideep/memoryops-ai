@@ -46,7 +46,31 @@ class Repository(ABC):
     ) -> list[StoredMemory]: ...
 
     @abstractmethod
-    def update_memory(self, memory: StoredMemory) -> StoredMemory: ...
+    def update_memory(self, memory: StoredMemory) -> StoredMemory:
+        """Persist a mutated memory and bump its ``revision``.
+
+        Every mutation increments the revision, so it is a genuine row revision —
+        content edits, governance transitions, retention and consent changes, and
+        worker jobs all share one concurrency contract.
+        """
+        ...
+
+    @abstractmethod
+    def update_memory_checked(
+        self, memory: StoredMemory, *, expected_revision: int
+    ) -> StoredMemory | None:
+        """Compare-and-swap update. Returns ``None`` when the revision moved.
+
+        A Python-side `if memory.revision == expected` check does **not** close the
+        race: two requests can both read revision N, both pass the check, and both
+        write — the second silently clobbering the first. Embedding generation sits
+        between the read and the write, which widens that window considerably.
+
+        Implementations must make the guard part of the write itself (a conditional
+        ``UPDATE ... WHERE revision = :expected`` on Postgres, the store lock in
+        memory) so exactly one of two concurrent writers succeeds.
+        """
+        ...
 
     @abstractmethod
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None: ...

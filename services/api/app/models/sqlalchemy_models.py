@@ -53,6 +53,7 @@ class MemoryRecordORM(Base):
     extra_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     weight: Mapped[float] = mapped_column(Float, default=1.0)
     reinforcement_count: Mapped[int] = mapped_column(Integer, default=0)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

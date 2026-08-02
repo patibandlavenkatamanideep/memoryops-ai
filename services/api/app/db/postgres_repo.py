@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import get_settings
@@ -42,7 +42,7 @@ from .repository import Repository
 
 _DELETED = "deleted"
 _ACTIVE = "active"
-_CURRENT_SCHEMA_VERSION = "011_audit_chain_heads"
+_CURRENT_SCHEMA_VERSION = "012_memory_revision"
 
 
 def _norm(text: str) -> str:
@@ -66,6 +66,7 @@ def _to_stored(row: MemoryRecordORM) -> StoredMemory:
         metadata=row.extra_metadata or {},
         weight=row.weight,
         reinforcement_count=row.reinforcement_count,
+        revision=getattr(row, "revision", 1) or 1,
         created_at=row.created_at,
         updated_at=row.updated_at,
         archived_at=row.archived_at,
@@ -258,6 +259,7 @@ class PostgresRepository(Repository):
                 extra_metadata=memory.metadata,
                 weight=memory.weight,
                 reinforcement_count=memory.reinforcement_count,
+                revision=memory.revision,
             )
             s.add(row)
             self._commit(s)
@@ -293,24 +295,85 @@ class PostgresRepository(Repository):
             stmt = stmt.order_by(MemoryRecordORM.created_at.desc())
             return [_to_stored(r) for r in s.scalars(stmt)]
 
+    def _apply_memory_fields(self, row: MemoryRecordORM, memory: StoredMemory) -> None:
+        # `normalized_content` and `embedding` were previously NOT persisted at all,
+        # so a content edit changed `content` while the keyword form and the vector
+        # kept describing the *old* text — permanently, since nothing else rewrites
+        # them. Dense retrieval matched the previous content and returned the new
+        # content. Both must follow the content they describe.
+        row.content = memory.content
+        row.normalized_content = memory.normalized_content
+        row.embedding = memory.embedding or None
+        row.importance = memory.importance
+        row.confidence = memory.confidence
+        row.sensitivity = memory.sensitivity.value
+        row.status = memory.status.value
+        # Persist metadata so lifecycle markers (decay/archive) and v0.10 governance
+        # state (legal hold, consent, retention) survive updates.
+        row.extra_metadata = memory.metadata
+        row.weight = memory.weight
+        row.reinforcement_count = memory.reinforcement_count
+        row.updated_at = datetime.now(UTC)
+
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         with self._scoped(memory.tenant_id, memory.user_id) as s:
             row = s.get(MemoryRecordORM, memory.id)
             if not row:
                 raise ValueError("memory not found")
-            row.content = memory.content
-            row.importance = memory.importance
-            row.confidence = memory.confidence
-            row.sensitivity = memory.sensitivity.value
-            row.status = memory.status.value
-            # Persist metadata so lifecycle markers (decay/archive) and v0.10
-            # governance state (legal hold, consent, retention) survive updates.
-            row.extra_metadata = memory.metadata
-            row.weight = memory.weight
-            row.reinforcement_count = memory.reinforcement_count
-            row.updated_at = datetime.now(UTC)
+            self._apply_memory_fields(row, memory)
+            # The revision is bumped by the database, not taken from the caller, so
+            # it is a genuine row revision shared by content edits, governance
+            # transitions, retention changes, and worker jobs alike.
+            row.revision = (row.revision or 1) + 1
             self._commit(s)
             return _to_stored(row)
+
+    def update_memory_checked(
+        self, memory: StoredMemory, *, expected_revision: int
+    ) -> StoredMemory | None:
+        """Conditional UPDATE — the guard is part of the write, not a pre-check.
+
+        A caller-side ``if revision == expected`` cannot close the race: two
+        requests can both read revision N, both pass the check, and both write, the
+        second silently clobbering the first. Embedding generation sits between the
+        read and the write, which widens that window considerably.
+
+        Here ``WHERE ... AND revision = :expected`` makes the database arbitrate, so
+        exactly one of two concurrent writers updates the row and the other sees
+        ``rowcount == 0``.
+        """
+        with self._scoped(memory.tenant_id, memory.user_id) as s:
+            result = s.execute(
+                update(MemoryRecordORM)
+                .where(
+                    MemoryRecordORM.id == memory.id,
+                    MemoryRecordORM.tenant_id == memory.tenant_id,
+                    MemoryRecordORM.user_id == memory.user_id,
+                    MemoryRecordORM.revision == expected_revision,
+                )
+                .values(
+                    content=memory.content,
+                    normalized_content=memory.normalized_content,
+                    embedding=memory.embedding or None,
+                    importance=memory.importance,
+                    confidence=memory.confidence,
+                    sensitivity=memory.sensitivity.value,
+                    status=memory.status.value,
+                    extra_metadata=memory.metadata,
+                    weight=memory.weight,
+                    reinforcement_count=memory.reinforcement_count,
+                    revision=MemoryRecordORM.revision + 1,
+                    updated_at=datetime.now(UTC),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 0:
+                # Lost the race (or the row is gone / not ours). Never fall back to
+                # an unconditional write — that is exactly the clobber this prevents.
+                return None
+            self._commit(s)
+            row = s.get(MemoryRecordORM, memory.id)
+            return _to_stored(row) if row else None
 
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
         with self._scoped(tenant_id, user_id) as s:

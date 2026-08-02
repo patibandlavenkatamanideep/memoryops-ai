@@ -106,6 +106,71 @@ class PolicyBroker:
         # 6) Save.
         return PolicyOutcome(Decision.SAVE, candidate, "saved: passed policy checks")
 
+    def evaluate_update(
+        self,
+        candidate: CandidateMemory,
+        *,
+        settings: StoredSettings,
+    ) -> PolicyOutcome:
+        """Evaluate *edited* content for an existing memory.
+
+        Deliberately not ``evaluate()``. Creation runs two steps that are wrong for
+        an edit:
+
+          * **dedup / UPDATE_EXISTING** — ``find_similar_active`` would match the
+            very memory being edited (or a sibling), turning an edit into a
+            reinforcement of itself;
+          * **low-utility drop** — an edit to an already-stored memory is not a
+            candidate to discard; dropping it would silently keep the old content.
+
+        The safety rules that *do* apply are shared with creation so there is one
+        source of truth: secrets and injection BLOCK, PII elevates sensitivity, and
+        medium/high sensitivity is gated behind approval.
+
+        Returns ``BLOCK`` (reject the edit, leave the memory untouched),
+        ``PENDING_APPROVAL`` (apply the edit but move the memory back to pending), or
+        ``SAVE`` (apply the edit).
+        """
+        enforce = get_app_settings().govern_policy_enforcement
+        scan_result = scan(candidate.content)
+
+        if enforce and scan_result.has_secret:
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
+            )
+        if enforce and scan_result.injection:
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                "blocked: prompt-injection / memory-poisoning pattern detected",
+            )
+
+        # Sensitivity is recomputed from the *proposed* content, never inherited from
+        # the stored row — that inheritance is what let an edit turn a low-sensitivity
+        # memory into medical/financial content while keeping its old label.
+        final_sensitivity = max(
+            candidate.sensitivity,
+            Sensitivity(scan_result.sensitivity),
+            key=_sensitivity_rank,
+        )
+        candidate = candidate.model_copy(update={"sensitivity": final_sensitivity})
+
+        if (
+            enforce
+            and final_sensitivity in (Sensitivity.medium, Sensitivity.high)
+            and settings.require_approval_for_sensitive
+        ):
+            return PolicyOutcome(
+                Decision.PENDING_APPROVAL,
+                candidate,
+                f"pending approval: edited to {final_sensitivity.value}-sensitivity content"
+                f" ({', '.join(scan_result.pii_labels) or 'flagged'})",
+            )
+
+        return PolicyOutcome(Decision.SAVE, candidate, "edit passed policy checks")
+
 
 def _sensitivity_rank(s: Sensitivity) -> int:
     return {Sensitivity.low: 0, Sensitivity.medium: 1, Sensitivity.high: 2}[s]

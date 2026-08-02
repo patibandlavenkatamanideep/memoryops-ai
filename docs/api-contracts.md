@@ -148,8 +148,50 @@ Query: `tenant_id` (req), `user_id` (req), `limit` (opt, ≤1000). Returns the
 per-memory `AuditEvent[]`, newest first.
 
 ## PATCH /api/memories/{id}
-Body: `{ tenant_id, user_id, content?, importance?, confidence?, status? }`.
+Body: `{ tenant_id, user_id, content?, importance?, confidence?, status?, expected_revision? }`.
 Returns the updated `MemoryRecord`. Emits an audit event.
+
+### Content edits are governed
+
+A `content` change runs through the **governed update service**, not a direct
+assignment. Previously the handler did `m.content = patch.content` and nothing else:
+the policy broker never saw the edit (violating invariant #5, which creation
+honoured), sensitivity was inherited rather than recomputed, legal hold was ignored,
+and **the embedding was never touched** — so the row kept the vector of its previous
+content and dense retrieval matched the old text while returning the new text.
+
+| Outcome | Status | Meaning |
+| --- | --- | --- |
+| secret / injection detected | **422** | edit refused; the memory is unchanged |
+| edit introduces PII or sensitive content | **200** | applied, sensitivity recomputed, status returns to `pending` |
+| memory under legal hold | **409** | a hold preserves content; edits are refused like deletion |
+| `expected_revision` no longer current | **409** | lost update refused |
+| memory deleted | **404** | unchanged |
+
+On success the embedding is invalidated and regenerated in the same request. If
+regeneration fails the memory keeps **no** vector rather than a stale one.
+
+`revision` is a new response field and `expected_revision` a new optional request
+field — both additive under the `1.x` promise. Omitting `expected_revision` keeps the
+previous last-write-wins behaviour.
+
+`revision` is a **row** revision, not a content counter: the repository increments it
+on *every* mutation — content edits, governance transitions, retention and consent
+changes, and lifecycle worker jobs — so the control plane and the workers share one
+concurrency contract. A content edit holding a revision that a worker has since moved
+past is correctly refused.
+
+When `expected_revision` is supplied the write is a **compare-and-swap** performed by
+the database (`UPDATE ... WHERE revision = :expected`), not a check in application
+code. A caller-side comparison would be a time-of-check/time-of-use race: two
+requests can both read revision N, both pass, and both write — and embedding
+generation sits between the read and the write, widening that window. With the CAS,
+exactly one of two concurrent writers succeeds and the other receives `409`.
+
+Audit metadata carries `previous_content_hash`, `new_content_hash`,
+`previous_sensitivity`, `new_sensitivity`, `decision`, `revision`, and
+`policy_version` — **hashes, never the before/after text**, since the trail is read
+by operators who may not be cleared for the memory itself.
 
 `status` is validated as a **transition**, not just a value — a target is legal only
 from specific current states:

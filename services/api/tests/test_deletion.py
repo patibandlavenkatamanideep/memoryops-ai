@@ -326,3 +326,59 @@ def test_the_deletion_workflow_still_satisfies_the_invariant(api_client):
     assert after.status is Status.deleted
     assert after.deleted_at is not None, "the workflow stamps deleted_at; PATCH never did"
     assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
+
+
+def test_a_content_edit_never_resurrects_or_hides_a_memory(api_client):
+    """The governed update path must not touch deletion state.
+
+    Editing goes through `update_service`, which changes content, sensitivity,
+    embedding, and revision — never `status=deleted` or `deleted_at`. A deleted
+    memory is not editable at all (404), so an edit can neither resurrect one nor
+    quietly delete a live one.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    live = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="prefers dark mode",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="prefers dark mode"),
+        )
+    )
+    r = client.patch(
+        f"/api/memories/{live.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "prefers light mode"},
+    )
+    assert r.status_code == 200
+    after = repo.get_memory("t1", "u1", live.id)
+    assert after.status is Status.active
+    assert after.deleted_at is None
+    assert live.id in {m.id for m in repo.retrieve_active("t1", "u1")}
+
+    gone = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="already deleted",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.deleted,
+            source=Source(kind="chat", excerpt="already deleted"),
+        )
+    )
+    edit = client.patch(
+        f"/api/memories/{gone.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "resurrected"},
+    )
+    assert edit.status_code == 404
+    assert repo.get_memory("t1", "u1", gone.id).content == "already deleted"

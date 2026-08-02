@@ -175,6 +175,7 @@ class InMemoryRepository(Repository):
     @_locked
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         memory.updated_at = datetime.now(UTC)
+        memory.revision = getattr(memory, "revision", 1) + 1
         self._memories[memory.id] = memory
         # Keep the vector index in sync: a non-active row is not searchable.
         if memory.status.value == _ACTIVE:
@@ -184,6 +185,23 @@ class InMemoryRepository(Repository):
         else:
             self._vectors.delete(memory.tenant_id, memory.user_id, memory.id)
         return memory
+
+    @_locked
+    def update_memory_checked(
+        self, memory: StoredMemory, *, expected_revision: int
+    ) -> StoredMemory | None:
+        """Compare-and-swap under the store lock.
+
+        Sync FastAPI routes run in a thread pool, so two PATCHes genuinely
+        interleave here — the in-memory backend needs the same guarantee as
+        Postgres, not just a Python-level check in the caller.
+        """
+        stored = self._memories.get(memory.id)
+        if stored is None:
+            return None
+        if getattr(stored, "revision", 1) != expected_revision:
+            return None
+        return self.update_memory(memory)
 
     @_locked
     def soft_delete(self, tenant_id: str, user_id: str, memory_id: str) -> StoredMemory | None:
