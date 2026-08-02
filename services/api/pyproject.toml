@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77.0,<83"]
+requires = ["setuptools>=77.0,<84"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -21,12 +21,12 @@ license = "MIT"
 # pins mean a new version only reaches us via an intentional bump here. Smaller
 # dependency set = smaller blast radius for the next supply-chain attack.
 dependencies = [
-  "fastapi==0.140.0",
+  "fastapi==0.141.1",
   # Explicit patched pin — <1.0.1 carries the PYSEC-2026-161/248/249/1942/2280/2281
   # Starlette advisories. Pinned directly (not just transitively via fastapi) so a
   # patched Starlette can't silently regress.
   "starlette==1.3.1",
-  "uvicorn[standard]==0.51.0",
+  "uvicorn[standard]==0.52.0",
   "pydantic==2.13.4",
   "pydantic-settings==2.14.2",
   "tenacity==9.1.4",
@@ -40,9 +40,9 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = [
-  "sqlalchemy==2.0.36",
-  "psycopg[binary]==3.2.3",
-  "pgvector==0.3.6",
+  "sqlalchemy==2.0.51",
+  "psycopg[binary]==3.3.4",
+  "pgvector==0.5.0",
 ]
 
 # ── LLM / embedding provider SDKs ────────────────────────────────────────────
@@ -81,20 +81,20 @@ weaviate = ["weaviate-client==4.22.0"]
 # MEMORYOPS_LLM_PROVIDER can be switched by env var without rebuilding a
 # provider-specific image.
 production = [
-  "sqlalchemy==2.0.36",
-  "psycopg[binary]==3.2.3",
-  "pgvector==0.3.6",
+  "sqlalchemy==2.0.51",
+  "psycopg[binary]==3.3.4",
+  "pgvector==0.5.0",
   "openai==2.52.0",
   "anthropic==0.120.2",
   "google-generativeai==0.8.6",
 ]
 
 dev = [
-  "pytest==8.3.4",
+  "pytest==9.1.1",
   "httpx==0.28.1",
-  "ruff==0.8.4",
+  "ruff==0.16.0",
   # Records real LLM-provider responses once, replays them in CI without keys (P1.1).
-  "pytest-recording==0.13.2",
+  "pytest-recording==0.13.4",
 ]
 
 # ── Packaging ────────────────────────────────────────────────────────────────

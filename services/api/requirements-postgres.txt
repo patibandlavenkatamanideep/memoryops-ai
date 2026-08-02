@@ -8,6 +8,6 @@
 # Hand-edits are reverted by the next regeneration and fail the CI drift gate.
 # ─────────────────────────────────────────────────────────────────────────
 # [project.optional-dependencies].postgres
-sqlalchemy==2.0.36
-psycopg[binary]==3.2.3
-pgvector==0.3.6
+sqlalchemy==2.0.51
+psycopg[binary]==3.3.4
+pgvector==0.5.0
