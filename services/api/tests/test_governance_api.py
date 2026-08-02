@@ -289,16 +289,26 @@ def test_provenance_404_for_unknown(api_client):
 def test_memory_audit_timeline_is_scoped_to_that_memory(api_client):
     client, repo = api_client
     a = _seed(repo, content="memory A")
-    b = _seed(repo, content="memory B")
+    # B is seeded `pending` so its rejection is a *legal* transition and actually
+    # writes a `memory_rejected` event. Seeded active, the reject is refused (409)
+    # and this test would pass vacuously — proving isolation of an event that was
+    # never written.
+    b = _seed(repo, status=Status.pending, content="memory B")
 
-    client.patch(
+    archived = client.patch(
         f"/api/memories/{a.id}",
         json={"tenant_id": "t1", "user_id": "u1", "status": "archived"},
     )
-    client.patch(
+    assert archived.status_code == 200
+    rejected = client.patch(
         f"/api/memories/{b.id}",
         json={"tenant_id": "t1", "user_id": "u1", "status": "rejected"},
     )
+    assert rejected.status_code == 200
+
+    # The event exists on B, so its absence from A's timeline is meaningful.
+    b_actions = {e["action"] for e in client.get(f"/api/memories/{b.id}/audit{_q()}").json()}
+    assert "memory_rejected" in b_actions
 
     r = client.get(f"/api/memories/{a.id}/audit{_q()}")
     assert r.status_code == 200

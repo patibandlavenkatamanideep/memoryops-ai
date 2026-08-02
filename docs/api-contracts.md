@@ -149,9 +149,42 @@ per-memory `AuditEvent[]`, newest first.
 
 ## PATCH /api/memories/{id}
 Body: `{ tenant_id, user_id, content?, importance?, confidence?, status? }`.
-`status=active` approves a pending memory (or restores an archived one);
-`rejected` rejects; `archived` archives. `404` on a `deleted` memory — deletion is
-terminal. Returns the updated `MemoryRecord`. Emits an audit event.
+Returns the updated `MemoryRecord`. Emits an audit event.
+
+`status` is validated as a **transition**, not just a value — a target is legal only
+from specific current states:
+
+| Current | Requested | Result | Audit action |
+| --- | --- | --- | --- |
+| `pending` | `active` | approve | `memory_approved` |
+| `pending` | `rejected` | reject | `memory_rejected` |
+| `active` | `archived` | archive | `memory_archived` |
+| `archived` | `active` | restore | `memory_restored` |
+| *any* | `deleted` / `pending` / `blocked` | **422** | — |
+| `deleted` | *any* | **404** (deletion is terminal) | — |
+| any other combination | | **409** | — |
+
+`422` means the status is never settable through `PATCH`; `409` means the value is
+settable in general but not from the current state.
+
+**Why this is validated.** `status` previously accepted the whole `Status` enum and
+was assigned directly; the handler's branch chain only named active/rejected/archived,
+so anything else was written verbatim. `status="deleted"` produced a row hidden from
+retrieval (invariant #2) but with `deleted_at = None` — so retention and compaction,
+which key off `deleted_at`, never reclaimed it — with no tombstone, no lineage
+propagation, and only a generic `memory_updated` audit action. **It succeeded even
+under a legal hold**, which `DELETE` correctly refuses with `409`. The row landed in a
+limbo neither the deletion guarantee nor the preservation guarantee covered.
+
+Deletion is exclusive to `DELETE /api/memories/{id}` — the only path performing
+legal-hold verification, `deleted_at` assignment, tombstone creation, lineage
+propagation, deletion audit evidence, and compaction eligibility.
+
+The `status` field is **retained**; this is a behavioural correction for invalid
+transitions, not a field removal, so the `1.x` additive-compatibility promise holds.
+`archived → active` is now audited as `memory_restored` rather than `memory_approved`
+— the old code keyed the action off the target status alone, making a restore
+indistinguishable from an approval.
 
 ## DELETE /api/memories/{id}
 Body: `{ tenant_id, user_id }`. Soft delete: `status=deleted`, `deleted_at=now()`,

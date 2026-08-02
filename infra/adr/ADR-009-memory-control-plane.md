@@ -86,3 +86,50 @@ browser (read views + action buttons)        ← apps/web (v0.5)
 - Provenance is metadata only — embeddings and raw secrets are never serialized.
 - Demo identity (`tenant_demo`/`user_demo`) still comes from `lib/api.ts`; real
   auth/session wiring remains the deployment's responsibility.
+
+## Amendment: status changes are validated as transitions
+
+The control plane exposed `status` on `PATCH /api/memories/{id}` as a free
+assignment over the whole `Status` enum. The handler's branch chain only named
+`active` / `rejected` / `archived`, so any other value was written verbatim.
+
+`status="deleted"` was the consequential case. It produced a row that satisfied the
+*retrieval* half of the deletion guarantee (invariant #2 excludes `deleted` rows)
+while violating everything the deletion workflow exists to provide:
+
+- `deleted_at` stayed null, so retention and compaction — which key off
+  `deleted_at` — never reclaimed the content;
+- no tombstone was stamped, so tombstone lineage (ADR-018) could not propagate the
+  deletion to derived memories;
+- the audit trail recorded a generic `memory_updated`, not `memory_deleted`;
+- and it succeeded **under a legal hold**, which `DELETE` correctly refuses with
+  `409`. A preservation control was defeated by a route that was not attempting to
+  delete.
+
+The record ended in a limbo neither the deletion guarantee nor the preservation
+guarantee covered: invisible to the user, un-compactable by the system, and still
+reported as held by `/api/retention/memory/{id}`.
+
+**Decision.** The control plane validates a *transition* — `(current, requested)` —
+rather than a value. `app/services/status_transitions.py` is the single source of
+truth; the route consults it before any mutation and additionally guards the
+unsupported set so a widened schema cannot reopen the hole. Deletion is exclusive to
+`DELETE /api/memories/{id}`, the only path performing legal-hold verification,
+`deleted_at` assignment, tombstone creation, lineage propagation, deletion audit
+evidence, and compaction eligibility.
+
+`422` marks a status that `PATCH` never supports (`deleted`, `pending`, `blocked`);
+`409` marks one that is legal in general but not from the current state.
+
+**Compatibility.** The `status` field is retained and every transition the UI
+actually issues (approve, reject, archive, restore) is unchanged, so the `1.x`
+additive promise holds. One audit correction: `archived → active` is now
+`memory_restored` rather than `memory_approved` — the previous code keyed the audit
+action off the target status alone, making a restore indistinguishable from an
+approval in the trail.
+
+**Still open.** This closes the illegal-transition breach only. Governed content
+editing (a `content` PATCH still bypasses the policy broker, secret scanning,
+sensitivity reclassification, and leaves the old embedding attached to new content),
+explicit transition endpoints, and API-level RBAC are follow-up work. The demo
+identity note above is superseded by the authenticated BFF control plane.
