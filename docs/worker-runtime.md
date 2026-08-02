@@ -144,9 +144,12 @@ are left for the next replica, and the process exits 0. Verified end to end in t
 
 ## Guarantees (enforced in code + tests)
 
-- **Duplicate runs prevented** by the lease, **including for jobs that outlive the
-  lease TTL** (heartbeat renewal); **never deadlocked** (leases expire).
-- **Lease loss fails closed** — no further mutation once ownership is unprovable.
+- **Normal TTL overlap prevented** — heartbeat-renewed cooperative leases keep a
+  scope exclusive even when its jobs outlive the original TTL; **never deadlocked**
+  (leases expire). This is *not* a guarantee against a paused-then-resumed process:
+  database-enforced fencing remains future work (see the residual risk above).
+- **Lease loss fails closed** — no further mutation once ownership is unprovable,
+  checked between jobs.
 - **Tenant scoped** — explicit scopes only; no unbounded cross-tenant scan.
 - **Failures durable, not fatal** — per-job retry → dead-letter; a bad tick never
   crashes the scheduler; one scope's failure never blocks another.
