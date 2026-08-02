@@ -83,8 +83,9 @@ docker compose up --build
 ## Deployment workflow (Railway-only — v0.3.2)
 
 Deployment target is **Railway only**. Do **not** add or suggest a Vercel path.
-One project (`memoryops-ai`), five services: `memoryops-web`, `memoryops-api`,
-`memoryops-worker`, Railway Postgres (+pgvector), Railway Redis.
+One project (`memoryops-ai`), four services: `memoryops-web`, `memoryops-api`,
+`memoryops-worker`, Railway Postgres (+pgvector). Redis was removed — it was
+declared and health-gated but no runtime code ever read `REDIS_URL`.
 
 - Config-as-code lives in `railway/{api,web,worker}.railway.json`; point each
   Railway service at its file. Builder is `DOCKERFILE`.
@@ -92,8 +93,10 @@ One project (`memoryops-ai`), five services: `memoryops-web`, `memoryops-api`,
   repo root. Full settings + deploy order: `docs/deployment/railway.md`.
 - Env var contract per service: `docs/deployment/railway-env.md`. The system runs
   with **no provider keys** (heuristic LLM + stub embeddings); set
-  `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`, `REDIS_URL` for production, and
-  build-time `NEXT_PUBLIC_API_URL` for web.
+  `MEMORYOPS_PROFILE=production`, `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`,
+  `MEMORYOPS_AUTH_MODE`, `MEMORYOPS_CORS_ALLOW_ORIGINS` for production, and
+  build-time `NEXT_PUBLIC_API_URL` for web. The production profile is fail-closed:
+  missing/unsafe values stop startup rather than degrading silently.
 - After deploy, run `scripts/railway_smoke_test.py` (see
   `docs/deployment/railway-smoke-test.md`).
 - When changing deployment, update `railway/`, the three `docs/deployment/*`
