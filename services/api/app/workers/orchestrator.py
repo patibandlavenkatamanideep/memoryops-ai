@@ -30,10 +30,12 @@ from ..core.logging import get_logger
 from ..db.entities import WorkerRunRecord
 from ..db.repository import Repository
 from ..services.audit import AuditService
+from .heartbeat import LeaseHeartbeat
 from .locks import WorkerLeaseManager, scope_key
 from .retry import RetryPolicy, run_with_retry
 from .runner import run_jobs
 from .schemas import WorkerRunReport, WorkerRunStatus
+from .shutdown import ShutdownSignal
 
 logger = get_logger("memoryops.workers.orchestrator")
 
@@ -43,6 +45,9 @@ RUN_WITH_FINDINGS = WorkerRunStatus.completed_with_findings.value
 RUN_FAILED = WorkerRunStatus.failed.value
 RUN_LOCKED_SKIP = "locked_skip"
 RUN_DEAD_LETTER = "dead_letter"
+# The lease was held at acquire time but could not be renewed while the scope ran,
+# so another replica may now own it. Fail closed and make it observable.
+RUN_LEASE_LOST = "lease_lost"
 
 
 @dataclass(frozen=True)
@@ -72,8 +77,15 @@ def default_owner() -> str:
 
 def _report_status(report: WorkerRunReport) -> str:
     statuses = {r.status for r in report.results}
+    # Most severe first. A job that exhausted its retries outranks a plain failure:
+    # it is replayable work that was given up on, and must not be summarised as a
+    # transient `failed` that something else might pick up.
+    if WorkerRunStatus.dead_letter.value in statuses:
+        return RUN_DEAD_LETTER
     if RUN_FAILED in statuses:
         return RUN_FAILED
+    if WorkerRunStatus.aborted.value in statuses:
+        return RUN_LEASE_LOST
     if RUN_WITH_FINDINGS in statuses:
         return RUN_WITH_FINDINGS
     return RUN_COMPLETED
@@ -87,12 +99,16 @@ class WorkerOrchestrator:
     retry_policy: RetryPolicy | None = None
     audit: AuditService | None = None
     sleep: Callable[[float], None] | None = None
+    # Optional cooperative stop flag (ShutdownSignal). When set, the orchestrator
+    # stops between jobs so a SIGTERM finishes cleanly and releases its lease.
+    shutdown: ShutdownSignal | None = None
 
     def __post_init__(self) -> None:
         s = get_settings()
+        self._lease_ttl_seconds = self.lease_ttl_seconds or s.worker_lease_ttl_seconds
         self._leases = WorkerLeaseManager(
             self.repo,
-            ttl_seconds=self.lease_ttl_seconds or s.worker_lease_ttl_seconds,
+            ttl_seconds=self._lease_ttl_seconds,
             owner=self.owner,
         )
         self._policy = self.retry_policy or RetryPolicy(
@@ -118,27 +134,54 @@ class WorkerOrchestrator:
                 trace_id=trace_id, details={"reason": "lease_held_by_other"},
             )
 
-        try:
-            outcome = run_with_retry(
-                lambda: run_jobs(
-                    self.repo,
-                    tenant_id=scope.tenant_id,
-                    user_id=scope.user_id,
-                    jobs=jobs,
-                    trace_id=trace_id,
-                    now=now,
-                    audit=self._audit,
-                ),
-                self._policy,
-                sleep=self.sleep or time.sleep,
+        # Renew the lease for as long as the scope runs, and fail closed if we ever
+        # cannot prove we still own it. Without this, any scope whose jobs outlived
+        # `worker_lease_ttl_seconds` silently lost exclusivity mid-run and a second
+        # replica could start mutating the same tenant/user (see heartbeat.py).
+        heartbeat = LeaseHeartbeat(
+            self._leases, key, ttl_seconds=self._lease_ttl_seconds
+        )
+        # Stop between jobs on a lost lease OR an operator shutdown request.
+        def _should_abort() -> bool:
+            return heartbeat.lost.is_set() or (
+                self.shutdown is not None and self.shutdown.is_set()
             )
+
+        try:
+            with heartbeat:
+                outcome = run_with_retry(
+                    lambda: run_jobs(
+                        self.repo,
+                        tenant_id=scope.tenant_id,
+                        user_id=scope.user_id,
+                        jobs=jobs,
+                        trace_id=trace_id,
+                        now=now,
+                        audit=self._audit,
+                        # Per-job retry + dead-letter. The outer run_with_retry only
+                        # ever caught orchestration-level raises; lifecycle workers
+                        # return failed results instead of raising, so without this a
+                        # failed job was recorded and then dropped.
+                        retry_policy=self._policy,
+                        sleep=self.sleep or time.sleep,
+                        should_abort=_should_abort,
+                    ),
+                    self._policy,
+                    sleep=self.sleep or time.sleep,
+                )
             if outcome.ok and outcome.value is not None:
                 report = outcome.value
+                status = _report_status(report)
+                details: dict = {"jobs": {r.job: r.status for r in report.results}}
+                if heartbeat.lost.is_set():
+                    status = RUN_LEASE_LOST
+                    details["reason"] = "lease_lost_mid_run"
+                details["lease_renewals"] = heartbeat.renewals
                 return self._record(
-                    scope, jobs, status=_report_status(report),
+                    scope, jobs, status=status,
                     attempts=outcome.attempts, now=now, trace_id=trace_id,
                     report=report,
-                    details={"jobs": {r.job: r.status for r in report.results}},
+                    details=details,
                 )
             # Retries exhausted on a transient fault → dead-letter, never lost.
             logger.warning(
@@ -161,9 +204,25 @@ class WorkerOrchestrator:
         now: datetime | None = None,
         trace_id: str | None = None,
     ) -> list[WorkerRunRecord]:
-        """One scheduling pass over all scopes. Scopes are independent."""
+        """One scheduling pass over all scopes. Scopes are independent.
+
+        A shutdown request stops the pass at a scope boundary: the scope in flight
+        finishes and releases its lease, and the remaining scopes are simply left
+        for the next replica rather than being started and hard-killed mid-write.
+        """
         records: list[WorkerRunRecord] = []
         for scope in scopes:
+            if self.shutdown is not None and self.shutdown.is_set():
+                logger.info(
+                    "shutdown requested; stopping pass at scope boundary",
+                    extra={
+                        "event": "worker_pass_interrupted",
+                        "status": "ok",
+                        "completed_scopes": len(records),
+                        "remaining_scopes": len(scopes) - len(records),
+                    },
+                )
+                break
             records.append(self.run_scope(scope, now=now, trace_id=trace_id))
         return records
 

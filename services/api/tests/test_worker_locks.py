@@ -78,3 +78,37 @@ def test_renew_only_by_owner(repo) -> None:
     assert b.renew("t1:u1", now=NOW) is False
     assert a.renew("t1:u1", now=NOW + timedelta(seconds=30)) is True
     assert repo.get_lease("t1:u1").expires_at == NOW + timedelta(seconds=90)
+
+
+# ── heartbeat renewal (lease held across long work) ──────────────────────────
+# `renew()` existed from v0.8 but nothing ever called it, so a scope whose jobs
+# outlived the TTL silently lost exclusivity mid-run and a second replica could
+# acquire it and mutate the same tenant/user concurrently. Full behavioural
+# coverage in tests/test_worker_reliability.py.
+def test_renewal_keeps_a_scope_locked_past_its_original_ttl(repo) -> None:
+    a = _mgr(repo, "worker-a", ttl=60)
+    b = _mgr(repo, "worker-b", ttl=60)
+    assert a.acquire("t1:u1", now=NOW)
+
+    # Without renewal the lease would be reclaimable at NOW+60.
+    later = NOW + timedelta(seconds=59)
+    assert a.renew("t1:u1", now=later) is True
+
+    # At NOW+90 — past the original expiry — the renewed lease still excludes b.
+    assert b.acquire("t1:u1", now=NOW + timedelta(seconds=90)) is False
+    assert repo.get_lease("t1:u1").owner == "worker-a"
+
+
+def test_renewal_fails_once_another_worker_has_taken_over(repo) -> None:
+    """The signal the heartbeat fails closed on: renew() must not resurrect a lease."""
+    a = _mgr(repo, "worker-a", ttl=30)
+    b = _mgr(repo, "worker-b", ttl=30)
+    a.acquire("t1:u1", now=NOW)
+
+    # a stalls past its TTL; b legitimately reclaims the expired lease.
+    expired = NOW + timedelta(seconds=31)
+    assert b.acquire("t1:u1", now=expired) is True
+
+    # a must now be unable to renew — it no longer owns the scope.
+    assert a.renew("t1:u1", now=expired) is False
+    assert repo.get_lease("t1:u1").owner == "worker-b"

@@ -87,3 +87,27 @@ without the operational risk of destructive index surgery.
   `MEMORYOPS_WORKERS_REFLECTION` toggle.
 - Future work: physical vector compaction / crypto-shred worker, scope
   enumeration for fleet scheduling, and a governed reflection write path.
+
+## Amendment: per-job retry and cooperative abort in the runner
+
+`run_jobs` originally ran each job exactly once and returned the aggregate report,
+relying on the orchestrator's `run_with_retry` for resilience. That split did not
+work: lifecycle workers deliberately **catch their own errors and return a `failed`
+result rather than raising** (so one job never blocks another), which meant the
+orchestration-level retry only ever observed clean returns. A failing job was
+recorded as `failed` and then dropped — never retried, never dead-lettered.
+
+`run_jobs` now accepts an optional `retry_policy` and retries a job whose *returned
+status* is `failed`, marking it `dead_letter` once the budget is exhausted. Findings
+(`completed_with_findings`) are never retried: they are real results, and retrying
+would multiply audit events and mask the finding. The CLI path keeps its
+single-attempt behaviour (no policy passed), so `python -m app.workers.runner`
+semantics are unchanged.
+
+`run_jobs` also accepts `should_abort`, polled before each job. When a scope's lease
+is lost or shutdown is requested, remaining jobs are recorded as `aborted` rather
+than silently omitted, so the gap is visible in run history. This preserves the
+original guarantees — explicit tenant scope, one job never blocking another, the
+policy broker staying authoritative, no resurrection of deleted memory — while
+making failure durable. See ADR-012's amendment, `docs/worker-runtime.md`, and
+`tests/test_worker_reliability.py`.
