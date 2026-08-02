@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ModeBanner from "@/components/ModeBanner";
 import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
@@ -12,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+        <ModeBanner />
         <Nav />
         <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
       </body>
