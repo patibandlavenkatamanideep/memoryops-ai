@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 
 from ..schemas.memory import Sensitivity
 from .admission_gate import AdmissionDecision, AdmissionRecord
+from .effective_sensitivity import effective_sensitivity
 
 # Which sensitivities each audience is cleared to recall.
 _CLEARANCE: dict[str, set[Sensitivity]] = {
@@ -44,17 +45,24 @@ class RecallGate:
         allowed: list[AdmissionRecord] = []
         blocked: list[AdmissionRecord] = []
         for record in admitted:
-            if record.memory.sensitivity in cleared:
+            effective = effective_sensitivity(record.memory)
+            if effective in cleared:
                 allowed.append(record)
             else:
+                stored = record.memory.sensitivity
+                detail = (
+                    f"sensitivity '{effective.value}' exceeds "
+                    f"'{audience}' audience clearance"
+                )
+                if effective is not stored:
+                    # Say so explicitly: the row is labelled `stored` on disk and was
+                    # re-classified at read time.
+                    detail += f" (stored '{stored.value}', re-classified at read time)"
                 blocked.append(
                     replace(
                         record,
                         decision=AdmissionDecision.BLOCK_AUDIENCE,
-                        reason=(
-                            f"sensitivity '{record.memory.sensitivity.value}' exceeds "
-                            f"'{audience}' audience clearance"
-                        ),
+                        reason=detail,
                     )
                 )
         return RecallResult(allowed=allowed, blocked=blocked)

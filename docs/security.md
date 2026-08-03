@@ -332,3 +332,158 @@ turned governance off. Dev is unchanged, so the paper study still runs.
 **This is the guard, not the cure.** The stronger fix is architectural: ship the
 ablation wiring in a separate `memoryops-research` package or application factory so
 a production binary cannot express these states at all. Tracked separately.
+## Sensitivity classification
+
+`app/core/sensitivity.py` performs **deterministic semantic-pattern and structural
+sensitivity classification**. It is not medical, financial, or credential
+*understanding*: there is no ontology, no model, and no inference beyond the rules
+written in that module.
+
+### What it replaced
+
+Classification matched only *structural* patterns — SSN and card digit shapes,
+API-key formats. Semantic disclosures scored `low` and were stored `active`:
+
+| Content | Before | After |
+| --- | --- | --- |
+| `my password is hunter2` | low / active | **blocked, not stored** |
+| `my HIV status is positive` | low / active | high / pending approval |
+| `I take sertraline for depression` | low / active | high / pending approval |
+| `my salary is $250,000` | low / active | high / pending approval |
+
+Every downstream control keys off sensitivity — approval gating, the recall gate's
+audience clearance, the admission gate — so for exactly the categories those
+controls exist to protect, they were inert. A plaintext password was retrievable
+into a `public`-audience response.
+
+### Three separate responsibilities
+
+1. **Detection** — rules emit `SensitivityFinding(category, rule_id, sensitivity,
+   recommended_disposition, confidence)`. Content-free: a finding names *what*
+   matched, never the value.
+2. **Aggregation** — `SensitivityAssessment` applies deterministic precedence:
+   `BLOCK > PENDING_APPROVAL > SAVE`, `high > medium > low`.
+3. **Policy** — the broker decides, applying tenant settings, approval
+   configuration, the governance profile, consent, and temporary-chat behaviour on
+   top. The classifier recommends; it never stores or refuses. This keeps the
+   scanner from becoming a second policy broker.
+
+### Category policy
+
+| Category | Recommended |
+| --- | --- |
+| Password / passcode / PIN / security answer | BLOCK |
+| Recovery code, backup code, seed phrase | BLOCK |
+| API key, token, private key (structural) | BLOCK |
+| Payment card / bank account / routing number | BLOCK |
+| Government identifier (SSN, passport, licence) | BLOCK |
+| Medical: diagnosis, condition, status | high + approval |
+| Mental health: condition, psychiatric medication | high + approval |
+| Financial condition: salary, debt, balance | high + approval |
+| Precise private location: home address | high + approval |
+| Biometric: fingerprint, face template, voiceprint | high + approval |
+| Ordinary preference | low + save |
+
+### A keyword is not a disclosure
+
+Rules require first-person ownership **and** a disclosure verb **and** a value or
+condition, plus a framing guard for questions and educational text. These must not
+classify as sensitive, and are permanent test cases:
+
+```
+I forgot my password                          I use a password manager
+How should password hashing work?             Sertraline is a commonly prescribed medication
+I am reading research about HIV               What is the average software engineer salary?
+This document explains bank routing numbers
+```
+
+### Memory-control instructions store nothing
+
+`do not remember my password`, `forget my salary`, `I don't want you to remember my
+address` are instructions *about* memory, not facts. The correct outcome is **no
+persistent memory** — not a stored high-sensitivity record (which would be the same
+disclosure by another route) and not merely a `BLOCK` verdict.
+
+Two independent guards: the extractor emits no candidate, and the policy broker
+refuses one anyway, so a malformed or LLM-provided extractor cannot store it.
+
+### Both write paths agree
+
+Every positive case is tested through creation **and** through an existing-memory
+content edit. The same content must reach the same classification and disposition
+regardless of how it enters the system — the equivalence the edit path used to
+break.
+
+### Audit evidence
+
+Only `sensitivity_categories`, `sensitivity_rule_ids`, `sensitivity_finding_count`,
+the final sensitivity and disposition, and the policy version. Never the matched
+password, diagnosis, salary, address, or regex excerpt.
+
+### Policy change: government identifiers
+
+`policy_version = content-update-v1`, classifier rules as of this change.
+
+Government identifiers (SSN, passport, driving licence) moved from
+**approval-gated** to **non-storable (BLOCK)**. Previously `my ssn is …` matched the
+structural SSN pattern, scored `medium`, and was stored `pending` awaiting approval;
+it is now refused outright on both the creation and edit paths. Operators who relied
+on approving such records will see them rejected instead of queued.
+
+### Classification is clause-scoped
+
+Framing guards and memory-control detection apply per clause, not per message.
+Whole-message checks let one clause exempt another:
+
+```
+"I am reading research about HIV. My HIV status is positive."      -> was: no findings
+"What is the average software engineer salary? My salary is $250,000."  -> was: no findings
+"Do not remember my password, but remember that I prefer dark mode."    -> was: stored nothing
+```
+
+The educational clause now exempts only itself, and only the memory-control clause
+is stripped before extraction — the unrelated preference survives.
+
+`forget my X` is distinguished from `do not remember my X`: the first is a request
+to remove *existing* memory, the second only prevents new persistence. Both suppress
+a new candidate. Routing the first into the governed forget workflow (legal hold,
+`deleted_at`, tombstone, lineage, deletion audit) is follow-up work and deliberately
+not done here — deleting on a chat phrase would be a destructive action taken
+outside the deletion path's guarantees.
+
+### Rows stored before the classifier existed
+
+Classification runs at write time, so a row already stored `low`/`active` keeps its
+label — the protection would otherwise apply only to content entering after deploy.
+A pre-existing credential row was verified to still reach a `public`-audience
+response with its full source excerpt.
+
+The read path therefore combines the stored label with a current classification and
+uses whichever is **higher** (`app/services/effective_sensitivity.py`). It only ever
+raises: an operator's explicit `high` is never lowered because the rules happen not
+to match.
+
+This is deliberately **not** a write. Reads must not mutate rows — that would turn
+every query into a write, produce audit events with no actor, and race with
+concurrent edits. Persisting the corrected label with audit evidence belongs to a
+reclassification worker.
+
+A memory withheld for audience clearance now returns **no content preview and no
+source excerpt** in the trace; echoing them would disclose exactly what the gate
+withheld.
+
+### Memory-control drops are distinguishable
+
+A memory-control instruction is dropped with `reason_code=memory_control_instruction`,
+distinct from a genuine `low_utility` drop. "Not a memory at all" and "a valid memory
+of low utility" are different outcomes, and conflating them would skew utility
+metrics and error analysis. A dedicated decision value
+(`IGNORE_MEMORY_CONTROL` / `DROP_NOT_MEMORY`) is the right long-term shape and is
+tracked separately; the reason code keeps the vocabulary additive meanwhile.
+
+### Limits, stated plainly
+
+Pattern rules miss paraphrase, other languages, obfuscation, and unusual phrasing.
+**A rule that fires is high-confidence; silence is not evidence of safety.**
+Broadening recall belongs with evaluation evidence, not with more unreviewed
+regexes. This is not comprehensive medical, financial, or credential understanding.

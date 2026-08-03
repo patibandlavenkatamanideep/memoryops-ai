@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from ..core.config import get_settings as get_app_settings
 from ..core.redaction import scan
+from ..core.sensitivity import BLOCK, is_memory_control_instruction
 from ..db.entities import StoredSettings
 from ..db.repository import Repository
 from ..schemas.memory import CandidateMemory, Decision, Sensitivity
@@ -22,10 +23,23 @@ class PolicyOutcome:
     candidate: CandidateMemory
     reason: str
     existing_id: str | None = None
+    #: Stable machine-readable reason, additive alongside the human `reason`.
+    #: `memory_control_instruction` distinguishes "this was never a memory" from a
+    #: genuine low-utility drop — reusing DROP_LOW_UTILITY for both would
+    #: contaminate utility metrics and error analysis. A dedicated Decision value
+    #: (IGNORE_MEMORY_CONTROL / DROP_NOT_MEMORY) is the right long-term shape and is
+    #: tracked separately; this keeps the vocabulary additive for now.
+    reason_code: str | None = None
 
 
 # Below this importance an inferred memory is noise.
 _MIN_IMPORTANCE = 4
+
+#: Reason code for a memory-control instruction. Metrics over low-utility drops must
+#: exclude this: "not a memory at all" and "a valid memory of low utility" are
+#: different outcomes, and conflating them skews utility analysis.
+REASON_MEMORY_CONTROL = "memory_control_instruction"
+REASON_LOW_UTILITY = "low_utility"
 
 
 class PolicyBroker:
@@ -51,11 +65,32 @@ class PolicyBroker:
         scan_result = scan(candidate.content)
 
         # 1) Hard safety rules (deterministic, verifiable) — governance enforcement.
+        # A memory-control instruction ("do not remember my password") is not a fact.
+        # The extractor already declines to emit a candidate for it; this is the
+        # independent second guard, so a malformed or LLM-provided extractor that
+        # emits one anyway still cannot store it. DROP, not BLOCK: there was never a
+        # candidate here worth recording as a refusal.
+        if is_memory_control_instruction(candidate.content):
+            return PolicyOutcome(
+                Decision.DROP_LOW_UTILITY,
+                candidate,
+                "dropped: memory-control instruction, not a fact to store",
+                reason_code=REASON_MEMORY_CONTROL,
+            )
         if enforce and scan_result.has_secret:
             return PolicyOutcome(
                 Decision.BLOCK,
                 candidate,
                 f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
+            )
+        if enforce and scan_result.assessment.recommended_disposition == BLOCK:
+            # A disclosed credential the structural patterns cannot see — e.g.
+            # "my password is …", which has no key-like shape.
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                "blocked: disclosed credential or identifier "
+                f"({', '.join(scan_result.assessment.categories)})",
             )
         if enforce and scan_result.injection:
             return PolicyOutcome(
@@ -88,6 +123,7 @@ class PolicyBroker:
                 Decision.DROP_LOW_UTILITY,
                 candidate,
                 f"dropped: importance {candidate.importance} below threshold {_MIN_IMPORTANCE}",
+                reason_code=REASON_LOW_UTILITY,
             )
 
         # 5) Sensitive content gated behind approval — governance enforcement.
@@ -139,6 +175,13 @@ class PolicyBroker:
                 Decision.BLOCK,
                 candidate,
                 f"blocked: secret-like content detected ({', '.join(scan_result.secret_labels)})",
+            )
+        if enforce and scan_result.assessment.recommended_disposition == BLOCK:
+            return PolicyOutcome(
+                Decision.BLOCK,
+                candidate,
+                "blocked: disclosed credential or identifier "
+                f"({', '.join(scan_result.assessment.categories)})",
             )
         if enforce and scan_result.injection:
             return PolicyOutcome(
