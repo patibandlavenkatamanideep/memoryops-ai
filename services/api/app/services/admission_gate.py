@@ -83,13 +83,23 @@ class AdmissionRecord:
 
     def to_trace_entry(self) -> MemoryTraceEntry:
         m = self.memory
-        content = m.content or ""
-        preview = content[:_PREVIEW_CHARS] + ("…" if len(content) > _PREVIEW_CHARS else "")
+        # A memory withheld because the audience lacks clearance must not have its
+        # content handed back in the trace — echoing a 160-character preview plus
+        # the full source excerpt would disclose exactly what the gate withheld.
+        # (This covers the audience verdict only; broader blocked-trace
+        # minimisation for every BLOCK_* reason is separate, tracked work.)
+        if self.decision is AdmissionDecision.BLOCK_AUDIENCE:
+            preview = ""
+            source = None
+        else:
+            content = m.content or ""
+            preview = content[:_PREVIEW_CHARS] + ("…" if len(content) > _PREVIEW_CHARS else "")
+            source = m.source
         return MemoryTraceEntry(
             memory_id=m.id,
             memory_type=m.memory_type,
             content_preview=preview,
-            source=m.source,
+            source=source,
             stored_at=m.created_at,
             status=m.status,
             sensitivity=m.sensitivity,

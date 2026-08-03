@@ -355,3 +355,259 @@ def test_two_concurrent_sensitive_edits_yield_one_winner(api_client):
     after = repo.get_memory("t1", "u1", m.id)
     assert after.status is Status.pending
     assert after.revision == start + 1
+
+
+# ── review edge cases ────────────────────────────────────────────────────────
+# The 73 cases above classify whole, single-clause messages. These cover the four
+# gaps found in review: mixed clauses, mixed instructions, pre-existing rows, and
+# evidence parity between the two write paths.
+
+
+# 1. An educational clause must not exempt a separate disclosure clause.
+@pytest.mark.parametrize(
+    ("text", "category"),
+    [
+        ("I am reading research about HIV. My HIV status is positive.", "medical"),
+        ("What is the average software engineer salary? My salary is $250,000.", "financial"),
+        (
+            "Sertraline is a commonly prescribed medication. I take sertraline for depression.",
+            "mental_health",
+        ),
+        ("How should password hashing work? My password is hunter2.", "credential"),
+        ("This document explains routing numbers; my bank balance is $18,400.", "financial"),
+    ],
+)
+def test_an_educational_clause_does_not_exempt_a_disclosure_clause(text, category):
+    a = classify(text)
+    assert a.findings, f"whole-message framing suppressed a real disclosure: {text}"
+    assert category in a.categories
+
+
+def test_a_wholly_educational_message_is_still_clean():
+    """The clause fix must not turn the framing guard off."""
+    for text in NEGATIVE_CASES:
+        assert not classify(text).findings, text
+
+
+# 2. A memory-control clause must not suppress a legitimate fact beside it.
+def test_a_memory_control_clause_does_not_suppress_an_unrelated_fact(api_client):
+    client, repo = api_client
+    r = client.post(
+        "/api/chat",
+        json={
+            "tenant_id": "t1",
+            "user_id": "u1",
+            "message": "Do not remember my password, but remember that I prefer dark mode.",
+        },
+    )
+    assert r.status_code == 200
+
+    stored = repo.list_memories("t1", "u1")
+    assert stored, "the whole message was discarded, losing a legitimate preference"
+    blob = " ".join(m.content.lower() for m in stored)
+    assert "dark mode" in blob
+    assert "password" not in blob, "the credential clause was stored"
+
+
+def test_strip_leaves_only_the_non_instruction_clauses():
+    from app.core.sensitivity import strip_memory_control_clauses
+
+    remainder = strip_memory_control_clauses(
+        "Do not remember my password, but remember that I prefer dark mode."
+    )
+    assert "dark mode" in remainder
+    assert "password" not in remainder
+
+
+def test_forget_is_distinguished_from_do_not_remember():
+    """`forget my salary` asks to remove existing memory; `do not remember my
+    salary` only prevents new persistence. Both suppress a new candidate, but the
+    distinction has to exist before the forget workflow can use it."""
+    from app.core.sensitivity import is_forget_request
+
+    assert is_forget_request("forget my salary")
+    assert not is_forget_request("do not remember my salary")
+    # Both are still memory-control, so neither creates a memory.
+    assert is_memory_control_instruction("forget my salary")
+    assert is_memory_control_instruction("do not remember my salary")
+
+
+def test_forget_does_not_silently_delete_existing_memory(api_client):
+    """Deliberate: a chat phrase must not perform a destructive action outside the
+    governed deletion workflow (legal hold, deleted_at, tombstone, lineage, audit)."""
+    client, repo = api_client
+    m = _seed(repo, content="my salary is $250,000")
+
+    client.post(
+        "/api/chat",
+        json={"tenant_id": "t1", "user_id": "u1", "message": "forget my salary"},
+    )
+
+    after = repo.get_memory("t1", "u1", m.id)
+    assert after is not None and after.status is not Status.deleted
+    assert after.deleted_at is None
+
+
+# 3. Rows stored before the classifier existed are gated at read time.
+def test_a_pre_upgrade_low_active_credential_row_is_withheld(api_client):
+    """#103 classifies at write time. A row already stored `low`/`active` keeps its
+    label, so without read-time re-classification the headline fix would apply only
+    to content entering after deploy."""
+    client, repo = api_client
+    repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="my password is hunter2",
+            importance=8,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,  # as stored before the classifier existed
+            status=Status.active,
+            source=Source(kind="chat", excerpt="my password is hunter2"),
+        )
+    )
+
+    r = client.post(
+        "/api/chat",
+        json={
+            "tenant_id": "t1",
+            "user_id": "u1",
+            "message": "what is my password?",
+            "audience": "public",
+        },
+    )
+    assert r.status_code == 200
+    trace = r.json().get("trace") or {}
+
+    assert trace.get("memories_used") == [], "a pre-upgrade credential row entered context"
+
+    body = r.json()
+    assert "hunter2" not in str(body), "the withheld value was returned anyway"
+    for entry in trace.get("memories_blocked", []):
+        assert entry["content_preview"] == "", "a withheld memory returned a content preview"
+        assert entry.get("source") in (None, {}), "a withheld memory returned its source excerpt"
+
+
+def test_read_time_classification_never_lowers_a_stored_label(api_client):
+    """Only ever raises: an operator's `high` is not undone by pattern silence."""
+    from app.services.effective_sensitivity import effective_sensitivity
+
+    _client, repo = api_client
+    m = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="prefers dark mode dashboards",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.high,  # deliberately labelled by an operator
+            status=Status.active,
+            source=Source(kind="chat", excerpt="prefers dark mode dashboards"),
+        )
+    )
+    assert effective_sensitivity(m) is Sensitivity.high
+
+
+def test_read_time_classification_does_not_mutate_the_row(api_client):
+    """Reads must not write: it would produce audit events with no actor and race
+    with concurrent edits. Persisting belongs to a reclassification worker."""
+    from app.services.effective_sensitivity import effective_sensitivity
+
+    _client, repo = api_client
+    m = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="my password is hunter2",
+            importance=8,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="my password is hunter2"),
+        )
+    )
+    assert effective_sensitivity(m) is Sensitivity.high
+    assert repo.get_memory("t1", "u1", m.id).sensitivity is Sensitivity.low
+    assert repo.get_memory("t1", "u1", m.id).revision == m.revision
+
+
+# 4. Creation and edit produce the same evidence vocabulary.
+def test_creation_audit_carries_the_same_classification_evidence_as_an_edit(api_client):
+    client, repo = api_client
+    r = client.post(
+        "/api/chat",
+        json={
+            "tenant_id": "t1",
+            "user_id": "u1",
+            "message": "Remember: my salary is $250,000.",
+        },
+    )
+    assert r.status_code == 200
+    stored = repo.list_memories("t1", "u1")
+    assert stored
+
+    events = client.get(f"/api/memories/{stored[0].id}/audit{_Q}").json()
+    # A sensitive creation is audited as `memory_pending_approval`, a benign one as
+    # `memory_created`; both are creation-path events and must carry the evidence.
+    created = next(
+        e for e in events if e["action"] in ("memory_created", "memory_pending_approval")
+    )
+    meta = created["metadata"]
+    for key in (
+        "sensitivity_categories",
+        "sensitivity_rule_ids",
+        "sensitivity_finding_count",
+    ):
+        assert key in meta, f"creation audit is missing {key} (edits record it)"
+    assert "financial" in meta["sensitivity_categories"]
+    assert "250,000" not in str(meta), "creation audit leaked the matched value"
+
+
+# 5. Memory-control drops are distinguishable from genuine low-utility drops.
+def test_memory_control_drop_carries_a_distinct_reason_code(repo):
+    """Reusing DROP_LOW_UTILITY for both would contaminate utility metrics:
+    'not a memory' and 'a valid memory of low utility' are different outcomes."""
+    from app.db.entities import StoredSettings
+    from app.schemas.memory import CandidateMemory
+    from app.services.policy_broker import (
+        REASON_LOW_UTILITY,
+        REASON_MEMORY_CONTROL,
+        PolicyBroker,
+    )
+
+    settings = StoredSettings(tenant_id="t1", user_id="u1")
+    broker = PolicyBroker(repo)
+
+    control = broker.evaluate(
+        CandidateMemory(
+            content="do not remember my password",
+            type=MemoryType.preference,
+            sensitivity=Sensitivity.low,
+            importance=9,
+            confidence=0.95,
+            reason="x",
+        ),
+        tenant_id="t1",
+        user_id="u1",
+        settings=settings,
+    )
+    assert control.reason_code == REASON_MEMORY_CONTROL
+
+    trivial = broker.evaluate(
+        CandidateMemory(
+            content="the sky is sometimes blue",
+            type=MemoryType.preference,
+            sensitivity=Sensitivity.low,
+            importance=1,
+            confidence=0.5,
+            reason="x",
+        ),
+        tenant_id="t1",
+        user_id="u1",
+        settings=settings,
+    )
+    assert trivial.reason_code == REASON_LOW_UTILITY
+    assert control.reason_code != trivial.reason_code

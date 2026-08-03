@@ -8,12 +8,29 @@ Every path records provenance (invariant #3) and an audit event (invariant #7).
 from __future__ import annotations
 
 from ..core.embeddings import embed
+from ..core.redaction import scan
 from ..core.reliability import safe_call
 from ..db.entities import StoredMemory
 from ..db.repository import Repository
 from ..schemas.memory import CandidateDecision, Decision, Status
 from .audit import AuditService
 from .policy_broker import PolicyOutcome
+
+
+def _classification_evidence(content: str) -> dict:
+    """Content-free classification evidence for a creation audit event.
+
+    Mirrors the governed edit path (`update_service`) so creation and editing
+    produce the same evidence vocabulary — otherwise the audit trail explains one
+    write path and not the other. Category and rule identifiers only: never the
+    matched password, diagnosis, salary, address, or regex excerpt.
+    """
+    assessment = scan(content).assessment
+    return {
+        "sensitivity_categories": list(assessment.categories),
+        "sensitivity_rule_ids": list(assessment.rule_ids),
+        "sensitivity_finding_count": len(assessment.findings),
+    }
 
 # Map a decision to its audit action verb.
 _AUDIT_ACTION = {
@@ -94,7 +111,16 @@ class WriteService:
                 action=_AUDIT_ACTION[decision],
                 reason=outcome.reason,
                 trace_id=trace_id,
-                metadata={"type": cand.type.value, "sensitivity": cand.sensitivity.value},
+                metadata={
+                    "type": cand.type.value,
+                    "sensitivity": cand.sensitivity.value,
+                    # Same content-free classification vocabulary as the governed
+                    # edit path (update_service): creation and editing must produce
+                    # comparable evidence, or the trail explains one path and not
+                    # the other. Category and rule identifiers only — never the
+                    # matched password, diagnosis, salary, address, or excerpt.
+                    **_classification_evidence(cand.content),
+                },
             )
             audit_ids.append(event.id)
 

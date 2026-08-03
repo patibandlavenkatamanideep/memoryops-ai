@@ -23,10 +23,23 @@ class PolicyOutcome:
     candidate: CandidateMemory
     reason: str
     existing_id: str | None = None
+    #: Stable machine-readable reason, additive alongside the human `reason`.
+    #: `memory_control_instruction` distinguishes "this was never a memory" from a
+    #: genuine low-utility drop — reusing DROP_LOW_UTILITY for both would
+    #: contaminate utility metrics and error analysis. A dedicated Decision value
+    #: (IGNORE_MEMORY_CONTROL / DROP_NOT_MEMORY) is the right long-term shape and is
+    #: tracked separately; this keeps the vocabulary additive for now.
+    reason_code: str | None = None
 
 
 # Below this importance an inferred memory is noise.
 _MIN_IMPORTANCE = 4
+
+#: Reason code for a memory-control instruction. Metrics over low-utility drops must
+#: exclude this: "not a memory at all" and "a valid memory of low utility" are
+#: different outcomes, and conflating them skews utility analysis.
+REASON_MEMORY_CONTROL = "memory_control_instruction"
+REASON_LOW_UTILITY = "low_utility"
 
 
 class PolicyBroker:
@@ -62,6 +75,7 @@ class PolicyBroker:
                 Decision.DROP_LOW_UTILITY,
                 candidate,
                 "dropped: memory-control instruction, not a fact to store",
+                reason_code=REASON_MEMORY_CONTROL,
             )
         if enforce and scan_result.has_secret:
             return PolicyOutcome(
@@ -109,6 +123,7 @@ class PolicyBroker:
                 Decision.DROP_LOW_UTILITY,
                 candidate,
                 f"dropped: importance {candidate.importance} below threshold {_MIN_IMPORTANCE}",
+                reason_code=REASON_LOW_UTILITY,
             )
 
         # 5) Sensitive content gated behind approval — governance enforcement.

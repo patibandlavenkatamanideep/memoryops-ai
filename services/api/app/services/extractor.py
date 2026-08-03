@@ -11,7 +11,7 @@ no network — and the policy broker still runs after this and stays authoritati
 
 from __future__ import annotations
 
-from ..core.sensitivity import is_memory_control_instruction
+from ..core.sensitivity import strip_memory_control_clauses
 from ..llm import get_llm_provider
 from ..llm.base import LLMProvider
 from ..llm.intelligence import extract_memories
@@ -30,12 +30,16 @@ class Extractor:
             return []
 
         # "do not remember my password" is an instruction *about* memory, not a fact
-        # to store. Emitting a candidate for it and then blocking would be the wrong
-        # shape: the correct outcome is that no memory is ever created, and storing
-        # the sentence as a high-sensitivity record would be the same disclosure by
-        # another route. The policy broker repeats this check independently, so an
-        # LLM extractor that emits a candidate anyway still cannot store it.
-        if is_memory_control_instruction(text):
+        # to store: the correct outcome is that no memory is created, since storing
+        # the sentence would be the same disclosure by another route.
+        #
+        # Only the instruction *clause* is removed, not the whole turn. Discarding
+        # the entire message suppressed legitimate facts stated alongside it —
+        # "Do not remember my password, but remember that I prefer dark mode."
+        # stored nothing at all. The policy broker repeats the check per candidate,
+        # so an LLM extractor that emits one anyway still cannot store it.
+        text = strip_memory_control_clauses(text)
+        if not text:
             return []
 
         outcome = extract_memories(self._provider, text)

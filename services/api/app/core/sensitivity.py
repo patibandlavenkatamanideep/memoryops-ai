@@ -113,6 +113,31 @@ def _is_educational(text: str) -> bool:
     return any(p.search(text) for p in _EDUCATIONAL_FRAMING)
 
 
+# Sentence terminators, semicolons, and contrastive conjunctions. Clauses are the
+# unit of classification: an educational or memory-control clause must not exempt a
+# *separate* disclosure clause in the same message.
+_CLAUSE_SPLIT = re.compile(
+    r"(?<=[.!?])\s+"                      # sentence boundary
+    r"|\s*;\s*"                           # semicolon
+    r"|,\s+(?=but\b|however\b|although\b|though\b)",  # contrastive comma
+    re.IGNORECASE,
+)
+
+
+def split_clauses(text: str) -> list[str]:
+    """Split into clauses for independent classification.
+
+    Classifying the whole message at once let one clause exempt another:
+
+        "I am reading research about HIV. My HIV status is positive."
+        "What is the average software engineer salary? My salary is $250,000."
+
+    The educational framing matched somewhere in the text, so the entire message
+    returned an empty assessment and the real disclosure went unclassified.
+    """
+    return [c.strip() for c in _CLAUSE_SPLIT.split(text) if c and c.strip()]
+
+
 # ── rules ────────────────────────────────────────────────────────────────────
 # Each rule requires first-person ownership AND a disclosure verb AND a value or
 # condition, so a bare keyword cannot trigger it. `\b` boundaries throughout so
@@ -320,21 +345,27 @@ def classify(text: str) -> SensitivityAssessment:
     if not text or not text.strip():
         return SensitivityAssessment()
 
-    # A question or a description of a topic is not a disclosure about the speaker.
-    if _is_educational(text):
-        return SensitivityAssessment()
-
+    # Per clause: a question or topic description is not a disclosure about the
+    # speaker, but it only exempts *itself*. Whole-message framing checks let
+    # "I am reading research about HIV. My HIV status is positive." pass as safe.
     findings: list[SensitivityFinding] = []
-    for category, rule_id, sensitivity, disposition, pattern in _RULES:
-        if pattern.search(text):
-            findings.append(
-                SensitivityFinding(
-                    category=category,
-                    rule_id=rule_id,
-                    sensitivity=sensitivity,
-                    recommended_disposition=disposition,
+    seen_rules: set[str] = set()
+    for clause in split_clauses(text) or [text]:
+        if _is_educational(clause):
+            continue
+        for category, rule_id, sensitivity, disposition, pattern in _RULES:
+            if rule_id in seen_rules:
+                continue
+            if pattern.search(clause):
+                seen_rules.add(rule_id)
+                findings.append(
+                    SensitivityFinding(
+                        category=category,
+                        rule_id=rule_id,
+                        sensitivity=sensitivity,
+                        recommended_disposition=disposition,
+                    )
                 )
-            )
 
     if not findings:
         return SensitivityAssessment()
@@ -371,11 +402,54 @@ _MEMORY_CONTROL = [
 ]
 
 
-def is_memory_control_instruction(text: str) -> bool:
-    """True when the text asks the assistant *not* to remember (or to forget).
+# `forget my X` / `delete my X` asks to remove something already stored — a
+# *deletion* request, distinct from `do not remember my X`, which only prevents new
+# persistence. Both suppress a new candidate; only the first should eventually
+# invoke the governed forget workflow. Separated here so that distinction is
+# available rather than conflated.
+_FORGET_REQUEST = re.compile(
+    r"\b(?:forget|erase|delete|remove)\b[^.?!]{0,30}?\bmy\b", re.IGNORECASE
+)
 
-    Used by the extractor to produce no candidate at all. The policy broker applies
-    the same check independently, so a malformed or LLM-provided extractor that
-    emits a candidate anyway still cannot store it.
+
+def is_memory_control_instruction(text: str) -> bool:
+    """True when *any clause* asks the assistant not to remember (or to forget).
+
+    Clause-scoped for the same reason as `classify`: whole-message matching let one
+    instruction suppress an unrelated fact in the same turn.
     """
-    return any(p.search(text) for p in _MEMORY_CONTROL)
+    return any(_clause_is_memory_control(c) for c in (split_clauses(text) or [text]))
+
+
+def _clause_is_memory_control(clause: str) -> bool:
+    return any(p.search(clause) for p in _MEMORY_CONTROL)
+
+
+def is_forget_request(text: str) -> bool:
+    """True for `forget my salary` — a request to remove *existing* memory.
+
+    Distinct from `do not remember my salary`, which only prevents new persistence.
+    This currently suppresses the new candidate like any other memory-control
+    instruction; routing it into the governed forget workflow (legal hold,
+    `deleted_at`, tombstone, lineage, deletion audit) is follow-up work and is
+    deliberately **not** done here — silently deleting on a chat phrase would be a
+    destructive action taken without the deletion path's guarantees.
+    """
+    return any(_FORGET_REQUEST.search(c) for c in (split_clauses(text) or [text]))
+
+
+def strip_memory_control_clauses(text: str) -> str:
+    """Return the text with memory-control clauses removed.
+
+    Discarding the whole message suppressed legitimate facts stated alongside an
+    instruction:
+
+        "Do not remember my password, but remember that I prefer dark mode."
+
+    Only the instruction clause is dropped; the preference survives to extraction.
+    """
+    clauses = split_clauses(text)
+    if not clauses:
+        return "" if _clause_is_memory_control(text) else text
+    kept = [c for c in clauses if not _clause_is_memory_control(c)]
+    return " ".join(kept).strip()

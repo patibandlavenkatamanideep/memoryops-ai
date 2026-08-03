@@ -420,6 +420,67 @@ Only `sensitivity_categories`, `sensitivity_rule_ids`, `sensitivity_finding_coun
 the final sensitivity and disposition, and the policy version. Never the matched
 password, diagnosis, salary, address, or regex excerpt.
 
+### Policy change: government identifiers
+
+`policy_version = content-update-v1`, classifier rules as of this change.
+
+Government identifiers (SSN, passport, driving licence) moved from
+**approval-gated** to **non-storable (BLOCK)**. Previously `my ssn is …` matched the
+structural SSN pattern, scored `medium`, and was stored `pending` awaiting approval;
+it is now refused outright on both the creation and edit paths. Operators who relied
+on approving such records will see them rejected instead of queued.
+
+### Classification is clause-scoped
+
+Framing guards and memory-control detection apply per clause, not per message.
+Whole-message checks let one clause exempt another:
+
+```
+"I am reading research about HIV. My HIV status is positive."      -> was: no findings
+"What is the average software engineer salary? My salary is $250,000."  -> was: no findings
+"Do not remember my password, but remember that I prefer dark mode."    -> was: stored nothing
+```
+
+The educational clause now exempts only itself, and only the memory-control clause
+is stripped before extraction — the unrelated preference survives.
+
+`forget my X` is distinguished from `do not remember my X`: the first is a request
+to remove *existing* memory, the second only prevents new persistence. Both suppress
+a new candidate. Routing the first into the governed forget workflow (legal hold,
+`deleted_at`, tombstone, lineage, deletion audit) is follow-up work and deliberately
+not done here — deleting on a chat phrase would be a destructive action taken
+outside the deletion path's guarantees.
+
+### Rows stored before the classifier existed
+
+Classification runs at write time, so a row already stored `low`/`active` keeps its
+label — the protection would otherwise apply only to content entering after deploy.
+A pre-existing credential row was verified to still reach a `public`-audience
+response with its full source excerpt.
+
+The read path therefore combines the stored label with a current classification and
+uses whichever is **higher** (`app/services/effective_sensitivity.py`). It only ever
+raises: an operator's explicit `high` is never lowered because the rules happen not
+to match.
+
+This is deliberately **not** a write. Reads must not mutate rows — that would turn
+every query into a write, produce audit events with no actor, and race with
+concurrent edits. Persisting the corrected label with audit evidence belongs to a
+reclassification worker.
+
+A memory withheld for audience clearance now returns **no content preview and no
+source excerpt** in the trace; echoing them would disclose exactly what the gate
+withheld.
+
+### Memory-control drops are distinguishable
+
+A memory-control instruction is dropped with `reason_code=memory_control_instruction`,
+distinct from a genuine `low_utility` drop. "Not a memory at all" and "a valid memory
+of low utility" are different outcomes, and conflating them would skew utility
+metrics and error analysis. A dedicated decision value
+(`IGNORE_MEMORY_CONTROL` / `DROP_NOT_MEMORY`) is the right long-term shape and is
+tracked separately; the reason code keeps the vocabulary additive meanwhile.
+
 ### Limits, stated plainly
 
 Pattern rules miss paraphrase, other languages, obfuscation, and unusual phrasing.

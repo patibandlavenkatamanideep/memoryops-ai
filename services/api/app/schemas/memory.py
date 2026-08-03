@@ -116,8 +116,11 @@ class MemoryTraceEntry(BaseModel):
 
     memory_id: str
     memory_type: MemoryType
+    #: Empty when the memory was withheld for audience clearance — echoing the
+    #: preview would disclose exactly what the gate withheld.
     content_preview: str
-    source: Source
+    #: ``None`` for the same reason: the source excerpt carries the raw text.
+    source: Source | None = None
     stored_at: datetime
     status: Status
     sensitivity: Sensitivity
