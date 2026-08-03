@@ -146,16 +146,25 @@ def parse_roles(raw: object) -> frozenset[Role]:
 
 
 def resolve_roles(raw: object) -> tuple[frozenset[Role], bool]:
-    """Return `(roles, claim_present)` so callers can tell the three states apart.
+    """Return `(roles, claim_present)` so callers can tell the four states apart.
 
-    * claim absent            -> `(frozenset(), False)`
+    * claim omitted           -> `(frozenset(), False)`  — compatibility fallback
     * claim valid             -> `(roles, True)`
-    * claim present, invalid  -> `(frozenset(), True)`
+    * claim present, invalid  -> `(frozenset(), True)`   — zero permissions
+    * claim present, empty    -> `(frozenset(), True)`   — zero permissions
 
-    The third case must not fall back to a default role.
+    Presence is `raw is not None` and nothing more. Treating `[]` and `""` as
+    absent conflated two different statements: an issuer that deliberately grants a
+    credential **no roles** was indistinguishable from an older credential that
+    predates roles entirely, so an explicitly empty role set silently received the
+    `memory_reader` fallback — `memory:read:self` and `memory:write:self` for an
+    identity the issuer said should have nothing.
+
+    An omitted claim is a *compatibility* question the deployment answers
+    (`auth_require_role_claim`). An empty claim is an *authorization decision the
+    issuer already made*, and must be honoured.
     """
-    present = raw is not None and raw != "" and raw != []
-    return parse_roles(raw), present
+    return parse_roles(raw), raw is not None
 
 
 def permissions_for(roles: frozenset[Role]) -> frozenset[Permission]:

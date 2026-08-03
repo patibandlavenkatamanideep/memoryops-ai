@@ -262,14 +262,9 @@ def test_a_role_claim_naming_nothing_recognised_grants_nothing():
     assert not p.has(Permission.MEMORY_READ_SELF)
 
 
-def test_resolve_roles_distinguishes_absent_from_invalid():
-    from app.auth.roles import resolve_roles
-
-    assert resolve_roles(None) == (frozenset(), False)
-    assert resolve_roles("") == (frozenset(), False)
-    assert resolve_roles([]) == (frozenset(), False)
-    assert resolve_roles("auditor") == (frozenset({Role.AUDITOR}), True)
-    assert resolve_roles("nonsense") == (frozenset(), True)
+# NOTE: an earlier two-state version of this test asserted that "" and [] were
+# *absent*. That is the behaviour this change corrects, so it is superseded by
+# `test_presence_distinguishes_all_four_states` below rather than kept alongside it.
 
 
 def test_a_missing_claim_can_be_required_instead_of_defaulted():
@@ -345,3 +340,74 @@ def test_authorization_is_a_no_op_when_auth_is_disabled(api_client):
     client, _repo = api_client
     assert client.get("/api/audit?tenant_id=t1").status_code == 200
     assert client.get("/api/metrics?tenant_id=t1").status_code == 200
+
+
+# ── an explicitly empty role claim is a decision, not an absence ─────────────
+# Presence was `raw is not None and raw != "" and raw != []`, so an issuer that
+# deliberately granted a credential *no roles* was indistinguishable from an older
+# credential that predates roles entirely. The empty set silently received the
+# `memory_reader` fallback — memory:read:self and memory:write:self for an identity
+# the issuer said should have nothing.
+def _principal(raw):
+    from app.auth.principal import Principal
+    from app.auth.roles import resolve_roles
+
+    roles, present = resolve_roles(raw)
+    return Principal(
+        tenant_id="t", user_id="u", provider="jwt",
+        roles=roles, role_claim_present=present,
+    )
+
+
+@pytest.mark.parametrize("empty", [[], "", (), frozenset()])
+def test_an_explicitly_empty_role_claim_grants_nothing(empty):
+    p = _principal(empty)
+    assert p.effective_roles == frozenset()
+    assert p.permissions == frozenset()
+    assert not p.has(Permission.MEMORY_READ_SELF)
+    assert not p.has(Permission.MEMORY_WRITE_SELF)
+
+
+def test_an_omitted_claim_still_falls_back_where_permitted():
+    """Omission is a compatibility question the deployment answers; emptiness is an
+    authorization decision the issuer already made."""
+    p = _principal(None)
+    assert p.effective_roles == frozenset({DEFAULT_ROLE})
+    assert p.has(Permission.MEMORY_READ_SELF)
+
+
+def test_presence_distinguishes_all_four_states():
+    from app.auth.roles import resolve_roles
+
+    assert resolve_roles(None) == (frozenset(), False)          # omitted
+    assert resolve_roles([]) == (frozenset(), True)             # present, empty
+    assert resolve_roles("") == (frozenset(), True)             # present, empty
+    assert resolve_roles("auditor") == (frozenset({Role.AUDITOR}), True)
+    assert resolve_roles("nonsense") == (frozenset(), True)     # present, invalid
+
+
+def test_a_trusted_header_present_but_empty_grants_nothing():
+    from app.auth.providers import TrustedHeaderProvider
+
+    provider = TrustedHeaderProvider(
+        "X-MemoryOps-Tenant", "X-MemoryOps-User", "X-MemoryOps-Roles"
+    )
+    absent = provider.resolve({"x-memoryops-tenant": "t", "x-memoryops-user": "u"})
+    assert absent is not None and absent.effective_roles == frozenset({DEFAULT_ROLE})
+
+    empty = provider.resolve(
+        {"x-memoryops-tenant": "t", "x-memoryops-user": "u", "x-memoryops-roles": ""}
+    )
+    assert empty is not None
+    assert empty.role_claim_present is True
+    assert empty.permissions == frozenset()
+
+
+def test_a_production_credential_without_roles_gets_nothing():
+    p = _principal(None)
+    strict = type(p)(
+        tenant_id="t", user_id="u", provider="jwt",
+        roles=p.roles, role_claim_present=p.role_claim_present,
+        require_role_claim=True,
+    )
+    assert strict.permissions == frozenset()
