@@ -19,10 +19,15 @@ Role resolution has **three** states, not two:
 
 | Credential | Result |
 | --- | --- |
-| no role claim, `auth_require_role_claim=false` | falls back to `memory_reader` |
-| no role claim, `auth_require_role_claim=true` (production default) | **no permissions** |
+| claim **omitted**, `auth_require_role_claim=false` | falls back to `memory_reader` |
+| claim **omitted**, `auth_require_role_claim=true` (production) | **no permissions** |
 | claim names recognised roles | those roles |
 | claim present but names nothing recognised | **no permissions** |
+| claim present but **empty** (`[]`, `""`) | **no permissions** |
+
+An omitted claim is a *compatibility* question the deployment answers. An empty
+claim is an *authorization decision the issuer already made* — a credential the IdP
+deliberately granted no roles must receive nothing, not the fallback.
 
 The last row matters: collapsing it into `memory_reader` would mean
 `roles=["service_workre"]` — a typo — silently receives `memory:read:self` and
