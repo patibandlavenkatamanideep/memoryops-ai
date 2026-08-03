@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 from app.core.config import Settings
 
 
@@ -246,3 +248,128 @@ def _env() -> dict:
 
     # Inherit PATH/PYTHONPATH etc. but drop any MEMORYOPS_* the caller set.
     return {k: v for k, v in os.environ.items() if not k.startswith("MEMORYOPS_")}
+
+
+# ── governance ablation must never combine with the production profile ───────
+# The research switches (MEMORYOPS_GOVERNANCE_PROFILE=disabled, MEMORYOPS_ABLATE_*)
+# ship in the same binary as production so the paper study can measure a governed
+# system against a mechanism-matched ungoverned twin. Nothing stopped them being
+# combined with MEMORYOPS_PROFILE=production.
+#
+# Verified before this guard existed: a fully hardened production config plus
+# `MEMORYOPS_GOVERNANCE_PROFILE=disabled` produced NO readiness errors, and a live
+# API key was stored with status=active — the policy broker's BLOCK never ran.
+def test_production_rejects_the_disabled_governance_profile():
+    errors = _hardened(governance_profile="disabled").production_readiness_errors()
+    assert any("governance_profile" in e for e in errors)
+
+
+@pytest.mark.parametrize(
+    ("flag", "invariant_hint"),
+    [
+        ("govern_policy_enforcement", "policy broker"),
+        ("govern_transactional_evidence", "atomically"),
+        ("govern_tombstone_propagation", "derived memories"),
+        ("admission_gate_enabled", "admissibility"),
+        ("recall_gate_enabled", "audience clearance"),
+        ("output_gate_enabled", "disclosure"),
+    ],
+)
+def test_production_rejects_each_disabled_governance_control(flag, invariant_hint):
+    errors = _hardened(**{flag: False}).production_readiness_errors()
+    assert any(flag in e for e in errors), f"{flag}=false was accepted in production"
+    assert any(invariant_hint in e for e in errors), "the error must say what breaks"
+
+
+def test_production_rejects_any_ablate_environment_variable(monkeypatch):
+    """Presence is disqualifying: any value flips the control off."""
+    monkeypatch.setenv("MEMORYOPS_ABLATE_POLICY_BROKER", "0")
+    errors = _hardened().production_readiness_errors()
+    assert any("MEMORYOPS_ABLATE_POLICY_BROKER" in e for e in errors)
+
+
+def test_all_governance_controls_default_to_enabled():
+    """The guard must reject only deployments that explicitly turned governance off,
+    never a config that simply never mentioned it."""
+    s = Settings()
+    assert s.governance_profile == "full"
+    for flag in (
+        "govern_policy_enforcement",
+        "govern_transactional_evidence",
+        "govern_tombstone_propagation",
+        "admission_gate_enabled",
+        "recall_gate_enabled",
+        "output_gate_enabled",
+    ):
+        assert getattr(s, flag) is True, f"{flag} does not default to enabled"
+
+
+def test_a_clean_production_config_is_still_accepted():
+    assert _hardened().production_readiness_errors() == []
+
+
+def test_app_refuses_to_import_with_governance_disabled_in_production():
+    """Fail-closed startup, end to end — not merely a list of strings."""
+    proc = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=_api_dir(),
+        env={
+            **_env(),
+            "MEMORYOPS_PROFILE": "production",
+            "MEMORYOPS_STORAGE": "postgres",
+            "MEMORYOPS_AUTH_MODE": "trusted_header",
+            "MEMORYOPS_CORS_ALLOW_ORIGINS": "https://app.example.com",
+            "MEMORYOPS_DATABASE_URL": "postgresql+psycopg://real:secret@db.internal:5432/memoryops",
+            "MEMORYOPS_GOVERNANCE_PROFILE": "disabled",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0, "production started with governance disabled"
+    assert "governance_profile" in proc.stderr
+
+
+def test_research_ablation_still_works_outside_the_production_profile(monkeypatch):
+    """The paper study must keep running — the guard is production-only.
+
+    The per-control cascade lives in `get_settings()` (it resolves the env vars),
+    not in the `Settings` constructor, so this exercises the real entry point.
+    """
+    from app.core import config
+
+    monkeypatch.setenv("MEMORYOPS_GOVERNANCE_PROFILE", "disabled")
+    config.get_settings.cache_clear()
+    try:
+        s = config.get_settings()
+        assert s.profile == "dev"
+        assert s.governance_profile == "disabled"
+        # The ablation genuinely takes effect in dev...
+        assert s.govern_policy_enforcement is False
+        # ...and is not treated as a production violation, because it is not production.
+        assert s.production_readiness_errors() == []
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_the_env_var_cascade_is_what_production_rejects(monkeypatch):
+    """The real-world shape of the hole: env vars, resolved through get_settings()."""
+    from app.core import config
+
+    for key, value in {
+        "MEMORYOPS_PROFILE": "production",
+        "MEMORYOPS_STORAGE": "postgres",
+        "MEMORYOPS_AUTH_MODE": "jwt",
+        "MEMORYOPS_CORS_ALLOW_ORIGINS": "https://app.example.com",
+        "MEMORYOPS_DATABASE_URL": "postgresql+psycopg://real:secret@db.internal:5432/memoryops",
+        "MEMORYOPS_PUBLIC_EVALS": "false",
+        "MEMORYOPS_GOVERNANCE_PROFILE": "disabled",
+    }.items():
+        monkeypatch.setenv(key, value)
+    config.get_settings.cache_clear()
+    try:
+        errors = config.get_settings().production_readiness_errors()
+        assert errors, "a hardened production config with governance disabled was accepted"
+        assert any("governance_profile" in e for e in errors)
+        assert any("govern_policy_enforcement" in e for e in errors)
+    finally:
+        config.get_settings.cache_clear()

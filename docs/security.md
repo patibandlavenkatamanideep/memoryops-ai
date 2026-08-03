@@ -298,3 +298,37 @@ widening the window considerably.
 The 409 is raised **after** tenant scoping, so it is not a cross-tenant oracle: a
 request for another tenant's memory returns `404` whether or not the revision would
 have matched.
+
+## Production rejects governance ablation
+
+The research-ablation switches (`MEMORYOPS_GOVERNANCE_PROFILE=disabled`,
+`MEMORYOPS_ABLATE_*`) exist so the paper study can measure a governed system against
+a mechanism-matched ungoverned twin. They ship in the same binary as production, and
+nothing stopped them being combined with `MEMORYOPS_PROFILE=production`.
+
+Verified before this guard existed: a **fully hardened** production config —
+Postgres, JWT auth, explicit CORS allow-list, real DSN, evals off — plus
+`MEMORYOPS_GOVERNANCE_PROFILE=disabled` produced **no** readiness errors, and a live
+API key was stored with `status=active`. The policy broker's BLOCK never ran. Every
+one of the seven invariants could be disabled by an environment variable while the
+deployment reported itself production-ready.
+
+`Settings.production_readiness_errors()` now rejects, under the production profile:
+
+| Setting | What breaks |
+| --- | --- |
+| `governance_profile != full` | the ablation cascade below |
+| `govern_policy_enforcement=false` | the broker does not run before storage (invariant #5) |
+| `govern_transactional_evidence=false` | mutations and audit events stop committing atomically (invariant #7) |
+| `govern_tombstone_propagation=false` | deletion stops propagating to derived memories (invariant #2) |
+| `admission_gate_enabled=false` | nothing is checked for admissibility before entering context |
+| `recall_gate_enabled=false` | audience clearance is not enforced on recall |
+| `output_gate_enabled=false` | answers are not checked for disclosure of blocked memory |
+| any `MEMORYOPS_ABLATE_*` present | any value flips its control off, so presence is disqualifying |
+
+All seven default to enabled, so this rejects only deployments that explicitly
+turned governance off. Dev is unchanged, so the paper study still runs.
+
+**This is the guard, not the cure.** The stronger fix is architectural: ship the
+ablation wiring in a separate `memoryops-research` package or application factory so
+a production binary cannot express these states at all. Tracked separately.
