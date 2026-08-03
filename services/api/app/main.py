@@ -113,6 +113,7 @@ async def unhandled_exception(request: Request, exc: Exception):
 
 
 app.include_router(health.router)
+app.include_router(health.admin_router)
 app.include_router(metrics_prometheus.router)
 app.include_router(chat.router)
 app.include_router(memories.router)

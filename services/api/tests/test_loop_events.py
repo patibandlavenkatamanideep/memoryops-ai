@@ -5,7 +5,7 @@ import asyncio
 from app.loops.events import emit_loop_event, start_loop_run
 from app.loops.types import LoopId, LoopState
 
-from ._secret_fixtures import FAKE_PROVIDER_KEY
+from ._secret_fixtures import FAKE_PROVIDER_KEY, FAKE_SECRET_IN_METADATA
 
 
 def test_loop_events_do_not_store_raw_secret(repo):
@@ -16,7 +16,7 @@ def test_loop_events_do_not_store_raw_secret(repo):
             "trace-secret",
             tenant_id="t1",
             user_id="u1",
-            metadata={"raw": "api_key=sk-test-123456789abcdefghij"},
+            metadata={"raw": FAKE_SECRET_IN_METADATA},
         )
         await emit_loop_event(
             repo,

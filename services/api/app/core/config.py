@@ -189,6 +189,14 @@ class Settings(BaseSettings):
     auth_jwt_algorithms: str = "HS256"  # comma-separated allow-list
     auth_jwt_tenant_claim: str = "tenant_id"  # dotted path ok (e.g. app_metadata.tenant_id)
     auth_jwt_user_claim: str = "sub"
+    #: Claim carrying the caller's roles (list, or space/comma-separated string).
+    #: Dotted paths work, e.g. "app_metadata.roles". Unrecognised names are ignored
+    #: rather than trusted, so a typo cannot escalate. An authenticated caller with
+    #: no recognised role falls back to the least-privileged default.
+    auth_jwt_roles_claim: str = "roles"
+    #: Header carrying roles in trusted_header mode. Only meaningful when the
+    #: upstream proxy is the sole path to the API — see docs/security/api-rbac.md.
+    auth_roles_header: str = "X-MemoryOps-Roles"
     auth_jwt_audience: str = ""
     auth_jwt_issuer: str = ""
     # Optional JWKS endpoint (RS*/ES*). When set, the signing key is fetched + cached
@@ -593,6 +601,8 @@ def get_settings() -> Settings:
         overrides["auth_mode"] = val
     for env_name, field_name in (
         ("MEMORYOPS_AUTH_TENANT_HEADER", "auth_tenant_header"),
+        ("MEMORYOPS_AUTH_ROLES_HEADER", "auth_roles_header"),
+        ("MEMORYOPS_AUTH_JWT_ROLES_CLAIM", "auth_jwt_roles_claim"),
         ("MEMORYOPS_AUTH_USER_HEADER", "auth_user_header"),
         ("MEMORYOPS_AUTH_JWT_KEY", "auth_jwt_key"),
         ("MEMORYOPS_AUTH_JWT_ALGORITHMS", "auth_jwt_algorithms"),
