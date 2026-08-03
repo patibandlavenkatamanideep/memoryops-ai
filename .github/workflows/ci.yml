@@ -292,8 +292,11 @@ jobs:
         run: pytest -q
 
   web:
-    name: Web — build
+    name: Web — lint + typecheck + tests + build (both modes)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@v7
 
@@ -305,14 +308,70 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install
-        working-directory: apps/web
         # Strict: fail if package-lock.json is out of sync rather than silently
         # regenerating it (the old `|| npm install` fallback masked lockfile drift).
         run: npm ci
 
-      - name: Build
-        working-directory: apps/web
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Covers the BFF scope-sanitisation rules and the role model — the two pieces
+      # that decide whether a browser can address another tenant.
+      - name: Unit tests
+        run: npm test
+
+      # The demo identity was hardcoded in the client (`DEMO_TENANT = "tenant_demo"`)
+      # and attached to every request from the browser. `no-client-identity.test.ts`
+      # asserts it cannot return; this is the coarse belt-and-braces check.
+      # Checks *code*, not prose. A plain grep also matched lib/identity.ts's
+      # docstring, which quotes the removed constants to explain why they went —
+      # failing the job for documenting the fix. Comments are stripped first.
+      # `lib/__tests__/no-client-identity.test.ts` is the thorough version; this is
+      # the coarse belt-and-braces check.
+      - name: No demo identity in client source
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, re, sys
+
+          offenders = []
+          for directory in ("app", "components", "lib"):
+              for path in pathlib.Path(directory).rglob("*.ts*"):
+                  if "node_modules" in path.parts or ".next" in path.parts:
+                      continue
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+                  code = re.sub(r"/\*[\s\S]*?\*/", "", text)
+                  code = re.sub(r"^\s*//.*$", "", code, flags=re.M)
+                  if re.search(r"export\s+const\s+DEMO_(TENANT|USER)", code):
+                      offenders.append(str(path))
+          if offenders:
+              print(f"::error::hardcoded demo identity is back in client source: {offenders}")
+              sys.exit(1)
+          print("no hardcoded client identity (code, excluding comments)")
+          PYEOF
+
+      # Both modes must build: demo is the public showcase, authenticated is the
+      # real control plane. A change that only works in one is a broken deploy.
+      # No AUTH_SECRET here on purpose: it is a *runtime* signing key, and the
+      # build must not depend on one. Baking a placeholder secret into an image
+      # would be the wrong habit to establish.
+      - name: Build (demo mode)
+        env:
+          MEMORYOPS_WEB_MODE: demo
         run: npm run build
+
+      - name: Build (authenticated mode)
+        env:
+          MEMORYOPS_WEB_MODE: authenticated
+        run: |
+          rm -rf .next
+          npm run build
+
+      - name: Production Docker image builds
+        working-directory: .
+        run: docker build -t memoryops-web:ci apps/web
 
   perf-smoke:
     name: Perf — HTTP load smoke
