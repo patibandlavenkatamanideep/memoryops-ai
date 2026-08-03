@@ -154,3 +154,67 @@ def test_production_extra_covers_postgres_and_all_providers(pyproject):
         assert any(name.startswith(required) for name in production), (
             f"production extra is missing {required}: {sorted(production)}"
         )
+
+
+# ── Dependabot targets authoritative manifests only ─────────────────────────
+def test_dependabot_does_not_watch_generated_dependency_mirrors():
+    """Dependabot watched services/worker and apps/playground as if they were
+    independent pip projects. They are not — their requirements files are
+    `-r` includes of the generated services/api/requirements.txt.
+
+    Because Dependabot resolves those includes, it opened PRs *labelled* for the
+    worker or playground that in fact edited a generated file. Those edits are
+    erased by the next `scripts/sync_dependencies.py` run and fail the drift gate,
+    so they could never merge. Four were closed (#104, #105, #107, #108).
+    """
+    yaml = pytest.importorskip("yaml")
+    config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
+    pip_dirs = {u["directory"] for u in config["updates"] if u["package-ecosystem"] == "pip"}
+
+    for mirror in ("/services/worker", "/apps/playground", "/apps/results-dashboard"):
+        assert mirror not in pip_dirs, (
+            f"{mirror} is a generated dependency mirror, not an authoritative manifest"
+        )
+    assert "/services/api" in pip_dirs, "the authoritative API manifest must stay watched"
+
+
+def test_the_watched_directories_really_are_authoritative():
+    """Guards the rule rather than the current list: anything Dependabot watches
+    for pip must own its dependencies, not `-r` include another project's."""
+    yaml = pytest.importorskip("yaml")
+    config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
+
+    for update in config["updates"]:
+        if update["package-ecosystem"] != "pip":
+            continue
+        directory = REPO_ROOT / update["directory"].lstrip("/")
+        requirements = directory / "requirements.txt"
+        if not requirements.exists():
+            continue  # declares deps in pyproject.toml only
+        includes = [
+            line.strip()
+            for line in requirements.read_text().splitlines()
+            if line.strip().startswith("-r ")
+        ]
+        assert not includes, (
+            f"{update['directory']} mirrors another project's requirements "
+            f"({includes}); Dependabot would edit the generated file instead"
+        )
+
+
+def test_behaviour_changing_upgrades_are_not_auto_grouped():
+    """pgvector, pytest and Ruff change behaviour rather than just versions, so a
+    grouped bump hides which upgrade broke (or was never exercised by) CI."""
+    yaml = pytest.importorskip("yaml")
+    config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
+    api = next(
+        u for u in config["updates"]
+        if u["package-ecosystem"] == "pip" and u["directory"] == "/services/api"
+    )
+    ignored = {entry["dependency-name"] for entry in api.get("ignore", [])}
+    assert {"pgvector", "pytest", "ruff"} <= ignored
+
+    # And the catch-all group is gone: one PR bundling runtime, database, vector,
+    # packaging and test tooling is not a reviewable unit.
+    patterns = [p for g in api.get("groups", {}).values() for p in g.get("patterns", [])]
+    assert "*" not in patterns, "a catch-all group re-creates the unreviewable bundle"
