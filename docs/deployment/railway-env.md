@@ -5,9 +5,11 @@ Every variable consumed by MemoryOps AI, per service. Settings are typed in
 (`env_prefix=""`, so each field maps to its **UPPERCASE** name) plus the
 explicit `MEMORYOPS_*` aliases resolved in `get_settings()`.
 
-`DATABASE_URL` and `REDIS_URL` are provided automatically when you reference the
-Railway Postgres / Redis plugins — use Railway's **variable references** rather
-than copying values.
+`DATABASE_URL` is provided automatically when you reference the Railway Postgres
+plugin — use Railway's **variable references** rather than copying values.
+
+> Redis is no longer part of the topology: `REDIS_URL` was declared and health-gated
+> but never read by any runtime code. See [railway.md](railway.md).
 
 ## `memoryops-api`
 
@@ -16,7 +18,11 @@ than copying values.
 | `PORT` | auto | — | Injected by Railway; bind uvicorn to it. |
 | `MEMORYOPS_STORAGE` | ✅ | `memory` | Set to `postgres` in production. |
 | `DATABASE_URL` | ✅ (postgres) | local dsn | `postgresql+psycopg://…`. Reference the Postgres plugin. |
-| `REDIS_URL` | ✅ | `redis://localhost:6379/0` | Reference the Redis plugin. |
+| `MEMORYOPS_PROFILE` | ✅ (prod) | `dev` | Set to `production`; fail-closed startup checks. |
+| `MEMORYOPS_AUTH_MODE` | ✅ (prod) | `none` | `jwt` or `trusted_header`; `none` is rejected in production. |
+| `MEMORYOPS_CORS_ALLOW_ORIGINS` | ✅ (prod) | `*` | Explicit origin list; `*` is rejected in production. |
+| `MEMORYOPS_PUBLIC_EVALS` | ✅ (prod) | `false` | Must stay `false` (denial-of-wallet vector). |
+| `OPERATIONAL_DATABASE_URL` | — | *(unset)* | Restricted monitoring role; enables `/healthz/workers`. Fails closed when unset. |
 | `LLM_PROVIDER` | — | `heuristic` | `heuristic` needs no keys (v0.3.x). `openai`/`anthropic`/`gemini` land in v0.4. |
 | `MEMORYOPS_EMBEDDING_PROVIDER` | — | `stub` | `stub` is deterministic/offline; `openai` needs a key. |
 | `EMBEDDING_DIM` | — | `1536` | Must match the pgvector column dimension. |
@@ -64,7 +70,7 @@ than copying values.
 |----------|----------|---------|-------|
 | `MEMORYOPS_STORAGE` | ✅ | `memory` | Set to `postgres` to share the API store. |
 | `DATABASE_URL` | ✅ (postgres) | local dsn | Reference the Postgres plugin. |
-| `REDIS_URL` | ✅ | `redis://localhost:6379/0` | Reference the Redis plugin. |
+| `MEMORYOPS_WORKER_SCOPES` | ✅ | `tenant_demo:user_demo` | `"tenant:user,…"` scopes to process. |
 | `WORKER_INTERVAL_SECONDS` | — | `60` | Scheduler tick interval. |
 
 ## Railway Postgres plugin
@@ -72,22 +78,40 @@ than copying values.
 Provides `DATABASE_URL` (and `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`).
 MemoryOps uses `DATABASE_URL` with the `postgresql+psycopg://` driver prefix —
 if the plugin emits a bare `postgres://`, set `DATABASE_URL` explicitly with the
-`+psycopg` prefix. Enable the `vector` extension and apply
-`infra/db/migrations/001…005` in order.
+`+psycopg` prefix. Enable the `vector` extension, then apply **every** file in
+`infra/db/migrations` in lexical order:
 
-## Railway Redis plugin
+```bash
+for f in infra/db/migrations/*.sql; do
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+done
+```
 
-Provides `REDIS_URL`. Used for queue/cache; the worker and API both reference it.
+Do not hand-maintain a migration range here. This page previously said `001…005`
+and the deployment guide said `001…007`, while the repository had migrations
+through `011` — two different stale answers, both producing an incomplete schema.
 
 ## Minimum production set
 
-The smallest working production config:
+`MEMORYOPS_PROFILE=production` is fail-closed, so this is the smallest config that
+actually **boots**. The previous version of this list omitted the profile, auth,
+CORS, and evals variables that the profile itself requires.
 
 ```
-# api + worker
+# api
+MEMORYOPS_PROFILE=production
+MEMORYOPS_STORAGE=postgres
+MEMORYOPS_AUTH_MODE=jwt                       # or trusted_header
+MEMORYOPS_CORS_ALLOW_ORIGINS=https://memoryops-web.up.railway.app
+MEMORYOPS_PUBLIC_EVALS=false
+DATABASE_URL=<reference Postgres plugin, +psycopg prefix>
+OPERATIONAL_DATABASE_URL=<restricted monitoring role>
+
+# worker
+MEMORYOPS_PROFILE=production
 MEMORYOPS_STORAGE=postgres
 DATABASE_URL=<reference Postgres plugin, +psycopg prefix>
-REDIS_URL=<reference Redis plugin>
+MEMORYOPS_WORKER_SCOPES=<tenant:user,…>
 
 # web
 NEXT_PUBLIC_API_URL=https://memoryops-api.up.railway.app

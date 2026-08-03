@@ -61,21 +61,57 @@ remain, instead of silently serving production traffic with them. It rejects:
 | open CORS (`*`) | `MEMORYOPS_CORS_ALLOW_ORIGINS=https://app.example.com,…` |
 | bundled demo DB credentials / `localhost` DSN | real `MEMORYOPS_DATABASE_URL` / `DATABASE_URL` |
 | `MEMORYOPS_PUBLIC_EVALS=true` (denial-of-wallet) | `MEMORYOPS_PUBLIC_EVALS=false` |
+| networked `llm_provider`/`embeddings_provider` with no API key or SDK | set the key, install the extra, or select `stub` |
+| external `vector_index` whose client isn't installed | `pip install 'memoryops-api[qdrant\|lancedb\|weaviate]'` |
+
+The last two exist because every provider adapter imports its SDK lazily and
+degrades to the stub when it is absent. That is correct for dev and required for
+offline tests, but in production it meant an operator could select OpenAI, see a
+healthy service, and be served deterministic stub output indefinitely — with only a
+log line. See [dependency-management.md](dependency-management.md).
 
 The check is enforced only under the production profile (`dev` is unchanged) and is
 implemented in `Settings.production_readiness_errors()` — see `tests/test_production_profile.py`.
 
-**Readiness** (`GET /readyz`) reports **dependency-specific** states rather than one
-combined string: `storage`, `schema` (migration revision), `vector_backend`,
-`worker_runtime`, `llm_provider`, `embedding_provider` — each `ok` / `skipped` /
-`error`. `ready` is false iff any dependency is in `error` (a `skipped` backend that
-isn't selected never blocks readiness). Every probe is no-throw (invariant #4).
+### Readiness (`GET /readyz`)
+
+Reports **dependency-specific** states rather than one combined string: `storage`,
+`schema` (migration revision), `vector_backend`, `worker_runtime`, `llm_provider`,
+`embedding_provider`.
+
+| Status | Meaning | Blocks `ready`? |
+|--------|---------|-----------------|
+| `ok` | usable | no |
+| `degraded` | selected but falling back (dev), or dead-lettered work present | no — surfaces as top-level `degraded: true` |
+| `error` | selected and unusable, or a probe failed | **yes** |
+| `skipped` | not selected / not applicable | no |
+
+Severity is profile-aware: a selected-but-unusable provider is `degraded` in dev
+(the fallback is the intended offline experience) and `error` in production (the
+deployment asked for it).
+
+`llm_provider` and `embedding_provider` previously reported `ok` from the configured
+*name* alone, and `vector_backend` reported `ok` for any external backend with a note
+that it "degrades to keyword-only if unreachable" — so a missing key, a missing SDK,
+or a wrong Qdrant URL all looked green while requests were silently served by the
+stub or by keyword-only ranking. They now verify key + SDK presence, and the vector
+probe calls the backend's real `available()` check.
+
+`worker_runtime` additionally reports **freshness**: a worker that died silently used
+to keep reporting `ok` forever, because the probe only asked whether *past* runs had
+failed. It now errors when the newest run is older than three scheduler intervals
+(`worker_heartbeat_stale`).
+
+Every probe is no-throw and each is additionally wrapped, so `/readyz` — the endpoint
+operators hit when things are broken — cannot itself 500. Responses carry a
+`reason_code`, never a key, DSN, or raw provider error.
 
 ## Deploying
 
-Railway-only: one project, five core services (web/api/worker + Postgres + Redis).
-Run migrations from `infra/db/migrations`; set `MEMORYOPS_STORAGE=postgres` and
-`MEMORYOPS_PROFILE=production`.
+Railway-only: one project, four core services (web/api/worker + Postgres). Redis
+was removed — it was declared and health-gated but no runtime code ever read it.
+Apply **every** migration in `infra/db/migrations` (glob the directory; do not follow
+a hardcoded range); set `MEMORYOPS_STORAGE=postgres` and `MEMORYOPS_PROFILE=production`.
 Configure authentication: either enable a built-in auth adapter
 (`MEMORYOPS_AUTH_MODE=jwt` or `trusted_header`, which verify identity and enforce
 tenant/user scope — see [auth-adapters.md](auth-adapters.md)), or, with the default

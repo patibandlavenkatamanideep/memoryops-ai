@@ -132,7 +132,14 @@ class Settings(BaseSettings):
     # request-scoped, RLS-enforced connection. See docs/worker-runtime.md.
     operational_database_url: str = ""
 
-    redis_url: str = "redis://localhost:6379/0"
+    # NOTE: `redis_url` was removed. Redis was declared here, started by Compose, and
+    # listed as a required Railway service, but no runtime code ever read it — no
+    # client was imported anywhere in the repo. A declared-but-unused infrastructure
+    # dependency is pure cost: another managed service to pay for, another health
+    # check that can fail the deploy, and a misleading architecture diagram. Reinstate
+    # it when something actually uses it (distributed rate limiting, job queueing,
+    # caching, pub/sub, cross-replica coordination). `extra="ignore"` above means a
+    # leftover REDIS_URL in an existing environment is harmlessly ignored.
 
     # LLM + embeddings. "stub" requires no API keys and keeps the system fully
     # functional offline (graceful degradation, invariant #4). "heuristic" is a
