@@ -206,13 +206,28 @@ jobs:
           python -m pip install ./services/api
           python -m pip install --no-deps ./services/worker
 
+      # Checks *code*, not prose. A plain grep also matched the docstring that
+      # explains the removal ("previously mutated ``sys.path`` …"), failing the job
+      # for describing the fix. Tokenising drops strings and comments so only real
+      # manipulation trips it.
       - name: No sys.path manipulation in the worker entrypoint
         run: |
-          if grep -nE "sys\.path|PYTHONPATH" services/worker/main.py; then
-            echo "::error::worker entrypoint still manipulates sys.path"
-            exit 1
-          fi
-          echo "worker entrypoint is import-clean"
+          python - <<'PY'
+          import io, sys, tokenize
+
+          path = "services/worker/main.py"
+          with open(path, "rb") as fh:
+              tokens = list(tokenize.tokenize(fh.readline))
+          code = "".join(
+              t.string for t in tokens
+              if t.type not in (tokenize.STRING, tokenize.COMMENT)
+          )
+          offenders = [n for n in ("sys.path", "PYTHONPATH") if n in code]
+          if offenders:
+              print(f"::error::worker entrypoint still manipulates {offenders}")
+              sys.exit(1)
+          print("worker entrypoint is import-clean (code, excluding docs/comments)")
+          PY
 
       # Boot the console script, let it complete a tick, then SIGTERM it mid-interval.
       # Before graceful shutdown landed, run_forever sat in an uninterruptible
