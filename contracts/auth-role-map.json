@@ -1,0 +1,43 @@
+{
+  "$comment": [
+    "Shared web-persona -> API-authorization-role contract.",
+    "",
+    "The web and the API had independent role vocabularies. The BFF minted the web",
+    "role name directly into the API credential, so three of the five human web",
+    "roles - viewer, developer and owner - named nothing the API recognised. After",
+    "the empty/invalid-claim fix they resolved to ZERO permissions, which is",
+    "fail-closed but left the authenticated web experience broken. `owner` is the",
+    "demo identity's role, so the default web persona had no API access at all.",
+    "",
+    "Web roles are UI personas. API roles are authorization bundles. The distinction",
+    "is deliberate; the translation must be explicit, single-sourced and tested from",
+    "both sides rather than implied by matching strings."
+  ],
+  "version": 1,
+  "web_to_api": {
+    "viewer": "memory_viewer",
+    "developer": "memory_user",
+    "auditor": "auditor",
+    "memory_admin": "memory_admin",
+    "owner": "tenant_admin"
+  },
+  "api_roles": [
+    "memory_viewer",
+    "memory_user",
+    "auditor",
+    "memory_admin",
+    "tenant_admin",
+    "service_worker"
+  ],
+  "aliases": {
+    "$comment": [
+      "memory_reader shipped in the first RBAC release and could already write, so",
+      "the name was misleading: it is a self-service memory user, not a reader.",
+      "Kept as an accepted alias so existing credentials keep working."
+    ],
+    "memory_reader": "memory_user"
+  },
+  "never_assignable_to_humans": [
+    "service_worker"
+  ]
+}

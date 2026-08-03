@@ -51,7 +51,10 @@ describe("BFF → API role propagation", () => {
 
   it("derives the role from the server-resolved identity, never the request", () => {
     const src = code(route);
-    expect(src).toMatch(/x-memoryops-roles["']\s*,\s*identity\.role/);
+    // Translated, not raw: this originally asserted `identity.role` directly, which
+    // is the untranslated persona the API does not recognise. Shape was right,
+    // value was wrong — see api-role-contract.test.ts.
+    expect(src).toMatch(/x-memoryops-roles["']\s*,\s*apiRoleForWebRole\(identity\.role\)/);
   });
 });
 

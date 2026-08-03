@@ -34,6 +34,14 @@ jobs:
       - name: Dependency files match pyproject.toml
         run: python scripts/sync_dependencies.py --check
 
+      # contracts/auth-role-map.json is the source of truth for the web-persona →
+      # API-role translation. apps/web/lib/roleMap.generated.ts is a committed mirror,
+      # because the web Dockerfile builds with apps/web as its context and cannot see
+      # a repo-root import. Same contract as the dependency mirrors: generated, never
+      # hand-edited, drift is a CI failure.
+      - name: Role contract mirror matches the contract
+        run: python scripts/sync_role_contract.py --check
+
       # A wheel that imports only because the repo is on sys.path is not a wheel.
       # Build it, install into a clean venv with no source checkout on the path, and
       # boot the real app from site-packages.

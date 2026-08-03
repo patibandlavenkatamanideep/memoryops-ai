@@ -51,9 +51,25 @@ export interface Identity {
  * banner) and is never consulted for access decisions.
  */
 export function webMode(): WebMode {
-  return process.env.MEMORYOPS_WEB_MODE === "authenticated"
-    ? "authenticated"
-    : "demo";
+  const configured = process.env.MEMORYOPS_WEB_MODE;
+  if (configured === "demo" || configured === "authenticated") return configured;
+
+  // Defaulting to `demo` is right for local development and wrong for a deployed
+  // build: an unset variable would silently serve the shared `tenant_demo` persona
+  // as though that were intended. Production must say which mode it means.
+  //
+  // `next build` runs with NODE_ENV=production and prerenders pages, so throwing on
+  // NODE_ENV alone breaks the image build for a value that is only meaningful at
+  // request time. NEXT_PHASE distinguishes the two: during the build we fall back
+  // so prerendering can complete, and the deployed server still refuses to serve a
+  // request without an explicit mode.
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  if (process.env.NODE_ENV === "production" && !isBuildPhase) {
+    throw new Error(
+      "MEMORYOPS_WEB_MODE must be explicitly set to 'demo' or 'authenticated' in production",
+    );
+  }
+  return "demo";
 }
 
 export const DEMO_IDENTITY: Identity = {
