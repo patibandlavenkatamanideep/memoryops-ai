@@ -55,6 +55,7 @@ def test_production_profile_passes_when_hardened():
         cors_allow_origins="https://app.example.com,https://admin.example.com",
         database_url="postgresql+psycopg://real:secret@db.internal:5432/memoryops",
         public_evals=False,
+        auth_require_role_claim=True,
     )
     assert safe.production_readiness_errors() == []
 
@@ -72,6 +73,9 @@ def _hardened(**overrides) -> Settings:
         cors_allow_origins="https://app.example.com",
         database_url="postgresql+psycopg://real:secret@db.internal:5432/memoryops",
         public_evals=False,
+        # Production requires roles to be explicit: a credential with no role claim
+        # is refused rather than falling back to the least-privileged default.
+        auth_require_role_claim=True,
     )
     return Settings(**{**base, **overrides})
 
@@ -203,6 +207,7 @@ def test_app_imports_under_hardened_production_profile():
             "MEMORYOPS_AUTH_MODE": "trusted_header",
             "MEMORYOPS_CORS_ALLOW_ORIGINS": "https://app.example.com",
             "MEMORYOPS_DATABASE_URL": "postgresql+psycopg://real:secret@db.internal:5432/memoryops",
+            "MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM": "true",
         },
         capture_output=True,
         text=True,

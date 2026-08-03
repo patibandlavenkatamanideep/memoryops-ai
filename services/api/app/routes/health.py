@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from .. import __version__
+from ..auth import Permission, require_permission
 from ..core.config import get_settings
 from ..db.factory import get_repository
 
 router = APIRouter(tags=["ops"])
+#: Operator surfaces live under /api/admin so they sit *inside* the authentication
+#: boundary (the middleware guards `/api/*`). Anything outside it is reachable
+#: unauthenticated and must never carry tenant or user identifiers.
+admin_router = APIRouter(prefix="/api/admin", tags=["ops-admin"])
 
 # Captured at import so /healthz can report process uptime.
 _PROCESS_START = time.monotonic()
@@ -28,9 +33,37 @@ def healthz() -> dict:
 
 
 @router.get("/healthz/workers")
-def workers_health() -> dict:
-    """Worker runtime health (v0.8): recent run history, dead-letter + failure
-    counts, and the last run per scope. Content-free operational evidence."""
+def workers_health_public() -> dict:
+    """**Public** worker health: safe aggregate only.
+
+    This endpoint sits outside the `/api/*` authentication boundary, so it is
+    reachable unauthenticated. It previously returned `last_run_per_scope`, whose
+    keys are built as `f"{tenant_id}:{user_id}"` — leaking the tenant and user
+    identifiers of every scope the fleet had processed, to anyone who could reach
+    the process.
+
+    It now returns counts only. The detailed view, including per-scope history,
+    moved to `GET /api/admin/workers/health`, which is inside the auth boundary and
+    requires `worker:read`.
+    """
+    # Liveness only. Even aggregate run and failure counts disclose deployment
+    # activity and operational condition to an unauthenticated caller, and this
+    # endpoint sits outside the /api/* auth boundary. Counts, per-scope history and
+    # failure reasons all live behind `worker:read` on /api/admin/workers/health.
+    detail = _worker_health_detail()
+    return {"healthy": detail.get("healthy")}
+
+
+@admin_router.get("/workers/health")
+def workers_health_detail(request: Request) -> dict:
+    """Full worker health, including per-scope history. Requires `worker:read`."""
+    require_permission(request, Permission.WORKER_READ)
+    return _worker_health_detail()
+
+
+def _worker_health_detail() -> dict:
+    """Shared implementation. Content-free about *memory*, but scope keys identify
+    tenants and users, so only the protected route returns it in full."""
     from ..db.entities import OperationalAccessUnavailable
     from ..workers.orchestrator import summarize_runtime_health
 

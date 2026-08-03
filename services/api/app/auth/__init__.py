@@ -7,11 +7,17 @@ authenticated tenant/user. It is not an auth product. Off by default.
 
 from __future__ import annotations
 
-from .dependencies import current_principal, enforce_scope
+from .dependencies import (
+    authorize_audit_scope,
+    current_principal,
+    enforce_scope,
+    require_permission,
+)
 from .jwt import JWTError, decode_jwt
 from .middleware import install_auth_middleware
 from .principal import Principal
 from .providers import JWTProvider, TrustedHeaderProvider, build_provider
+from .roles import DEFAULT_ROLE, Permission, Role, parse_roles, permissions_for
 
 __all__ = [
     "Principal",
@@ -23,4 +29,11 @@ __all__ = [
     "install_auth_middleware",
     "current_principal",
     "enforce_scope",
+    "require_permission",
+    "authorize_audit_scope",
+    "Permission",
+    "Role",
+    "DEFAULT_ROLE",
+    "parse_roles",
+    "permissions_for",
 ]
