@@ -3,15 +3,49 @@
 # regardless of the schedule.
 version: 2
 updates:
-  # ── Python: API (runtime + dev + Postgres extras all live under services/api) ──
+  # ── Python: API — the ONLY authoritative Python manifest ──
+  # services/api/pyproject.toml is the source of truth (#97). Every
+  # `requirements*.txt` under services/api is GENERATED from it by
+  # scripts/sync_dependencies.py, and CI fails on drift. Dependabot edits the
+  # manifest; the mirrors are regenerated, never hand-edited.
   - package-ecosystem: pip
     directory: /services/api
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Grouped by blast radius rather than "everything". A single `patterns: ["*"]`
+    # group produced one PR bundling FastAPI, Uvicorn, SQLAlchemy, psycopg, pgvector,
+    # pytest, Ruff and setuptools — a red result would not say which upgrade caused
+    # it, and a green one would not say the others were exercised.
     groups:
-      python-api:
-        patterns: ["*"]
+      api-runtime:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "uvicorn*"
+          - "pydantic"
+          - "pydantic-settings"
+      database:
+        patterns:
+          - "sqlalchemy"
+          - "psycopg*"
+      provider-sdks:
+        patterns:
+          - "openai"
+          - "anthropic"
+          - "google-generativeai"
+    # These change behaviour, not just versions, so they are upgraded deliberately
+    # in their own PRs with a compatibility review — not proposed automatically.
+    #   pgvector : vector semantics and index behaviour
+    #   pytest   : collection and fixture behaviour
+    #   ruff     : lint rule set, so a bump can fail CI on untouched code
+    ignore:
+      - dependency-name: "pgvector"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "pytest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "ruff"
+        update-types: ["version-update:semver-major"]
 
   # ── Python: SDK ──
   - package-ecosystem: pip
@@ -23,24 +57,25 @@ updates:
       python-sdk:
         patterns: ["*"]
 
-  # ── Python: worker ──
-  - package-ecosystem: pip
-    directory: /services/worker
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  # ── Python: Streamlit demos (playground + results dashboard) ──
-  - package-ecosystem: pip
-    directory: /apps/playground
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-  - package-ecosystem: pip
-    directory: /apps/results-dashboard
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
+  # ── NOT monitored: generated dependency mirrors ──
+  #
+  # services/worker, apps/playground and apps/results-dashboard were watched as if
+  # they were independent pip projects. They are not:
+  #
+  #   services/worker/requirements.txt   ->  -r ../api/requirements.txt
+  #   apps/playground/requirements.txt   ->  -r ../../services/api/requirements.txt  (+ streamlit)
+  #
+  # Because Dependabot resolves those includes, it opened PRs *labelled* for the
+  # worker or the playground that in fact edited services/api/requirements.txt — a
+  # generated file. Those changes are erased by the next
+  # `scripts/sync_dependencies.py` run and fail the packaging drift gate, so they
+  # could never merge. Four such PRs (#104, #105, #107, #108) were closed.
+  #
+  # Upgrades reach these directories by changing services/api/pyproject.toml and
+  # regenerating. Reinstate an entry here only if one of these gains a genuinely
+  # authoritative manifest of its own — services/worker/pyproject.toml declares only
+  # `memoryops-api==<version>`, which is deliberately pinned to the API it ships
+  # with and must not drift independently.
 
   # ── Node: web frontend ──
   - package-ecosystem: npm

@@ -41,6 +41,44 @@ Generated files (all carry a DO-NOT-EDIT banner):
 | `requirements-production.txt` | `production` extra | API + worker images |
 | `requirements-dev.txt` | `dev` extra + `-r requirements.txt` | tests, lint |
 
+## Dependabot targets the manifest, never the mirrors
+
+Only **authoritative** manifests are watched:
+
+| Watched | Why |
+| --- | --- |
+| `/services/api` | `pyproject.toml` is the source of truth |
+| `/packages/memoryops-sdk` | declares its own dependencies |
+| `/apps/web` | `package.json` |
+| `/` (github-actions) | workflow pins |
+
+`services/worker`, `apps/playground` and `apps/results-dashboard` are **not**
+watched. Their requirements files are `-r` includes:
+
+```
+services/worker/requirements.txt   ->  -r ../api/requirements.txt
+apps/playground/requirements.txt   ->  -r ../../services/api/requirements.txt  (+ streamlit)
+```
+
+Dependabot resolves those includes, so it opened PRs *labelled* for the worker or
+playground that in fact edited `services/api/requirements.txt` — a generated file.
+Those edits are erased by the next `scripts/sync_dependencies.py` run and fail the
+drift gate, so they could never merge. Four were closed (#104, #105, #107, #108).
+
+Upgrades reach those directories by changing `services/api/pyproject.toml` and
+regenerating.
+
+### Grouped by blast radius
+
+A single `patterns: ["*"]` group produced one PR bundling FastAPI, Uvicorn,
+SQLAlchemy, psycopg, pgvector, pytest, Ruff and setuptools (#109, closed). A red
+result would not say which upgrade caused it; a green one would not say the others
+were exercised. Groups are now `api-runtime`, `database` and `provider-sdks`.
+
+**pgvector, pytest and Ruff are excluded** from automatic proposals — they change
+behaviour, not just versions: vector semantics, test collection, and a lint rule set
+that can fail CI on untouched code. Upgrade them deliberately, one PR each.
+
 ## Optional extras
 
 ```bash
