@@ -310,6 +310,89 @@ class Settings(BaseSettings):
                 "public — set MEMORYOPS_PUBLIC_EVALS=false."
             )
         errors.extend(self._provider_readiness_errors())
+        errors.extend(self._governance_readiness_errors())
+        return errors
+
+    def _governance_readiness_errors(self) -> list[str]:
+        """Reject a production deployment with governance switched off.
+
+        The research-ablation switches (`MEMORYOPS_GOVERNANCE_PROFILE=disabled`,
+        `MEMORYOPS_ABLATE_*`) exist so the paper study can measure a governed system
+        against a mechanism-matched ungoverned twin. They ship in the same binary as
+        production, and nothing stopped them being combined with
+        `MEMORYOPS_PROFILE=production`.
+
+        Verified before this check existed: a fully hardened production config
+        (postgres, jwt, explicit CORS, real DSN, evals off) plus
+        `MEMORYOPS_GOVERNANCE_PROFILE=disabled` produced **no** readiness errors and
+        stored a live API key with `status=active` — the policy broker's BLOCK never
+        ran. Every one of the seven invariants could be disabled by an env var while
+        the deployment reported itself production-ready.
+
+        All seven flags default to enabled, so this rejects only deployments that
+        explicitly turned governance off.
+
+        This is the guard, not the cure. The stronger fix is architectural — ship the
+        ablation wiring in a separate `memoryops-research` package or application
+        factory so a production binary cannot express these states at all. Tracked
+        separately; this closes the hole now.
+        """
+        import os
+
+        errors: list[str] = []
+        if self.governance_profile != "full":
+            errors.append(
+                f"governance_profile={self.governance_profile!r}: research ablation "
+                "disables the policy broker, transactional evidence, tombstone "
+                "propagation and the context gates — unset "
+                "MEMORYOPS_GOVERNANCE_PROFILE for production."
+            )
+        for attr, env, what in (
+            (
+                "govern_policy_enforcement",
+                "MEMORYOPS_ABLATE_POLICY_BROKER",
+                "the policy broker would not run before storage (invariant #5): "
+                "secrets and injection payloads would be stored active",
+            ),
+            (
+                "govern_transactional_evidence",
+                "MEMORYOPS_ABLATE_TRANSACTIONAL_EVIDENCE",
+                "lifecycle mutations and their audit events would no longer commit "
+                "atomically (invariant #7)",
+            ),
+            (
+                "govern_tombstone_propagation",
+                "MEMORYOPS_ABLATE_TOMBSTONE_PROPAGATION",
+                "deletion would not propagate to derived memories (invariant #2)",
+            ),
+            (
+                "admission_gate_enabled",
+                "MEMORYOPS_ADMISSION_GATE",
+                "no memory would be checked for admissibility before entering context",
+            ),
+            (
+                "recall_gate_enabled",
+                "MEMORYOPS_RECALL_GATE",
+                "audience clearance would not be enforced on recall",
+            ),
+            (
+                "output_gate_enabled",
+                "MEMORYOPS_OUTPUT_GATE",
+                "generated answers would not be checked for disclosure of blocked memory",
+            ),
+        ):
+            if not getattr(self, attr):
+                errors.append(f"{attr}=false: {what} — set {env} back on for production.")
+
+        # An ABLATE_* variable set to *any* value flips its control off, so its mere
+        # presence is disqualifying regardless of the value.
+        present = sorted(k for k in os.environ if k.startswith("MEMORYOPS_ABLATE_"))
+        if present:
+            errors.append(
+                f"research ablation variables set in a production environment: "
+                f"{', '.join(present)} — these disable governance controls and must "
+                "be unset."
+            )
         return errors
 
     def _provider_readiness_errors(self) -> list[str]:
