@@ -236,7 +236,22 @@ audit `memory_deleted`. The memory is never retrievable again.
 Query: `tenant_id` (req), `user_id` (opt), `memory_id` (opt), `limit` (opt, ≤1000).
 Returns `AuditEvent[]` (append-only), newest first.
 
+**Authorization.** A tenant-wide read — omitting `user_id`, or naming another user —
+requires the `audit:read:tenant` permission. Without it the query is forced to the
+caller's own `user_id`; a request naming another user returns `403`.
+
+`user_id` was previously optional *and unauthorized*, and the scope-validation
+middleware only checks a `user_id` that is **present** — so omitting it skipped
+validation entirely and returned tenant-wide records to any authenticated caller.
+Reproduced with auth on: alice requesting `?tenant_id=acme` received bob's rows.
+
+This is a behaviour change: callers that relied on unauthorized tenant-wide reads now
+receive `403`. See [security/api-rbac.md](security/api-rbac.md).
+
 ## GET /api/metrics
+Requires `metrics:read:tenant` — the counts are tenant-wide, so an ordinary user
+should not learn how much other users have stored.
+
 Query: `tenant_id` (req). Returns per-tenant business counts:
 `{ total_memories, by_status, audit_events, by_action }`. (Distinct from the
 process-wide Prometheus surface at `GET /metrics` — see Ops.)

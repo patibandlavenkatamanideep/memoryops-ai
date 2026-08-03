@@ -42,6 +42,10 @@ const BLOCKED_REQUEST_HEADERS = new Set([
   "cookie",
   "x-memoryops-tenant",
   "x-memoryops-user",
+  // A browser must never supply its own role. The BFF sets this from the
+  // server-resolved session below; anything inbound is stripped first.
+  "x-memoryops-roles",
+  "x-memoryops-actor-type",
 ]);
 
 async function proxy(request: Request, path: string[]): Promise<Response> {
@@ -96,6 +100,9 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
   } else if (credential.kind === "trusted_header") {
     headers.set("x-memoryops-tenant", identity.tenantId);
     headers.set("x-memoryops-user", identity.userId);
+    // Without this the API sees no role claim at all, so an auditor session was
+    // downgraded to the least-privileged default at the API boundary.
+    headers.set("x-memoryops-roles", identity.role);
   }
 
   let body: string | undefined;

@@ -46,16 +46,12 @@ def workers_health_public() -> dict:
     moved to `GET /api/admin/workers/health`, which is inside the auth boundary and
     requires `worker:read`.
     """
+    # Liveness only. Even aggregate run and failure counts disclose deployment
+    # activity and operational condition to an unauthenticated caller, and this
+    # endpoint sits outside the /api/* auth boundary. Counts, per-scope history and
+    # failure reasons all live behind `worker:read` on /api/admin/workers/health.
     detail = _worker_health_detail()
-    if detail.get("healthy") is None:
-        # Operational access unconfigured, or unavailable — still no identifiers.
-        return {"healthy": None, "detail": detail.get("detail", "unavailable")}
-    return {
-        "healthy": detail["healthy"],
-        "runs_observed": detail.get("runs_observed", 0),
-        "dead_letter_count": detail.get("dead_letter_count", 0),
-        "failed_count": detail.get("failed_count", 0),
-    }
+    return {"healthy": detail.get("healthy")}
 
 
 @admin_router.get("/workers/health")

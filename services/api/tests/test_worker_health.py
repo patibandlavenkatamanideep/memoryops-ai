@@ -8,7 +8,7 @@ from app.workers.orchestrator import RUN_COMPLETED, RUN_DEAD_LETTER
 
 def test_workers_health_empty_is_healthy(api_client) -> None:
     client, _repo = api_client
-    resp = client.get("/healthz/workers")
+    resp = client.get("/api/admin/workers/health")
     assert resp.status_code == 200
     body = resp.json()
     assert body["healthy"] is True
@@ -20,12 +20,12 @@ def test_workers_health_reflects_dead_letter(api_client) -> None:
     repo.add_worker_run(
         WorkerRunRecord(tenant_id="t1", user_id="u1", status=RUN_COMPLETED)
     )
-    assert client.get("/healthz/workers").json()["healthy"] is True
+    assert client.get("/api/admin/workers/health").json()["healthy"] is True
 
     repo.add_worker_run(
         WorkerRunRecord(tenant_id="t2", user_id="u2", status=RUN_DEAD_LETTER)
     )
-    body = client.get("/healthz/workers").json()
+    body = client.get("/api/admin/workers/health").json()
     assert body["healthy"] is False
     assert body["dead_letter_count"] == 1
     assert body["runs_observed"] == 2
@@ -48,6 +48,6 @@ def test_workers_health_fails_closed_when_operational_access_unconfigured(
 
     monkeypatch.setattr(orch, "summarize_runtime_health", _unconfigured)
 
-    body = client.get("/healthz/workers").json()
+    body = client.get("/api/admin/workers/health").json()
     assert body["healthy"] is None  # not True (falsely healthy) and not False (crash)
     assert body["detail"] == "operational access not configured"

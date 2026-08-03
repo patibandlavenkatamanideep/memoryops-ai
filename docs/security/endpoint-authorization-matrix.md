@@ -15,28 +15,66 @@ Generated behaviour is asserted in `services/api/tests/test_api_rbac.py`.
 | `tenant_admin` | Every permission, within one tenant. |
 | `service_worker` | Machine identity for the worker fleet: operational reads and replay only, never memory content. |
 
-An authenticated caller with **no recognised role** falls back to `memory_reader`.
-Unrecognised names are ignored rather than trusted, so an issuer sending `"admin"`
-cannot accidentally match `tenant_admin`, and a typo cannot escalate.
+Role resolution has **three** states, not two:
 
-## Matrix
+| Credential | Result |
+| --- | --- |
+| no role claim, `auth_require_role_claim=false` | falls back to `memory_reader` |
+| no role claim, `auth_require_role_claim=true` (production default) | **no permissions** |
+| claim names recognised roles | those roles |
+| claim present but names nothing recognised | **no permissions** |
+
+The last row matters: collapsing it into `memory_reader` would mean
+`roles=["service_workre"]` — a typo — silently receives `memory:read:self` and
+`memory:write:self`. A mistyped credential must grant nothing.
+
+An issuer sending `"admin"` cannot accidentally match `tenant_admin`.
+
+`is_service_account` comes from an explicit `actor_type` claim
+(`MEMORYOPS_AUTH_JWT_ACTOR_TYPE_CLAIM`) or `X-MemoryOps-Actor-Type` header — never
+inferred from a role name.
+
+## Enforced today
+
+These routes check a permission at the route boundary. Everything else is listed
+under *Planned* below — this table states what the runtime does, not what the model
+could express.
 
 | Endpoint | Method | Permission | Scope |
 | --- | --- | --- | --- |
-| `/api/chat` | POST | `memory:write:self` | own user |
-| `/api/memories` | GET | `memory:read:self` | own user |
-| `/api/memories/{id}` | PATCH | `memory:write:self` (+ `memory:approve` / `memory:archive` for transitions) | own user |
-| `/api/memories/{id}` | DELETE | `memory:delete` | own user |
 | `/api/audit` (scoped) | GET | `audit:read:self` | forced to caller's `user_id` |
 | `/api/audit` (tenant-wide) | GET | **`audit:read:tenant`** | tenant |
 | `/api/metrics` | GET | **`metrics:read:tenant`** | tenant |
-| `/api/traces` | GET | `traces:read:tenant` | tenant |
-| `/api/retention/*` | POST | `retention:manage` / `consent:manage` | tenant |
-| `/api/evidence/*` | GET | `evidence:read` | tenant |
-| `/api/evals/run` | POST | `evals:run` | tenant |
-| `/healthz` | GET | none — public | process liveness only |
-| `/healthz/workers` | GET | none — public | **safe aggregate only** |
 | `/api/admin/workers/health` | GET | **`worker:read`** | full detail |
+| `/healthz` | GET | none — public | process liveness only |
+| `/healthz/workers` | GET | none — public | **`{"healthy": …}` only** |
+
+Every route also remains tenant-scoped by the existing middleware and
+`enforce_scope`, which is unchanged.
+
+## Planned — route coverage not yet enforced
+
+The permission vocabulary exists and these are the intended assignments, but the
+routes do **not** yet check them. Do not rely on this section as a control.
+
+| Endpoint | Method | Intended permission |
+| --- | --- | --- |
+| `/api/chat` | POST | `memory:write:self` |
+| `/api/memories`, `/api/memories/{id}` | GET | `memory:read:self` |
+| `/api/memories/{id}` content/importance/confidence | PATCH | `memory:write:self` |
+| `/api/memories/{id}` pending→active | PATCH | `memory:approve` |
+| `/api/memories/{id}` archive/restore | PATCH | `memory:archive` |
+| `/api/memories/{id}` | DELETE | `memory:delete` |
+| `/api/retention/*` read | GET | `retention:read` |
+| `/api/retention/*` mutation, legal hold | POST | `retention:manage` |
+| `/api/retention/consent` | POST | `consent:manage` |
+| `/api/evidence/*` | GET | `evidence:read` |
+| `/api/traces` | GET | `traces:read:tenant` |
+| `/api/evals/run` | POST | `evals:run` |
+
+Tracked in `feat/api-rbac-route-coverage`, together with a CI guard that enumerates
+sensitive routes from the FastAPI router and fails when one declares no
+authorization requirement — so this table cannot drift from the runtime again.
 
 ## The two holes this closed
 
@@ -56,8 +94,12 @@ to the caller's own `user_id`.
 **Worker health.** `/healthz/workers` sits **outside** the `/api/*` authentication
 boundary, so it is reachable unauthenticated. It returned `last_run_per_scope`,
 whose keys are built as `f"{tenant_id}:{user_id}"` — leaking the tenant and user
-identifiers of every scope the fleet had processed. It now returns counts only; the
-detailed view moved to `/api/admin/workers/health` behind `worker:read`.
+identifiers of every scope the fleet had processed.
+
+It now returns `{"healthy": …}` and nothing else. Run counts, dead-letter and
+failure totals, per-scope history and failure reasons all moved to
+`/api/admin/workers/health` behind `worker:read` — aggregate counts still disclose
+deployment activity and operational condition to an unauthenticated caller.
 
 ## Behaviour when auth is disabled
 

@@ -114,9 +114,14 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.SERVICE_WORKER: frozenset({_P.WORKER_READ, _P.WORKER_REPLAY}),
 }
 
-#: Applied when an authenticated caller presents no recognised role. Least
-#: privilege — never an admin default. An unrecognised role name is ignored rather
-#: than trusted, so a typo cannot silently escalate.
+#: Applied only when a credential carries **no role claim at all** and the
+#: deployment permits that fallback. Least privilege — never an admin default.
+#:
+#: A claim that is *present but contains no recognised role* gets **nothing**, not
+#: this. Collapsing those two states would silently grant human memory permissions
+#: to a mistyped credential: `roles=["service_workre"]` would resolve to
+#: `memory_reader` and receive `memory:read:self` + `memory:write:self`. A typo must
+#: not grant anything.
 DEFAULT_ROLE = Role.MEMORY_READER
 
 
@@ -138,6 +143,19 @@ def parse_roles(raw: object) -> frozenset[Role]:
 
     known = {r.value: r for r in Role}
     return frozenset(known[c.strip()] for c in candidates if c.strip() in known)
+
+
+def resolve_roles(raw: object) -> tuple[frozenset[Role], bool]:
+    """Return `(roles, claim_present)` so callers can tell the three states apart.
+
+    * claim absent            -> `(frozenset(), False)`
+    * claim valid             -> `(roles, True)`
+    * claim present, invalid  -> `(frozenset(), True)`
+
+    The third case must not fall back to a default role.
+    """
+    present = raw is not None and raw != "" and raw != []
+    return parse_roles(raw), present
 
 
 def permissions_for(roles: frozenset[Role]) -> frozenset[Permission]:

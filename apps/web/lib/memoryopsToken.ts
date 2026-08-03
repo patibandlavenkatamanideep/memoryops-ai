@@ -36,7 +36,11 @@ export async function mintApiToken(identity: Identity): Promise<string | null> {
   const ttl = Number(process.env.MEMORYOPS_API_TOKEN_TTL_SECONDS ?? DEFAULT_TTL_SECONDS);
   const builder = new SignJWT({
     tenant_id: identity.tenantId,
-    role: identity.role,
+    // `roles` (plural, array) is what the API's adapter reads by default. Emitting
+    // a singular `role` meant the claim never matched, so every authenticated web
+    // user — including auditors and admins — reached the API with no recognised
+    // role and fell back to the least-privileged default.
+    roles: [identity.role],
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(identity.userId)

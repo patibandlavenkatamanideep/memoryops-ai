@@ -197,6 +197,15 @@ class Settings(BaseSettings):
     #: Header carrying roles in trusted_header mode. Only meaningful when the
     #: upstream proxy is the sole path to the API — see docs/security/api-rbac.md.
     auth_roles_header: str = "X-MemoryOps-Roles"
+    #: Header/claim naming the actor type. `service_account` marks a machine
+    #: credential. Never inferred from a role name — the contract is explicit.
+    auth_actor_type_header: str = "X-MemoryOps-Actor-Type"
+    auth_jwt_actor_type_claim: str = "actor_type"
+    #: When true, a credential with no role claim gets **no** permissions instead of
+    #: falling back to `DEFAULT_ROLE`. Defaults on under the production profile: a
+    #: deployment that has adopted roles should not silently grant memory access to
+    #: a credential that forgot to carry them.
+    auth_require_role_claim: bool = False
     auth_jwt_audience: str = ""
     auth_jwt_issuer: str = ""
     # Optional JWKS endpoint (RS*/ES*). When set, the signing key is fetched + cached
@@ -319,6 +328,12 @@ class Settings(BaseSettings):
             )
         errors.extend(self._provider_readiness_errors())
         errors.extend(self._governance_readiness_errors())
+        if self.auth_mode != "none" and not self.auth_require_role_claim:
+            errors.append(
+                "auth_require_role_claim=false: a credential with no role claim would "
+                "fall back to the least-privileged default instead of being refused — "
+                "set MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM=true so roles must be explicit."
+            )
         return errors
 
     def _governance_readiness_errors(self) -> list[str]:
@@ -492,6 +507,8 @@ def get_settings() -> Settings:
     overrides = {}
     if (val := os.getenv("MEMORYOPS_METRICS_ENABLED")) is not None:
         overrides["metrics_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM")) is not None:
+        overrides["auth_require_role_claim"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_PUBLIC_EVALS")) is not None:
         overrides["public_evals"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_RATE_LIMIT_ENABLED")) is not None:
@@ -602,6 +619,8 @@ def get_settings() -> Settings:
     for env_name, field_name in (
         ("MEMORYOPS_AUTH_TENANT_HEADER", "auth_tenant_header"),
         ("MEMORYOPS_AUTH_ROLES_HEADER", "auth_roles_header"),
+        ("MEMORYOPS_AUTH_ACTOR_TYPE_HEADER", "auth_actor_type_header"),
+        ("MEMORYOPS_AUTH_JWT_ACTOR_TYPE_CLAIM", "auth_jwt_actor_type_claim"),
         ("MEMORYOPS_AUTH_JWT_ROLES_CLAIM", "auth_jwt_roles_claim"),
         ("MEMORYOPS_AUTH_USER_HEADER", "auth_user_header"),
         ("MEMORYOPS_AUTH_JWT_KEY", "auth_jwt_key"),

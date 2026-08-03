@@ -27,6 +27,13 @@ class Principal:
     #: which resolves to `DEFAULT_ROLE` (least privilege) rather than to nothing —
     #: an authenticated caller can still manage their own memory.
     roles: frozenset[Role] = field(default_factory=frozenset)
+    #: True when the credential carried a role claim/header at all — even one that
+    #: named nothing recognised. Distinguishes "no roles configured" (which may
+    #: fall back to `DEFAULT_ROLE`) from "roles were declared and none were valid"
+    #: (which must grant nothing, so a typo cannot hand out permissions).
+    role_claim_present: bool = False
+    #: Set when the deployment requires an explicit role claim (production default).
+    require_role_claim: bool = False
     #: Stable identifier for the acting entity, for audit. Falls back to `user_id`.
     actor_id: str = ""
     #: True for machine credentials (the worker fleet), scoped to operational
@@ -35,7 +42,15 @@ class Principal:
 
     @property
     def effective_roles(self) -> frozenset[Role]:
-        return self.roles or frozenset({DEFAULT_ROLE})
+        if self.roles:
+            return self.roles
+        # A claim was supplied but named nothing recognised → no privilege at all.
+        if self.role_claim_present:
+            return frozenset()
+        # No claim. Fall back only where the deployment allows it.
+        if self.require_role_claim:
+            return frozenset()
+        return frozenset({DEFAULT_ROLE})
 
     @property
     def permissions(self) -> frozenset[Permission]:

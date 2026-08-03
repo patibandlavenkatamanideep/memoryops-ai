@@ -237,6 +237,104 @@ def test_detailed_worker_health_is_inside_the_auth_boundary(rbac_client):
     assert r.status_code in (401, 403)
 
 
+# ── three-state role resolution ──────────────────────────────────────────────
+def test_a_role_claim_naming_nothing_recognised_grants_nothing():
+    """A typo must not hand out permissions.
+
+    Collapsing "no claim" and "claim present but invalid" into `memory_reader`
+    would give `roles=["service_workre"]` both `memory:read:self` and
+    `memory:write:self` — human memory access for a credential that was meant to be
+    an operational service account.
+    """
+    from app.auth.principal import Principal
+    from app.auth.roles import resolve_roles
+
+    roles, present = resolve_roles(["service_workre"])
+    assert roles == frozenset()
+    assert present is True
+
+    p = Principal(
+        tenant_id="t", user_id="u", provider="jwt",
+        roles=roles, role_claim_present=present,
+    )
+    assert p.effective_roles == frozenset()
+    assert p.permissions == frozenset()
+    assert not p.has(Permission.MEMORY_READ_SELF)
+
+
+def test_resolve_roles_distinguishes_absent_from_invalid():
+    from app.auth.roles import resolve_roles
+
+    assert resolve_roles(None) == (frozenset(), False)
+    assert resolve_roles("") == (frozenset(), False)
+    assert resolve_roles([]) == (frozenset(), False)
+    assert resolve_roles("auditor") == (frozenset({Role.AUDITOR}), True)
+    assert resolve_roles("nonsense") == (frozenset(), True)
+
+
+def test_a_missing_claim_can_be_required_instead_of_defaulted():
+    from app.auth.principal import Principal
+
+    lenient = Principal(tenant_id="t", user_id="u", provider="jwt")
+    assert lenient.effective_roles == frozenset({DEFAULT_ROLE})
+
+    strict = Principal(tenant_id="t", user_id="u", provider="jwt", require_role_claim=True)
+    assert strict.effective_roles == frozenset()
+    assert strict.permissions == frozenset()
+
+
+def test_production_requires_an_explicit_role_claim():
+    from app.core.config import Settings
+
+    hardened = dict(
+        profile="production",
+        storage="postgres",
+        auth_mode="jwt",
+        cors_allow_origins="https://app.example.com",
+        database_url="postgresql+psycopg://real:secret@db.internal:5432/memoryops",
+        public_evals=False,
+    )
+    errors = Settings(**hardened).production_readiness_errors()
+    assert any("auth_require_role_claim" in e for e in errors)
+    assert Settings(**hardened, auth_require_role_claim=True).production_readiness_errors() == []
+
+
+# ── service account identity is explicit, never inferred ─────────────────────
+def test_service_account_comes_from_a_verified_claim_not_a_role_name():
+    """`is_service_account` was declared but never populated. Inferring it from the
+    role name would make the contract implicit and unverifiable."""
+    from app.auth.providers import TrustedHeaderProvider
+
+    provider = TrustedHeaderProvider(
+        "X-MemoryOps-Tenant", "X-MemoryOps-User",
+        "X-MemoryOps-Roles", "X-MemoryOps-Actor-Type",
+    )
+    human = provider.resolve(
+        {"x-memoryops-tenant": "t", "x-memoryops-user": "u", "x-memoryops-roles": "service_worker"}
+    )
+    assert human is not None and human.is_service_account is False
+
+    machine = provider.resolve(
+        {
+            "x-memoryops-tenant": "t",
+            "x-memoryops-user": "svc",
+            "x-memoryops-roles": "service_worker",
+            "x-memoryops-actor-type": "service_account",
+        }
+    )
+    assert machine is not None and machine.is_service_account is True
+
+
+# ── public worker health is liveness only ────────────────────────────────────
+def test_public_worker_health_exposes_no_activity_counts(rbac_client):
+    """Aggregate run and failure counts still disclose deployment activity and
+    operational condition to an unauthenticated caller."""
+    body = rbac_client.get("/healthz/workers").json()
+    assert set(body.keys()) == {"healthy"}
+    for leaked in ("runs_observed", "dead_letter_count", "failed_count", "last_run_per_scope"):
+        assert leaked not in body
+
+
 # ── auth disabled keeps the demo working ─────────────────────────────────────
 def test_authorization_is_a_no_op_when_auth_is_disabled(api_client):
     """Same contract as `enforce_scope`: no principal, no enforcement.
