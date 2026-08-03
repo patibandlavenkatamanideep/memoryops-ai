@@ -60,6 +60,16 @@ class WorkerRunStatus(str, Enum):
     completed_with_findings = "completed_with_findings"  # e.g. deletion leak found
     skipped = "skipped"  # job disabled / not applicable
     failed = "failed"  # unexpected error; never blocks chat
+    # A `failed` job that exhausted its retry budget. Distinct from `failed` so
+    # exhausted work is replayable instead of merely recorded: lifecycle workers
+    # catch their own errors and return a failed *result* rather than raising, so
+    # the orchestration-level retry never saw them and nothing was ever retried or
+    # dead-lettered at the job level.
+    dead_letter = "dead_letter"
+    # The scope's lease was lost (or shutdown was requested) before this job ran, so
+    # it was deliberately not started — fail closed rather than mutate a scope
+    # another replica may now own.
+    aborted = "aborted"
 
 
 # ── Audit / structured event actions (invariant #7) ───────────────────────────

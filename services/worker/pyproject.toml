@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77.0,<83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memoryops-worker"
+version = "1.0.0"
+description = "MemoryOps AI — background memory lifecycle worker"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+# The worker shares the API's repository, config, and lifecycle workers. It used to
+# get them by inserting ../api into sys.path at import time; now it declares an
+# ordinary dependency on the built distribution, so there is no PYTHONPATH or
+# sys.path.insert() left in a production entrypoint and the two services can never
+# resolve different dependency sets.
+#
+# Installed from the repo root as an editable/local install:
+#   pip install ./services/api ./services/worker
+dependencies = [
+  "memoryops-api==1.0.0",
+]
+
+[project.optional-dependencies]
+# Mirrors the API's `production` extra (postgres + provider SDKs). Kept as a
+# passthrough so the worker image installs exactly what the API image does.
+production = [
+  "memoryops-api[production]==1.0.0",
+]
+
+[project.scripts]
+memoryops-worker = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

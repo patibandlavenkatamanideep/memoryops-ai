@@ -94,3 +94,61 @@ an unscoped `list_worker_runs()` query (which is why worker health had regressed
 `OPERATIONAL_DATABASE_URL` (a monitoring/BYPASSRLS role); unconfigured, it fails **closed**
 to a documented "operational access not configured" state. Orchestration, leasing, retry,
 and scheduling semantics are unchanged. See ADR-027 and `docs/worker-runtime.md`.
+
+## Amendment: lease heartbeat, per-job retry, graceful shutdown, packaging
+
+Three gaps between what this ADR claimed and what the runtime did, each silent in
+production.
+
+**1. The lease was acquired but never renewed.** `WorkerLeaseManager.renew()` shipped
+with v0.8 and nothing called it. The orchestrator acquired once, ran the whole scope,
+and released. Any scope whose jobs outlived `worker_lease_ttl_seconds` (default 300s)
+therefore lost exclusivity *mid-run*: the lease expired, a second replica acquired the
+same `(tenant, user)`, and both mutated it concurrently. Idempotent jobs limit the
+damage but do not make concurrent lifecycle mutation of one scope correct — decay,
+retention, and compaction all write.
+
+`app/workers/heartbeat.py` renews on a daemon thread at `ttl/3` and **fails closed**
+when renewal fails or raises: the scope stops between jobs, remaining jobs are recorded
+as `aborted`, and the run is recorded as `lease_lost`.
+
+*Residual risk, stated rather than hidden:* this is cooperative, not fencing. The abort
+flag is observed **between** jobs, so a worker that stalls (long GC pause, VM freeze)
+after its check and resumes past expiry can still complete the write it was in. Closing
+that requires a monotonic fence token checked at the storage write itself — a schema
+change plus threading the fence through every job's writes. Deferred deliberately; what
+is closed here is the previously *guaranteed* failure: a job that simply runs longer
+than the TTL.
+
+**2. Retry was at the wrong granularity.** `run_with_retry` wrapped `run_jobs`, but
+lifecycle workers catch their own errors and *return* a `failed` result rather than
+raising — `retry.py` even documented that it only covered orchestration-level
+exceptions. The wrapper therefore only ever saw clean returns, so a failing job was
+recorded as failed and then dropped: never retried, never dead-lettered.
+
+Retry is now **per job** and keys off the returned status. Exhausted budgets become a
+new terminal `dead_letter` status, so the work is replayable rather than merely logged.
+`completed_with_findings` is explicitly **not** retried — a finding (e.g. a deletion
+leak) is a real result, and retrying would multiply audit events and mask it.
+
+**3. There was no graceful shutdown.** `run_forever` looped on a bare `time.sleep` with
+no signal handling. Every deploy hard-killed the worker mid-tick and left its lease held
+for the remainder of the TTL, so the next replica skipped that scope; with a 60s
+interval the process spent nearly all its life unable to react to SIGTERM at all.
+`app/workers/shutdown.py` turns SIGTERM/SIGINT into a cooperative stop flag and the
+inter-tick wait into an interruptible `Event.wait`. The scope in flight finishes, its
+lease is released, remaining scopes are left for the next replica, and the process
+exits 0.
+
+**Packaging.** `services/worker/main.py` inserted `../api` into `sys.path` at import
+time, tying the worker to the repository layout and blocking a wheel. `memoryops-api`
+is now a properly built distribution, so the worker declares an ordinary dependency on
+it and ships a `memoryops-worker` console script. No `sys.path` or `PYTHONPATH`
+manipulation remains in a production entrypoint.
+
+Consequences: run history gains `dead_letter` / `aborted` job statuses and a
+`lease_lost` run status; `/readyz`'s `worker_runtime` check gains freshness. Tenant
+isolation, explicit scope enumeration, and the policy broker's authority are unchanged.
+Still open: fencing tokens, a dead-letter **replay** command, and dynamic scope
+discovery (`MEMORYOPS_WORKER_SCOPES` remains operator-configured). See
+`docs/worker-runtime.md` and `tests/test_worker_reliability.py`.

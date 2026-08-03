@@ -171,3 +171,70 @@ def test_checked_update_rejects_a_stale_revision(repo) -> None:
     # A second writer still holding revision 1 must lose, not clobber.
     assert repo.update_memory_checked(m, expected_revision=1) is None
     assert repo.get_memory("t1", "u1", m.id).revision == 2
+
+# ── per-job retry, dead-letter, and cooperative shutdown ─────────────────────
+# Retry used to wrap `run_jobs` as a whole, but lifecycle workers catch their own
+# errors and *return* status=failed rather than raising — so the wrapper only saw
+# clean returns and a failing job was recorded then dropped: never retried, never
+# dead-lettered. Full coverage in tests/test_worker_reliability.py.
+def test_orchestrator_dead_letters_a_persistently_failing_job(repo, monkeypatch) -> None:
+    from app.workers import runner as runner_module
+    from app.workers.schemas import WorkerJob, WorkerJobResult, WorkerRunStatus
+
+    calls = {"n": 0}
+
+    class _AlwaysFails:
+        def __init__(self, repo, audit) -> None:
+            pass
+
+        def run(self, ctx) -> WorkerJobResult:
+            calls["n"] += 1
+            return WorkerJobResult(
+                job=WorkerJob.decay.value,
+                tenant_id=ctx.tenant_id,
+                user_id=ctx.user_id,
+                started_at=ctx.now,
+                completed_at=ctx.now,
+                status=WorkerRunStatus.failed.value,
+                error="Boom",
+            )
+
+    monkeypatch.setitem(runner_module._WORKERS, WorkerJob.decay, _AlwaysFails)
+
+    record = _orch(repo).run_scope(Scope("t1", "u1", jobs=("decay",)), now=NOW)
+
+    assert calls["n"] == 2, "the failing job must be retried, not recorded once and dropped"
+    assert record.status == RUN_DEAD_LETTER
+    assert record.details["jobs"]["decay"] == WorkerRunStatus.dead_letter.value
+
+
+def test_orchestrator_stops_between_scopes_when_shutdown_is_requested(repo) -> None:
+    """SIGTERM must stop the pass at a scope boundary, releasing the lease cleanly."""
+    from app.workers.shutdown import ShutdownSignal
+
+    seed_memory(repo, status=Status.active)
+    shutdown = ShutdownSignal()
+    orch = _orch(repo, shutdown=shutdown)
+
+    shutdown.set()
+    records = orch.run_once([Scope("t1", "u1"), Scope("t2", "u2")], now=NOW)
+
+    assert records == []
+    assert repo.get_lease(scope_key("t1", "u1")) is None
+
+
+def test_lease_is_released_even_when_every_job_dead_letters(repo, monkeypatch) -> None:
+    from app.workers import runner as runner_module
+    from app.workers.schemas import WorkerJob
+
+    class _Explodes:
+        def __init__(self, repo, audit) -> None:
+            pass
+
+        def run(self, ctx):
+            raise RuntimeError("worker exploded")
+
+    monkeypatch.setitem(runner_module._WORKERS, WorkerJob.decay, _Explodes)
+    _orch(repo).run_scope(Scope("t1", "u1", jobs=("decay",)), now=NOW)
+    # A stuck lease would make the next replica skip this scope for a full TTL.
+    assert repo.get_lease(scope_key("t1", "u1")) is None

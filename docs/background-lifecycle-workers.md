@@ -155,3 +155,29 @@ deleted memory's content + vector material (`memory_legal_hold_compaction_blocke
 rather than clearing it — preserved for discovery, not crypto-shredded. Pins
 exempt from decay/archive; protection exempts from retention auto-deletion. All
 governance state is content-free metadata and every action is audited.
+
+## Job result statuses (amended)
+
+`WorkerRunStatus` gained two terminal states alongside the original four:
+
+| Status | Meaning | Retried? |
+| --- | --- | --- |
+| `completed` | job ran, nothing to flag | no |
+| `completed_with_findings` | a real finding (e.g. a deletion leak) | **no** — a finding is a result, not a fault; retrying would multiply audit events and mask it |
+| `skipped` | job disabled / not applicable | no |
+| `failed` | unexpected error | yes, to `worker_max_attempts` |
+| `dead_letter` | `failed` after exhausting its retry budget | terminal; replayable rather than lost |
+| `aborted` | not started because the scope's lease was lost or shutdown was requested | no |
+
+`dead_letter` exists because retry was previously applied around `run_jobs` as a whole,
+while lifecycle workers catch their own errors and *return* `failed` instead of raising.
+The wrapper only ever saw clean returns, so a failing job was recorded and then dropped
+— never retried, never dead-lettered. Retry is now per job and keys off the returned
+status.
+
+`aborted` is the fail-closed outcome of the lease heartbeat: rather than continuing to
+mutate a scope this worker may no longer own, remaining jobs are recorded as `aborted`
+so the gap is visible in run history instead of silently absent.
+
+Both statuses are content-free, like every other worker result: ids, counts, and
+reasons only — never memory text. See ADR-012's amendment and `docs/worker-runtime.md`.

@@ -19,6 +19,7 @@ from ..core.logging import get_logger
 from ..db.entities import WorkerRunRecord
 from ..db.repository import Repository
 from .orchestrator import Scope, WorkerOrchestrator, parse_scopes
+from .shutdown import ShutdownSignal
 
 logger = get_logger("memoryops.workers.scheduler")
 
@@ -32,12 +33,16 @@ class WorkerScheduler:
         interval_seconds: int | None = None,
         orchestrator: WorkerOrchestrator | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        shutdown: ShutdownSignal | None = None,
     ) -> None:
         s = get_settings()
         self._repo = repo
         self._scopes = scopes if scopes is not None else parse_scopes(s.worker_scopes)
         self._interval = interval_seconds or s.worker_interval_seconds
-        self._orchestrator = orchestrator or WorkerOrchestrator(repo)
+        # The orchestrator needs the same stop flag so it can break between scopes
+        # and between jobs, not just between ticks.
+        self._shutdown = shutdown
+        self._orchestrator = orchestrator or WorkerOrchestrator(repo, shutdown=shutdown)
         self._sleep = sleep
 
     @property
@@ -64,9 +69,17 @@ class WorkerScheduler:
         A tick never raises into the loop: the orchestrator records per-scope
         failures, and any unexpected error is caught here so the scheduler keeps
         running (the worker process must not crash on a single bad pass).
+
+        Shutdown is cooperative. When a ``ShutdownSignal`` is supplied the
+        between-tick wait is an interruptible ``Event.wait`` rather than
+        ``time.sleep``, so a SIGTERM arriving mid-interval is acted on immediately
+        instead of after the full interval (with a 60s default, the process
+        previously spent nearly all its life ignoring SIGTERM until the SIGKILL).
         """
         ticks = 0
         while max_ticks is None or ticks < max_ticks:
+            if self._stop_requested():
+                break
             try:
                 self.tick()
             except Exception as exc:  # noqa: BLE001 — scheduler must survive a bad tick
@@ -76,6 +89,24 @@ class WorkerScheduler:
                            "error": type(exc).__name__},
                 )
             ticks += 1
+            if self._stop_requested():
+                break
             if max_ticks is None or ticks < max_ticks:
-                self._sleep(self._interval)
+                self._wait(self._interval)
+        if self._stop_requested():
+            logger.info(
+                "worker scheduler stopped cleanly",
+                extra={"event": "worker_stopped", "status": "ok", "ticks": ticks},
+            )
         return ticks
+
+    # ── shutdown plumbing ─────────────────────────────────────────────────────
+    def _stop_requested(self) -> bool:
+        return self._shutdown is not None and self._shutdown.is_set()
+
+    def _wait(self, seconds: float) -> None:
+        """Interruptible inter-tick wait; falls back to the injected sleep."""
+        if self._shutdown is not None:
+            self._shutdown.wait(seconds)
+        else:
+            self._sleep(seconds)
