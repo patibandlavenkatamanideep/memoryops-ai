@@ -165,7 +165,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 #: A claim that is *present but contains no recognised role* gets **nothing**, not
 #: this. Collapsing those two states would silently grant human memory permissions
 #: to a mistyped credential: `roles=["service_workre"]` would resolve to
-#: `memory_reader` and receive `memory:read:self` + `memory:write:self`. A typo must
+#: `memory_user` and receive `memory:read:self` + `memory:write:self`. A typo must
 #: not grant anything.
 DEFAULT_ROLE = Role.MEMORY_USER
 
@@ -190,7 +190,9 @@ def parse_roles(raw: object) -> frozenset[Role]:
     return frozenset(known[c.strip()] for c in candidates if c.strip() in known)
 
 
-def resolve_roles(raw: object) -> tuple[frozenset[Role], bool]:
+def resolve_roles(
+    raw: object, *, claim_present: bool | None = None
+) -> tuple[frozenset[Role], bool]:
     """Return `(roles, claim_present)` so callers can tell the four states apart.
 
     * claim omitted           -> `(frozenset(), False)`  — compatibility fallback
@@ -198,18 +200,24 @@ def resolve_roles(raw: object) -> tuple[frozenset[Role], bool]:
     * claim present, invalid  -> `(frozenset(), True)`   — zero permissions
     * claim present, empty    -> `(frozenset(), True)`   — zero permissions
 
-    Presence is `raw is not None` and nothing more. Treating `[]` and `""` as
-    absent conflated two different statements: an issuer that deliberately grants a
-    credential **no roles** was indistinguishable from an older credential that
-    predates roles entirely, so an explicitly empty role set silently received the
-    `memory_reader` fallback — `memory:read:self` and `memory:write:self` for an
-    identity the issuer said should have nothing.
+    Treating `[]` and `""` as absent conflated two different statements: an issuer
+    that deliberately grants a credential **no roles** was indistinguishable from an
+    older credential that predates roles entirely, so an explicitly empty role set
+    silently received the `memory_user` fallback — `memory:read:self` and
+    `memory:write:self` for an identity the issuer said should have nothing.
 
     An omitted claim is a *compatibility* question the deployment answers
     (`auth_require_role_claim`). An empty claim is an *authorization decision the
     issuer already made*, and must be honoured.
+
+    `claim_present` lets a caller state presence it knows independently of the value.
+    A JSON `null` is a *present* claim whose value is `None`, and no inspection of
+    the value can reveal that — the default `raw is not None` would read it as
+    omitted and hand back the fallback. Header-based callers omit the argument: for
+    them an absent header really is `None`, and an empty header is `""`.
     """
-    return parse_roles(raw), raw is not None
+    present = (raw is not None) if claim_present is None else claim_present
+    return parse_roles(raw), present
 
 
 def permissions_for(roles: frozenset[Role]) -> frozenset[Permission]:

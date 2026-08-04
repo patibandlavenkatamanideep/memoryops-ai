@@ -72,6 +72,16 @@ Ten of 39 routes now enforce their declared permission (was three): `POST /api/c
   `memory_user` — read, write and delete over its own memory — for a credential the
   issuer said should carry none. Roles are now read with a new `claim_node`; scalar
   claims are unchanged. Trusted-header mode was never affected.
+- **A JWT `roles` claim of explicit `null` was read as an omitted claim.** The array
+  fix above left one state wrong: `claim_node` returned `None` for both an absent key
+  and a JSON `null`, so `{"roles": null}` still took the compatibility fallback to
+  `DEFAULT_ROLE`. Presence cannot be recovered from a value — the two are different
+  statements (an issuer granting no roles, versus a credential predating roles), and
+  only the second may fall back. `claim_node` now returns `(present, value)` and
+  `resolve_roles` accepts an explicit `claim_present`. All six claim states are
+  pinned: omitted → fallback; `null`, `[]`, `""`, unrecognised → zero permissions;
+  valid → those roles. Identity claims are unchanged, where absent and `null` are
+  correctly identical because there is no fallback to reach.
 
 ## Unreleased — worker mutation atomicity
 Additive; completes invariant #7 across the whole system.

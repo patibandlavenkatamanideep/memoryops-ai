@@ -325,10 +325,33 @@ and authorize against its **stored** owner. Two consequences worth stating:
 
 Authorization depends on the resolved `Principal`, never on how it arrived. Trusted-
 header and JWT modes are asserted to produce identical decisions for the same roles,
-including the four-state role resolution (omitted / valid / present-invalid /
-present-empty). This test found a real divergence: a JWT `roles` claim in array form
-— the shape almost every issuer emits — was discarded, so every JWT caller fell back
-to the default role. See the v2.4 entry in `CHANGELOG.md`.
+including role resolution. This test found a real divergence: a JWT `roles` claim in
+array form — the shape almost every issuer emits — was discarded, so every JWT caller
+fell back to the default role.
+
+Role claims have **six** states, and only the first may fall back:
+
+| Claim | Result |
+| --- | --- |
+| omitted | `DEFAULT_ROLE` where the deployment permits it (`auth_require_role_claim`) |
+| `null` | zero permissions |
+| `[]` | zero permissions |
+| `""` | zero permissions |
+| `["unrecognised"]` | zero permissions |
+| `["auditor"]` | those roles |
+
+The distinction that makes this work is that **presence is not inferred from the
+value**. An absent key and a JSON `null` both read as `None`, but they are opposite
+statements: an issuer saying *this identity has no roles*, versus a credential that
+predates roles entirely. `claim_node` therefore returns `(present, value)`. Collapsing
+them is what let an explicit `null` keep receiving the fallback even after array
+claims were fixed.
+
+Identity claims (`tenant_id`, `sub`) are the opposite case: absent and `null` are
+correctly identical, because there is no fallback to reach — both refuse
+authentication rather than invent an identifier.
+
+See the v2.4 entries in `CHANGELOG.md`.
 
 ### What is not claimed
 

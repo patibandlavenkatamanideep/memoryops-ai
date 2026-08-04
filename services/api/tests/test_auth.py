@@ -19,6 +19,9 @@ import pytest
 from app.auth import build_provider, decode_jwt
 from app.auth.jwt import JWTError
 from app.auth.providers import JWTProvider, TrustedHeaderProvider
+from app.auth.roles import Role
+
+from ._secret_fixtures import FAKE_JWT_SIGNING_KEY
 
 
 # ── token minting (independent of app.auth internals, to prove interop) ──────────
@@ -234,16 +237,17 @@ def test_a_list_roles_claim_is_read_not_discarded():
     that was meant to carry none.
     """
     from app.auth.jwt import claim_node, claim_path
-    from app.auth.roles import Role, resolve_roles
+    from app.auth.roles import resolve_roles
 
     payload = {"roles": ["auditor", "memory_admin"], "tenant_id": "t1"}
 
     assert claim_path(payload, "roles") is None, "unchanged: scalars only"
-    assert claim_node(payload, "roles") == ["auditor", "memory_admin"]
+    assert claim_node(payload, "roles") == (True, ["auditor", "memory_admin"])
 
-    roles, present = resolve_roles(claim_node(payload, "roles"))
+    present, raw = claim_node(payload, "roles")
+    roles, claim_present = resolve_roles(raw, claim_present=present)
     assert roles == frozenset({Role.AUDITOR, Role.MEMORY_ADMIN})
-    assert present is True
+    assert claim_present is True
 
 
 def test_an_explicitly_empty_roles_claim_grants_nothing_over_jwt(auth_client):
@@ -271,10 +275,10 @@ def test_a_nested_list_roles_claim_is_read(auth_client):
     from app.auth.jwt import claim_node
     from app.auth.roles import Role, resolve_roles
 
-    payload = {"app_metadata": {"roles": ["tenant_admin"]}}
-    roles, present = resolve_roles(claim_node(payload, "app_metadata.roles"))
+    present, raw = claim_node({"app_metadata": {"roles": ["tenant_admin"]}}, "app_metadata.roles")
+    roles, claim_present = resolve_roles(raw, claim_present=present)
     assert roles == frozenset({Role.TENANT_ADMIN})
-    assert present is True
+    assert claim_present is True
 
 
 def test_a_scalar_claim_still_refuses_a_container():
@@ -284,3 +288,95 @@ def test_a_scalar_claim_still_refuses_a_container():
     assert claim_path({"tenant_id": ["t1", "t2"]}, "tenant_id") is None
     assert claim_path({"tenant_id": {"id": "t1"}}, "tenant_id") is None
     assert claim_path({"tenant_id": "t1"}, "tenant_id") == "t1"
+
+
+# ── presence is not the value ────────────────────────────────────────────────
+def test_claim_node_separates_presence_from_value():
+    """`{"roles": null}` and no `roles` key both hold `None`, and mean opposite things.
+
+    The first is an issuer saying *this identity has no roles*. The second is a
+    credential that predates roles entirely. Only the second may take the
+    compatibility fallback, and no inspection of the value can tell them apart — which
+    is why an explicit `null` kept receiving `DEFAULT_ROLE` even after array claims
+    were fixed.
+    """
+    from app.auth.jwt import claim_node
+
+    assert claim_node({"roles": None}, "roles") == (True, None)
+    assert claim_node({}, "roles") == (False, None)
+    assert claim_node({"roles": []}, "roles") == (True, [])
+    assert claim_node({"app_metadata": {"roles": None}}, "app_metadata.roles") == (True, None)
+    assert claim_node({"app_metadata": {}}, "app_metadata.roles") == (False, None)
+
+
+@pytest.mark.parametrize(
+    ("claim", "expected_roles", "expected_present"),
+    [
+        ({}, frozenset({Role.MEMORY_USER}), False),  # omitted -> fallback
+        ({"roles": None}, frozenset(), True),  # explicit null -> nothing
+        ({"roles": []}, frozenset(), True),
+        ({"roles": ""}, frozenset(), True),
+        ({"roles": ["unknown_role"]}, frozenset(), True),
+        ({"roles": ["auditor"]}, frozenset({Role.AUDITOR}), True),
+    ],
+)
+def test_every_jwt_role_claim_state_resolves_correctly(claim, expected_roles, expected_present):
+    from app.auth.principal import Principal
+    from app.auth.providers import JWTProvider
+
+    provider = JWTProvider(
+        key=FAKE_JWT_SIGNING_KEY,
+        algorithms=["HS256"],
+        tenant_claim="tenant_id",
+        user_claim="sub",
+    )
+    tok = make_jwt(
+        {"sub": "u1", "tenant_id": "t1", "exp": time.time() + 60, **claim},
+        secret=FAKE_JWT_SIGNING_KEY,
+    )
+    principal = provider.resolve({"authorization": f"Bearer {tok}"})
+    assert isinstance(principal, Principal)
+    assert principal.role_claim_present is expected_present
+    assert principal.effective_roles == expected_roles
+
+
+def test_a_null_identity_claim_is_rejected_outright():
+    """Absent and null are correctly identical for identity claims — there is no
+    fallback to reach, so both must refuse authentication rather than invent one."""
+    from app.auth.providers import JWTProvider
+
+    provider = JWTProvider(
+        key=FAKE_JWT_SIGNING_KEY,
+        algorithms=["HS256"],
+        tenant_claim="tenant_id",
+        user_claim="sub",
+    )
+    for claims in (
+        {"sub": "u1", "tenant_id": None},
+        {"sub": None, "tenant_id": "t1"},
+        {"tenant_id": "t1"},
+        {"sub": "u1"},
+    ):
+        tok = make_jwt({**claims, "exp": time.time() + 60}, secret=FAKE_JWT_SIGNING_KEY)
+        assert provider.resolve({"authorization": f"Bearer {tok}"}) is None, claims
+
+
+def test_a_trusted_header_still_infers_presence_from_the_header(auth_client):
+    """The header provider must keep its own reading: an absent header is `None`,
+    an empty header is `""`, and that distinction is already exact."""
+    from app.auth.providers import TrustedHeaderProvider
+
+    provider = TrustedHeaderProvider(
+        tenant_header="X-MemoryOps-Tenant",
+        user_header="X-MemoryOps-User",
+        roles_header="X-MemoryOps-Roles",
+    )
+    base = {"x-memoryops-tenant": "t1", "x-memoryops-user": "u1"}
+
+    absent = provider.resolve(base)
+    assert absent.role_claim_present is False
+    assert absent.effective_roles == frozenset({Role.MEMORY_USER})
+
+    empty = provider.resolve({**base, "x-memoryops-roles": ""})
+    assert empty.role_claim_present is True
+    assert empty.effective_roles == frozenset()
