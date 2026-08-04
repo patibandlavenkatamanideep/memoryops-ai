@@ -42,6 +42,7 @@ jobs:
       - name: Role contract mirror matches the contract
         run: python scripts/sync_role_contract.py --check
 
+
       # A wheel that imports only because the repo is on sys.path is not a wheel.
       # Build it, install into a clean venv with no source checkout on the path, and
       # boot the real app from site-packages.
@@ -123,6 +124,17 @@ jobs:
         env:
           MEMORYOPS_STORAGE: memory
         run: pytest -q
+
+      # The endpoint authorization matrix is generated from ROUTE_AUTHZ, the same
+      # declarations the enumeration guard enforces. It was previously hand-written
+      # and claimed controls that did not run. This lives in the `api` job rather
+      # than `packaging` because it imports the app to read the route table, and
+      # `packaging` deliberately installs no runtime dependencies.
+      - name: Authorization matrix matches the route contracts
+        working-directory: .
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: python scripts/generate_authz_matrix.py --check
 
       - name: Eval harness (invariants)
         env:

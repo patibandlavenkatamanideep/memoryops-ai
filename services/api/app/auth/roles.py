@@ -59,12 +59,16 @@ class Permission(str, Enum):
     METRICS_READ_TENANT = "metrics:read:tenant"
     TRACES_READ_TENANT = "traces:read:tenant"
     EVIDENCE_READ = "evidence:read"
+    RETENTION_READ = "retention:read"
     RETENTION_MANAGE = "retention:manage"
     CONSENT_MANAGE = "consent:manage"
     # Operations.
     WORKER_READ = "worker:read"
     WORKER_REPLAY = "worker:replay"
     SETTINGS_MANAGE = "settings:manage"
+    #: Reading a stored evaluation result. Not cost-bearing.
+    EVALS_READ = "evals:read"
+    #: Executing an evaluation. Cost-bearing — a denial-of-wallet vector.
     EVALS_RUN = "evals:run"
 
 
@@ -127,6 +131,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.MEMORY_DELETE_TENANT,
             _P.MEMORY_APPROVE_TENANT,
             _P.MEMORY_REJECT_TENANT,
+            _P.RETENTION_READ,
             _P.RETENTION_MANAGE,
             _P.CONSENT_MANAGE,
         }
@@ -142,6 +147,10 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.METRICS_READ_TENANT,
             _P.TRACES_READ_TENANT,
             _P.EVIDENCE_READ,
+            _P.RETENTION_READ,
+            # Results are tenant-wide governance evidence, so this is an auditor
+            # capability. memory_admin manages lifecycle and does not receive it.
+            _P.EVALS_READ,
         }
     ),
     Role.TENANT_ADMIN: frozenset(set(Permission)),
