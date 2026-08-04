@@ -104,7 +104,7 @@ control.**
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
 | `POST` | `/api/chat` | self | `memory:write:self` | chat writes memory |
-| `GET` | `/api/evals/latest` | tenant | `evals:run` |  |
+| `GET` | `/api/evals/latest` | tenant | `evals:read` |  |
 | `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
 | `GET` | `/api/evidence/audit/verify` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/deletion/{memory_id}` | tenant | `evidence:read` |  |
@@ -116,10 +116,10 @@ control.**
 | `GET` | `/api/loops/runs` | tenant | `traces:read:tenant` |  |
 | `GET` | `/api/loops/trace/{trace_id}` | tenant | `traces:read:tenant` |  |
 | `GET` | `/api/loops/{loop_id}` | authenticated | — *(any authenticated principal)* | static loop definition |
-| `GET` | `/api/memories` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
+| `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
 | `GET` | `/api/memories/{memory_id}` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
-| `PATCH` | `/api/memories/{memory_id}` | resource | `memory:write:self` (own) / `memory:write:tenant` (tenant) | content/metadata edits. Status transitions carry their own permissions: approve/reject are tenant-only even for the caller's own record; archive/restore follow memory:archive:*. Legal hold and the revision check still apply — authorization does not bypass them. |
+| `PATCH` | `/api/memories/{memory_id}` | resource | `memory:write:self` (own) / `memory:write:tenant` (tenant) | The action comes from the validated transition, never a client-supplied string. Legal hold and the revision check still apply — authorization does not bypass them. |
 | `GET` | `/api/memories/{memory_id}/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) |  |
 | `GET` | `/api/memories/{memory_id}/provenance` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |

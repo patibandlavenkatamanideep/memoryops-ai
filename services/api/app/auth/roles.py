@@ -66,6 +66,9 @@ class Permission(str, Enum):
     WORKER_READ = "worker:read"
     WORKER_REPLAY = "worker:replay"
     SETTINGS_MANAGE = "settings:manage"
+    #: Reading a stored evaluation result. Not cost-bearing.
+    EVALS_READ = "evals:read"
+    #: Executing an evaluation. Cost-bearing — a denial-of-wallet vector.
     EVALS_RUN = "evals:run"
 
 
@@ -145,6 +148,9 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.TRACES_READ_TENANT,
             _P.EVIDENCE_READ,
             _P.RETENTION_READ,
+            # Results are tenant-wide governance evidence, so this is an auditor
+            # capability. memory_admin manages lifecycle and does not receive it.
+            _P.EVALS_READ,
         }
     ),
     Role.TENANT_ADMIN: frozenset(set(Permission)),

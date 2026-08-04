@@ -11,6 +11,31 @@ from fastapi import HTTPException, Request
 
 from .principal import Principal
 from .roles import Permission
+from .witness import AuthzDecision, record_decision, route_of
+
+
+def _witness(
+    request: Request,
+    *,
+    helper: str,
+    permission: Permission | None = None,
+    action: str | None = None,
+    tenant_scoped: bool = False,
+) -> None:
+    """Record that a check ran, so a route cannot be *called* enforced without it."""
+    route = route_of(request)
+    if route is None:
+        return
+    record_decision(
+        request,
+        AuthzDecision(
+            route=route,
+            helper=helper,
+            permission=permission,
+            action=action,
+            tenant_scoped=tenant_scoped,
+        ),
+    )
 
 
 def current_principal(request: Request) -> Principal | None:
@@ -53,6 +78,7 @@ def require_permission(request: Request, permission: Permission) -> Principal | 
             status_code=403,
             detail=f"missing required permission '{permission.value}'",
         )
+    _witness(request, helper="require_permission", permission=permission)
     return principal
 
 
@@ -93,5 +119,18 @@ def authorize_audit_scope(
                     "omit the scope only with an auditor or admin credential"
                 ),
             )
+        _witness(
+            request,
+            helper="authorize_audit_scope",
+            permission=Permission.AUDIT_READ_TENANT,
+            tenant_scoped=True,
+        )
         return user_id
+    _witness(
+        request,
+        helper="authorize_audit_scope",
+        permission=Permission.AUDIT_READ_SELF,
+    )
+    # Force the query to the caller. Validating the supplied value and then
+    # continuing to use it would not be authorization.
     return principal.user_id

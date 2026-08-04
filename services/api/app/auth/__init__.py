@@ -18,6 +18,7 @@ from .middleware import install_auth_middleware
 from .principal import Principal
 from .providers import JWTProvider, TrustedHeaderProvider, build_provider
 from .roles import DEFAULT_ROLE, Permission, Role, parse_roles, permissions_for
+from .witness import AuthzDecision, AuthzWitness, witness_for
 
 __all__ = [
     "Principal",
@@ -36,4 +37,7 @@ __all__ = [
     "DEFAULT_ROLE",
     "parse_roles",
     "permissions_for",
+    "AuthzWitness",
+    "AuthzDecision",
+    "witness_for",
 ]

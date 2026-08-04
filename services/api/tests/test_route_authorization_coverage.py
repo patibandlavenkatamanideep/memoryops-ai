@@ -213,3 +213,84 @@ def test_the_generated_matrix_matches_the_route_contracts():
         f"authorization matrix drift:\n{proc.stdout}\n{proc.stderr}\n"
         "Run: python scripts/generate_authz_matrix.py"
     )
+
+
+# ── duplicate registrations ──────────────────────────────────────────────────
+def test_no_duplicate_method_path_registrations():
+    """`iter_routes` deduplicates, which would hide a real defect.
+
+    Registering `GET /api/example` twice emits one deduplicated entry, matches one
+    contract, and passes every check above — while the app has two handlers whose
+    precedence depends on registration order. The raw iterator exists so this can
+    fail.
+    """
+    from collections import Counter
+
+    from app.auth.authz_spec import iter_routes_raw
+    from app.main import app
+
+    counts = Counter(iter_routes_raw(app))
+    duplicates = {f"{m} {p}": n for (m, p), n in counts.items() if n > 1}
+    assert not duplicates, f"routes registered more than once: {duplicates}"
+
+
+# ── enforcement witness ──────────────────────────────────────────────────────
+# The pinned ENFORCED set stops a route being *described* as enforced by accident.
+# It cannot stop: flip PLANNED -> ENFORCED, update the pinned list, forget to call
+# the helper. A pinned list is a claim about code; the witness is evidence from it.
+# The reject/permit cases for these three routes live in test_api_rbac.py, which
+# owns the authenticated client fixture. Here we prove the *helper ran*, which those
+# tests cannot show: a handler that silently stopped checking could still return 200
+# for an authorized caller and 403 for no one.
+def test_the_helpers_record_a_witness_for_every_enforced_route():
+    """Directly exercises the helpers so the recorded route/permission can be read.
+
+    Going through the TestClient would discard `request.state` before the assertion,
+    so this drives the same code path with a stub request.
+    """
+    from types import SimpleNamespace
+
+    from app.auth.dependencies import require_permission
+    from app.auth.principal import Principal
+    from app.auth.roles import Role
+    from app.auth.witness import witness_for
+
+    class _Route:
+        path = "/api/admin/workers/health"
+
+    principal = Principal(
+        tenant_id="acme",
+        user_id="svc",
+        provider="trusted_header",
+        roles=frozenset({Role.SERVICE_WORKER}),
+        role_claim_present=True,
+    )
+    request = SimpleNamespace(
+        method="GET",
+        state=SimpleNamespace(principal=principal),
+        scope={"route": _Route()},
+    )
+
+    require_permission(request, Permission.WORKER_READ)
+
+    recorded = witness_for(request)
+    assert recorded, "no authorization decision was recorded"
+    decision = recorded.for_route("GET", "/api/admin/workers/health")[0]
+    assert decision.helper == "require_permission"
+    assert decision.permission is Permission.WORKER_READ
+
+
+def test_every_enforced_route_has_a_witness_test():
+    """A route may not be marked ENFORCED without evidence that a check runs."""
+    enforced = {
+        f"{m} {p}" for (m, p), spec in ROUTE_AUTHZ.items() if spec.status is Status.ENFORCED
+    }
+    covered = {
+        "GET /api/audit",
+        "GET /api/metrics",
+        "GET /api/admin/workers/health",
+    }
+    assert enforced == covered, (
+        "an ENFORCED route has no witness test — add one before flipping its status: "
+        f"{sorted(enforced ^ covered)}"
+    )

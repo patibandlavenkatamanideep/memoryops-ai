@@ -48,6 +48,12 @@ class Scope(str, Enum):
     AUTHENTICATED = "authenticated"
     #: Acts on the caller's own records only.
     SELF = "self"
+    #: A collection query whose *subject* is requested rather than loaded. There is
+    #: no stored record to inspect ownership on, so the helper resolves the
+    #: requested subject against the principal and then **forces** the repository
+    #: query to the authorized subject. Validating a supplied `user_id` and then
+    #: continuing to use the untrusted value would not be authorization.
+    SUBJECT = "subject"
     #: Acts across the tenant.
     TENANT = "tenant"
     #: Ownership is decided from the *loaded resource*, then self- or
@@ -65,6 +71,30 @@ class Status(str, Enum):
 
 
 @dataclass(frozen=True)
+class AuthzVariant:
+    """One action a route can perform, when a single method/path has several.
+
+    `PATCH /api/memories/{id}` is an edit, an archive, a restore, an approval or a
+    rejection depending on the validated transition — and those carry different
+    permissions. A path-and-method-only contract cannot express that, which matters
+    for the API, the generated matrix, and the web capability artifact that has to
+    decide whether a persona may approve as opposed to edit.
+
+    The action is derived from the *validated transition*, never from a
+    client-supplied action string.
+    """
+
+    action: str
+    self_permission: Permission | None = None
+    tenant_permission: Permission | None = None
+    note: str = ""
+
+    def permissions(self) -> tuple[Permission, ...]:
+        found = [self.self_permission, self.tenant_permission]
+        return tuple(p for p in found if p is not None)
+
+
+@dataclass(frozen=True)
 class AuthzSpec:
     """The authorization contract for one (method, path)."""
 
@@ -76,7 +106,15 @@ class AuthzSpec:
     #: loaded record belongs to the caller.
     self_permission: Permission | None = None
     tenant_permission: Permission | None = None
+    #: Set when one method/path performs several distinct actions.
+    variants: tuple[AuthzVariant, ...] = ()
     note: str = ""
+
+    def variant(self, action: str) -> AuthzVariant | None:
+        for candidate in self.variants:
+            if candidate.action == action:
+                return candidate
+        return None
 
     @property
     def is_mutation_scope(self) -> bool:
@@ -84,7 +122,13 @@ class AuthzSpec:
 
     def permissions(self) -> tuple[Permission, ...]:
         found = [self.permission, self.self_permission, self.tenant_permission]
-        return tuple(p for p in found if p is not None)
+        for variant in self.variants:
+            found.extend(variant.permissions())
+        seen: list[Permission] = []
+        for permission in found:
+            if permission is not None and permission not in seen:
+                seen.append(permission)
+        return tuple(seen)
 
 
 _P = Permission
@@ -128,7 +172,9 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.SELF, _ST.PLANNED, permission=_P.MEMORY_WRITE_SELF, note="chat writes memory"
     ),
     ("GET", "/api/memories"): AuthzSpec(
-        _S.RESOURCE,
+        # Collection query: no stored record exists to inspect ownership on, so the
+        # helper resolves the requested subject and forces the query to it.
+        _S.SUBJECT,
         _ST.PLANNED,
         self_permission=_P.MEMORY_READ_SELF,
         tenant_permission=_P.MEMORY_READ_TENANT,
@@ -144,11 +190,40 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _ST.PLANNED,
         self_permission=_P.MEMORY_WRITE_SELF,
         tenant_permission=_P.MEMORY_WRITE_TENANT,
+        variants=(
+            AuthzVariant(
+                "edit",
+                self_permission=_P.MEMORY_WRITE_SELF,
+                tenant_permission=_P.MEMORY_WRITE_TENANT,
+                note="content, importance, confidence",
+            ),
+            AuthzVariant(
+                "archive",
+                self_permission=_P.MEMORY_ARCHIVE_SELF,
+                tenant_permission=_P.MEMORY_ARCHIVE_TENANT,
+            ),
+            AuthzVariant(
+                "restore",
+                self_permission=_P.MEMORY_ARCHIVE_SELF,
+                tenant_permission=_P.MEMORY_ARCHIVE_TENANT,
+                note="archived -> active is the same lifecycle control as archiving",
+            ),
+            AuthzVariant(
+                "approve",
+                tenant_permission=_P.MEMORY_APPROVE_TENANT,
+                note="tenant-only even for the caller's own record — self-approval "
+                "would defeat the queue that put it there",
+            ),
+            AuthzVariant(
+                "reject",
+                tenant_permission=_P.MEMORY_REJECT_TENANT,
+                note="tenant-only, same reason as approve",
+            ),
+        ),
         note=(
-            "content/metadata edits. Status transitions carry their own permissions: "
-            "approve/reject are tenant-only even for the caller's own record; "
-            "archive/restore follow memory:archive:*. Legal hold and the revision "
-            "check still apply — authorization does not bypass them."
+            "The action comes from the validated transition, never a client-supplied "
+            "string. Legal hold and the revision check still apply — authorization "
+            "does not bypass them."
         ),
     ),
     ("DELETE", "/api/memories/{memory_id}"): AuthzSpec(
@@ -243,7 +318,8 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.TENANT, _ST.PLANNED, permission=_P.EVALS_RUN, note="denial-of-wallet vector"
     ),
     ("GET", "/api/evals/latest"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVALS_RUN
+        # Reading a stored result is not cost-bearing; running one is.
+        _S.TENANT, _ST.PLANNED, permission=_P.EVALS_READ
     ),
     # ── operator ────────────────────────────────────────────────────────────
     ("GET", "/api/admin/workers/health"): AuthzSpec(
@@ -252,13 +328,13 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
 }
 
 
-def iter_routes(app) -> Iterator[tuple[str, str]]:
-    """Yield every (METHOD, path) the application actually serves.
+def iter_routes_raw(app) -> Iterator[tuple[str, str]]:
+    """Every (METHOD, path) registration, **including duplicates**.
 
-    Descends into included routers. `app.routes` is not flat in this FastAPI
-    version — `include_router` results are wrapped in `_IncludedRouter` objects, so
-    a naive walk finds four paths and no API routes at all. A guard built on that
-    would pass while checking nothing.
+    `iter_routes` deduplicates, which is right for generating the matrix and wrong
+    for detecting a defect: registering `GET /api/example` twice would emit one
+    entry, match one contract, and pass the guard — while the app has two handlers
+    whose precedence depends on registration order.
     """
 
     def walk(routes) -> Iterator[tuple[str, str]]:
@@ -276,8 +352,17 @@ def iter_routes(app) -> Iterator[tuple[str, str]]:
                     continue
                 yield (method, path)
 
+    yield from walk(app.routes)
+
+
+def iter_routes(app) -> Iterator[tuple[str, str]]:
+    """Every distinct (METHOD, path) the application serves.
+
+    Descends into included routers — `app.routes` is not flat in this FastAPI
+    version, and a naive walk finds four paths and no API routes at all.
+    """
     seen: set[tuple[str, str]] = set()
-    for entry in walk(app.routes):
+    for entry in iter_routes_raw(app):
         if entry not in seen:
             seen.add(entry)
             yield entry
