@@ -38,14 +38,21 @@ from enum import Enum
 class Permission(str, Enum):
     """What a caller may do. Checked directly by routes."""
 
-    # Memory lifecycle, scoped to the caller's own user.
+    # Memory lifecycle. Scope is part of the permission name: "may I do this to my
+    # own records, or to anyone's in the tenant?" are different powers, and an
+    # unscoped `memory:delete` could not express the difference.
     MEMORY_READ_SELF = "memory:read:self"
-    MEMORY_WRITE_SELF = "memory:write:self"
-    # Tenant-wide memory management (any user in the tenant).
     MEMORY_READ_TENANT = "memory:read:tenant"
-    MEMORY_APPROVE = "memory:approve"
-    MEMORY_ARCHIVE = "memory:archive"
-    MEMORY_DELETE = "memory:delete"
+    MEMORY_WRITE_SELF = "memory:write:self"
+    MEMORY_WRITE_TENANT = "memory:write:tenant"
+    MEMORY_ARCHIVE_SELF = "memory:archive:self"
+    MEMORY_ARCHIVE_TENANT = "memory:archive:tenant"
+    MEMORY_DELETE_SELF = "memory:delete:self"
+    MEMORY_DELETE_TENANT = "memory:delete:tenant"
+    # Approval is tenant governance by definition: a user approving their own
+    # pending sensitive memory would defeat the queue that put it there.
+    MEMORY_APPROVE_TENANT = "memory:approve:tenant"
+    MEMORY_REJECT_TENANT = "memory:reject:tenant"
     # Governance and evidence surfaces.
     AUDIT_READ_SELF = "audit:read:self"
     AUDIT_READ_TENANT = "audit:read:tenant"
@@ -62,13 +69,30 @@ class Permission(str, Enum):
 
 
 class Role(str, Enum):
-    """Named bundles of permissions. Kept few on purpose."""
+    """Named bundles of permissions. Kept few on purpose.
 
-    MEMORY_READER = "memory_reader"
-    MEMORY_ADMIN = "memory_admin"
+    These are the *authorization* vocabulary. The web app has its own *persona*
+    vocabulary (viewer / developer / auditor / memory_admin / owner); the two are
+    joined by `contracts/auth-role-map.json`, not by matching strings. Minting a web
+    persona name straight into an API credential left three of the five human roles
+    naming nothing the API recognised.
+    """
+
+    MEMORY_VIEWER = "memory_viewer"
+    MEMORY_USER = "memory_user"
     AUDITOR = "auditor"
+    MEMORY_ADMIN = "memory_admin"
     TENANT_ADMIN = "tenant_admin"
     SERVICE_WORKER = "service_worker"
+
+
+#: Accepted role names that are not `Role` values. `memory_reader` shipped in the
+#: first RBAC release and could already write, so the name was misleading: it is a
+#: self-service memory *user*, not a reader. Kept so existing credentials keep
+#: working while the accurate name becomes canonical.
+ROLE_ALIASES: dict[str, Role] = {
+    "memory_reader": Role.MEMORY_USER,
+}
 
 
 _P = Permission
@@ -76,21 +100,33 @@ _P = Permission
 #: Static role → permission mapping. A role is only a name for a bundle; every
 #: check is against a permission, so adding a role never implicitly grants access
 #: to an endpoint that did not ask for its permission.
+_SELF_MEMORY = frozenset(
+    {
+        _P.MEMORY_READ_SELF,
+        _P.MEMORY_WRITE_SELF,
+        _P.MEMORY_ARCHIVE_SELF,
+        # Self-deletion belongs to an ordinary user. Removing your own memory is a
+        # user-control guarantee; requiring tenant-admin for it would invert that.
+        _P.MEMORY_DELETE_SELF,
+        _P.AUDIT_READ_SELF,
+    }
+)
+
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
-    # The default for an authenticated caller with no recognised role claim.
-    # Least privilege: read and write *their own* memory, read *their own* audit.
-    Role.MEMORY_READER: frozenset(
-        {_P.MEMORY_READ_SELF, _P.MEMORY_WRITE_SELF, _P.AUDIT_READ_SELF}
-    ),
-    Role.MEMORY_ADMIN: frozenset(
+    # Read-only persona.
+    Role.MEMORY_VIEWER: frozenset({_P.MEMORY_READ_SELF, _P.AUDIT_READ_SELF}),
+    # The default for an authenticated caller with no role claim, where the
+    # deployment permits that fallback. Full self-service over their own records.
+    Role.MEMORY_USER: _SELF_MEMORY,
+    Role.MEMORY_ADMIN: _SELF_MEMORY
+    | frozenset(
         {
-            _P.MEMORY_READ_SELF,
-            _P.MEMORY_WRITE_SELF,
             _P.MEMORY_READ_TENANT,
-            _P.MEMORY_APPROVE,
-            _P.MEMORY_ARCHIVE,
-            _P.MEMORY_DELETE,
-            _P.AUDIT_READ_SELF,
+            _P.MEMORY_WRITE_TENANT,
+            _P.MEMORY_ARCHIVE_TENANT,
+            _P.MEMORY_DELETE_TENANT,
+            _P.MEMORY_APPROVE_TENANT,
+            _P.MEMORY_REJECT_TENANT,
             _P.RETENTION_MANAGE,
             _P.CONSENT_MANAGE,
         }
@@ -122,7 +158,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 #: to a mistyped credential: `roles=["service_workre"]` would resolve to
 #: `memory_reader` and receive `memory:read:self` + `memory:write:self`. A typo must
 #: not grant anything.
-DEFAULT_ROLE = Role.MEMORY_READER
+DEFAULT_ROLE = Role.MEMORY_USER
 
 
 def parse_roles(raw: object) -> frozenset[Role]:
@@ -141,7 +177,7 @@ def parse_roles(raw: object) -> frozenset[Role]:
     else:
         return frozenset()
 
-    known = {r.value: r for r in Role}
+    known = {r.value: r for r in Role} | ROLE_ALIASES
     return frozenset(known[c.strip()] for c in candidates if c.strip() in known)
 
 

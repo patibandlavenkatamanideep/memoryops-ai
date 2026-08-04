@@ -7,13 +7,48 @@ Generated behaviour is asserted in `services/api/tests/test_api_rbac.py`.
 
 ## Roles
 
-| Role | Intent |
-| --- | --- |
-| `memory_reader` | Read and write **their own** memory. The default for an authenticated caller with no recognised role claim. |
-| `memory_admin` | Manage memory across the tenant: approve, archive, delete, retention, consent. |
-| `auditor` | Read governance evidence tenant-wide. **Cannot mutate memory** — an auditor who can edit what they audit is not an auditor. |
-| `tenant_admin` | Every permission, within one tenant. |
-| `service_worker` | Machine identity for the worker fleet: operational reads and replay only, never memory content. |
+| API role | Web persona | Intent |
+| --- | --- | --- |
+| `memory_viewer` | `viewer` | Read their own memory and audit. No writes. |
+| `memory_user` | `developer` | Full self-service over their **own** records — read, write, archive, **delete**. The default where a fallback is permitted. |
+| `auditor` | `auditor` | Read governance evidence tenant-wide. **Cannot mutate memory** — an auditor who can edit what they audit is not an auditor. |
+| `memory_admin` | `memory_admin` | Manage memory across the tenant: approve, reject, archive, delete, retention, consent. Does **not** inherit tenant-wide audit. |
+| `tenant_admin` | `owner` | Every permission, within one tenant. |
+| `service_worker` | *(none — machine only)* | Operational reads and replay. Never memory content. |
+
+`memory_reader` remains an accepted **alias** for `memory_user`. It shipped in the
+first RBAC release and could already write, so the name was misleading.
+
+### Web personas are translated, not assumed
+
+The web names *personas*; the API names *authorization bundles*.
+`contracts/auth-role-map.json` is the authoritative source for the **translation
+between them** — not for the authorization model itself. The permission bundles
+live in `services/api/app/auth/roles.py`; tests assert that the contract and the API
+role vocabulary agree.
+
+This was a real defect: the BFF minted the web persona name straight into the API
+credential, so `viewer`, `developer` and `owner` named nothing the API recognised and
+resolved to **zero permissions** — three of the five human roles, including the one
+the demo identity uses. Fail-closed, but broken.
+
+Web tests assert every persona maps to something and that both BFF paths use the
+translation; API tests assert every target is a role the API recognises and grants
+the intended permissions. Neither side can drift alone.
+
+### Capabilities, not ranks
+
+`auditor` and `memory_admin` are separate capabilities. A memory administrator does
+**not** automatically receive tenant-wide audit, and an auditor cannot mutate. Someone
+needing both carries both, or is a `tenant_admin`.
+
+### Scope is part of the permission
+
+`memory:delete:self` and `memory:delete:tenant` are different powers, so the scope is
+in the name rather than inferred. `memory:delete:self` belongs to an ordinary user —
+removing your own memory is a user-control guarantee, and requiring tenant-admin for
+it would invert that. Approval and rejection are tenant-only: a user approving their
+own pending sensitive memory would defeat the queue that put it there.
 
 Role resolution has **three** states, not two:
 

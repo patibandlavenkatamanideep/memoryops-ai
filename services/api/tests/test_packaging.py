@@ -218,3 +218,24 @@ def test_behaviour_changing_upgrades_are_not_auto_grouped():
     # packaging and test tooling is not a reviewable unit.
     patterns = [p for g in api.get("groups", {}).values() for p in g.get("patterns", [])]
     assert "*" not in patterns, "a catch-all group re-creates the unreviewable bundle"
+
+
+# ── role contract mirror ────────────────────────────────────────────────────
+def test_the_web_role_map_mirror_matches_the_contract():
+    """`contracts/auth-role-map.json` is authoritative;
+    `apps/web/lib/roleMap.generated.ts` is a committed mirror.
+
+    The mirror exists because the web Dockerfile builds with `apps/web` as its
+    context, so importing the repo-root contract is absent from the image — the
+    production build failed on exactly that. Same rule as the dependency mirrors:
+    generated, never hand-edited, drift is a failure.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "sync_role_contract.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"role contract drift:\n{proc.stdout}\n{proc.stderr}\n"
+        "Run: python scripts/sync_role_contract.py"
+    )

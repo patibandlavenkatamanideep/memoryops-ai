@@ -21,6 +21,8 @@ the API directly rather than through the BFF.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.auth.roles import (
@@ -57,10 +59,13 @@ def test_an_authenticated_caller_without_roles_gets_least_privilege():
     assert p.effective_roles == frozenset({DEFAULT_ROLE})
     assert p.has(Permission.MEMORY_READ_SELF)
     assert p.has(Permission.MEMORY_WRITE_SELF)
+    # Self-service over their own records, including deleting them.
+    assert p.has(Permission.MEMORY_DELETE_SELF)
     # Never a tenant-wide or administrative default.
     assert not p.has(Permission.AUDIT_READ_TENANT)
     assert not p.has(Permission.RETENTION_MANAGE)
-    assert not p.has(Permission.MEMORY_DELETE)
+    assert not p.has(Permission.MEMORY_DELETE_TENANT)
+    assert not p.has(Permission.MEMORY_APPROVE_TENANT)
 
 
 def test_auditor_can_read_tenant_evidence_but_not_mutate_memory():
@@ -70,8 +75,9 @@ def test_auditor_can_read_tenant_evidence_but_not_mutate_memory():
     assert Permission.EVIDENCE_READ in granted
     assert Permission.METRICS_READ_TENANT in granted
     for denied in (
-        Permission.MEMORY_DELETE,
-        Permission.MEMORY_APPROVE,
+        Permission.MEMORY_DELETE_SELF,
+        Permission.MEMORY_DELETE_TENANT,
+        Permission.MEMORY_APPROVE_TENANT,
         Permission.RETENTION_MANAGE,
         Permission.CONSENT_MANAGE,
         Permission.MEMORY_WRITE_SELF,
@@ -95,6 +101,9 @@ def test_every_role_is_mapped():
 
 
 # ── the audit endpoint ───────────────────────────────────────────────────────
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 def _hdr(user: str, roles: str | None = None, tenant: str = "acme") -> dict:
     h = {"X-MemoryOps-Tenant": tenant, "X-MemoryOps-User": user}
     if roles:
@@ -411,3 +420,136 @@ def test_a_production_credential_without_roles_gets_nothing():
         require_role_claim=True,
     )
     assert strict.permissions == frozenset()
+
+
+# ── the web↔API role contract ────────────────────────────────────────────────
+# The web and API vocabularies were independent, and the BFF minted the web persona
+# name straight into the API credential. viewer / developer / owner named nothing
+# the API recognised, so three of the five human roles resolved to ZERO permissions
+# — including `owner`, which the demo identity uses.
+#
+# An earlier propagation test asserted only that the claim *shape* was `roles: [...]`.
+# It could not catch this, because the shape was right and the value was wrong.
+def _role_contract() -> dict:
+    import json
+
+    return json.loads((REPO_ROOT / "contracts" / "auth-role-map.json").read_text())
+
+
+def test_every_web_persona_maps_to_a_role_the_api_recognises():
+    from app.auth.roles import parse_roles
+
+    contract = _role_contract()
+    for web_role, api_role in contract["web_to_api"].items():
+        resolved = parse_roles([api_role])
+        assert resolved, (
+            f"web role '{web_role}' maps to '{api_role}', which the API does not "
+            "recognise — that credential would receive zero permissions"
+        )
+
+
+def test_every_mapped_api_role_grants_something():
+    from app.auth.roles import parse_roles, permissions_for
+
+    for api_role in _role_contract()["web_to_api"].values():
+        assert permissions_for(parse_roles([api_role])), f"{api_role} grants nothing"
+
+
+def test_no_human_persona_maps_to_the_service_worker_role():
+    """service_worker is a machine identity scoped to operational permissions."""
+    contract = _role_contract()
+    assert "service_worker" not in contract["web_to_api"].values()
+    assert contract["never_assignable_to_humans"] == ["service_worker"]
+
+
+def test_the_contract_lists_exactly_the_api_roles_that_exist():
+    from app.auth.roles import Role
+
+    assert set(_role_contract()["api_roles"]) == {r.value for r in Role}
+
+
+def test_the_memory_reader_alias_still_resolves():
+    """Existing credentials from the first RBAC release keep working."""
+    from app.auth.roles import Role, parse_roles
+
+    assert parse_roles(["memory_reader"]) == frozenset({Role.MEMORY_USER})
+
+
+@pytest.mark.parametrize(
+    ("web_role", "must_have", "must_not_have"),
+    [
+        ("viewer", [Permission.MEMORY_READ_SELF], [Permission.MEMORY_WRITE_SELF]),
+        (
+            "developer",
+            [Permission.MEMORY_WRITE_SELF, Permission.MEMORY_DELETE_SELF],
+            [Permission.MEMORY_DELETE_TENANT, Permission.AUDIT_READ_TENANT],
+        ),
+        (
+            "auditor",
+            [Permission.AUDIT_READ_TENANT, Permission.EVIDENCE_READ],
+            [Permission.MEMORY_WRITE_SELF, Permission.MEMORY_DELETE_TENANT],
+        ),
+        (
+            "memory_admin",
+            [Permission.MEMORY_APPROVE_TENANT, Permission.RETENTION_MANAGE],
+            [Permission.AUDIT_READ_TENANT],
+        ),
+        (
+            "owner",
+            [Permission.AUDIT_READ_TENANT, Permission.MEMORY_DELETE_TENANT],
+            [],
+        ),
+    ],
+)
+def test_each_web_persona_receives_the_intended_api_permissions(
+    web_role, must_have, must_not_have
+):
+    """Semantics, not shape: mint what the BFF mints, resolve it as the API does."""
+    from app.auth.principal import Principal
+    from app.auth.roles import resolve_roles
+
+    api_role = _role_contract()["web_to_api"][web_role]
+    roles, present = resolve_roles([api_role])
+    principal = Principal(
+        tenant_id="t", user_id="u", provider="jwt",
+        roles=roles, role_claim_present=present,
+    )
+    for permission in must_have:
+        assert principal.has(permission), f"{web_role} lacks {permission.value}"
+    for permission in must_not_have:
+        assert not principal.has(permission), f"{web_role} wrongly holds {permission.value}"
+
+
+def test_self_deletion_belongs_to_an_ordinary_user():
+    """Removing your own memory is a user-control guarantee — it must not require
+    becoming a tenant memory administrator."""
+    from app.auth.roles import Role, permissions_for
+
+    user = permissions_for(frozenset({Role.MEMORY_USER}))
+    assert Permission.MEMORY_DELETE_SELF in user
+    assert Permission.MEMORY_DELETE_TENANT not in user
+
+
+def test_approval_is_tenant_governance_not_self_service():
+    """A user approving their own pending sensitive memory defeats the queue."""
+    from app.auth.roles import Role, permissions_for
+
+    user = permissions_for(frozenset({Role.MEMORY_USER}))
+    assert Permission.MEMORY_APPROVE_TENANT not in user
+    assert Permission.MEMORY_REJECT_TENANT not in user
+    assert Permission.MEMORY_APPROVE_TENANT in permissions_for(frozenset({Role.MEMORY_ADMIN}))
+
+
+def test_an_auditor_cannot_mutate_and_an_admin_is_not_automatically_an_auditor():
+    """These are separate capabilities, not ranks on one ladder."""
+    from app.auth.roles import Role, permissions_for
+
+    auditor = permissions_for(frozenset({Role.AUDITOR}))
+    admin = permissions_for(frozenset({Role.MEMORY_ADMIN}))
+
+    assert Permission.MEMORY_WRITE_SELF not in auditor
+    assert Permission.MEMORY_DELETE_TENANT not in auditor
+    # memory_admin manages lifecycle but does not inherit tenant-wide audit.
+    assert Permission.AUDIT_READ_TENANT not in admin
+    # Only tenant_admin holds both.
+    assert Permission.AUDIT_READ_TENANT in permissions_for(frozenset({Role.TENANT_ADMIN}))

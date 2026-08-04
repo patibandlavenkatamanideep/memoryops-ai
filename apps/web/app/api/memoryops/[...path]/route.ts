@@ -6,6 +6,7 @@ import {
   resolveIdentity,
   UnauthenticatedError,
 } from "@/lib/identity";
+import { apiRoleForWebRole } from "@/lib/apiRoles";
 import { apiCredential } from "@/lib/memoryopsToken";
 import { stripClientScope, stripScopeFromBody } from "@/lib/scope";
 
@@ -102,7 +103,7 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
     headers.set("x-memoryops-user", identity.userId);
     // Without this the API sees no role claim at all, so an auditor session was
     // downgraded to the least-privileged default at the API boundary.
-    headers.set("x-memoryops-roles", identity.role);
+    headers.set("x-memoryops-roles", apiRoleForWebRole(identity.role));
   }
 
   let body: string | undefined;

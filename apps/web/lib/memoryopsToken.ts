@@ -2,6 +2,7 @@ import "server-only";
 
 import { SignJWT } from "jose";
 
+import { apiRoleForWebRole } from "@/lib/apiRoles";
 import type { Identity } from "@/lib/identity";
 
 /**
@@ -40,7 +41,7 @@ export async function mintApiToken(identity: Identity): Promise<string | null> {
     // a singular `role` meant the claim never matched, so every authenticated web
     // user — including auditors and admins — reached the API with no recognised
     // role and fell back to the least-privileged default.
-    roles: [identity.role],
+    roles: [apiRoleForWebRole(identity.role)],
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(identity.userId)
@@ -62,8 +63,33 @@ export async function mintApiToken(identity: Identity): Promise<string | null> {
  * production profile rejects it at startup, so a production deployment must set
  * one of the other two.
  */
+export class DemoCredentialError extends Error {
+  constructor() {
+    super(
+      "demo identity cannot authenticate to the MemoryOps API; " +
+        "set MEMORYOPS_WEB_MODE=authenticated",
+    );
+    this.name = "DemoCredentialError";
+  }
+}
+
 export async function apiCredential(identity: Identity): Promise<ApiCredential> {
   const mode = process.env.MEMORYOPS_AUTH_MODE ?? "none";
+
+  // The demo identity is a *shared, unauthenticated* persona whose role is `owner`,
+  // which translates to the API's `tenant_admin` — 21 permissions including
+  // memory:delete:tenant and retention:manage. Combining demo web mode with an
+  // authenticating API mode would therefore mint a shared administrative credential
+  // for every anonymous visitor. Tenant-scoped, but destructive inside that tenant,
+  // and an easy accident when a demo is deployed with a real API.
+  //
+  // Demo mode requires a development-profile API with authentication disabled; a
+  // production-profile API (which refuses auth_mode=none) requires authenticated
+  // web mode. There is no valid overlap, so this fails closed rather than
+  // downgrading the credential.
+  if (identity.isDemo && mode !== "none") {
+    throw new DemoCredentialError();
+  }
   if (mode === "jwt") {
     const token = await mintApiToken(identity);
     if (!token) {
