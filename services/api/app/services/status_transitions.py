@@ -63,6 +63,10 @@ TRANSITION_AUDIT: dict[str, tuple[str, str]] = {
 }
 
 
+class EmptyPatch(ValueError):
+    """The patch requests no change at all (→ 422)."""
+
+
 class UnsupportedStatus(ValueError):
     """The requested status is never settable via PATCH (→ 422)."""
 
@@ -90,3 +94,44 @@ def validate_transition(current: Status, requested: Status) -> str:
             f"cannot change status from '{current.value}' to '{requested.value}'"
         )
     return action
+
+
+#: Fields whose presence means the caller is editing the memory's own substance,
+#: as opposed to moving it through the governance state machine.
+EDIT_FIELDS: tuple[str, ...] = ("content", "importance", "confidence")
+
+
+def derive_patch_actions(
+    *,
+    has_content: bool,
+    has_importance: bool,
+    has_confidence: bool,
+    transition: str | None,
+) -> frozenset[str]:
+    """Every governance action one PATCH body requests.
+
+    A PATCH is not one action. ``{"content": ..., "status": "active"}`` edits the
+    memory *and* approves it, and the two are governed differently: `edit` has a
+    self permission, `approve` deliberately does not. Authorizing only the
+    transition would let ``memory:approve:tenant`` implicitly grant a content edit
+    — the approver could rewrite what they are approving, in the same request that
+    approves it, and the audit trail would record only the approval.
+
+    So the caller must hold *every* applicable permission, not any one of them.
+
+    Raises:
+        EmptyPatch: the body changes nothing (→ 422). A patch that requests no
+            action has no permission to check, and a request with nothing to
+            authorize must not be treated as authorized.
+    """
+    actions: set[str] = set()
+    if has_content or has_importance or has_confidence:
+        actions.add("edit")
+    if transition is not None:
+        actions.add(transition)
+    if not actions:
+        raise EmptyPatch(
+            "patch requests no change: provide at least one of "
+            f"{', '.join(EDIT_FIELDS)}, status"
+        )
+    return frozenset(actions)

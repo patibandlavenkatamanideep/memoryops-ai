@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from app.schemas.memory import ChatRequest
+from app.db.entities import StoredMemory
+from app.schemas.memory import ChatRequest, MemoryType, Sensitivity, Source, Status
 
 
 def _chat(gateway, tenant, user, message):
@@ -263,3 +264,86 @@ def test_revision_is_not_a_cross_tenant_oracle(api_client):
     # 404 (not 409): scope is checked before the revision, so the response is
     # identical whether or not the revision would have matched.
     assert r.status_code == 404
+
+
+# ── the authorization lookup (v2.4) ──────────────────────────────────────────
+def test_get_memory_in_tenant_never_crosses_a_tenant(gateway, repo):
+    """Ownership authorization needs a record it can inspect *before* it knows the
+    owner — so it cannot pass `user_id` as a filter, and a naive implementation
+    reaches for a global lookup by id with the tenant checked afterward.
+
+    That shape is one dropped condition away from a cross-tenant read, and it reads
+    as safe because the comparison is right there. The tenant stays a predicate.
+    """
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    mem_id = repo.list_memories("tenant_acme", "user_acme")[0].id
+
+    assert repo.get_memory_in_tenant("tenant_acme", mem_id) is not None
+    assert repo.get_memory_in_tenant("tenant_demo", mem_id) is None
+    assert repo.get_memory_in_tenant("", mem_id) is None
+
+
+def test_get_memory_in_tenant_spans_users_but_only_inside_the_tenant(gateway, repo):
+    """It must see another user's record — that is the point; a per-user lookup
+    could not tell "not yours" apart from "does not exist", and the route needs the
+    owner to decide which permission applies. The tenant boundary still holds.
+    """
+    _chat(gateway, "t1", "alice", "Remember Alice likes dark mode.")
+    mem_id = repo.list_memories("t1", "alice")[0].id
+
+    found = repo.get_memory_in_tenant("t1", mem_id)
+    assert found is not None and found.user_id == "alice"
+    # Same id, other tenant: nothing.
+    assert repo.get_memory_in_tenant("t2", mem_id) is None
+
+
+def test_a_deleted_memory_is_not_exposed_through_the_authorization_lookup(api_client):
+    """The lookup deliberately returns a soft-deleted row so authorization can run
+    on it, so the deletion guarantee (invariant #2) has to be re-proved at the
+    route: nothing about a deleted memory may reach a response through this path.
+    """
+    client, repo = api_client
+    content = "the quarterly rotation date is the 3rd"
+    mem_id = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content=content,
+            importance=6,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="manual", excerpt=content),
+        )
+    ).id
+    deleted = client.request(
+        "DELETE",
+        f"/api/memories/{mem_id}",
+        json={"tenant_id": "t1", "user_id": "u1"},
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    # The repository still hands it to the authorization layer...
+    stored = repo.get_memory_in_tenant("t1", mem_id)
+    assert stored is not None and stored.status is Status.deleted
+
+    # ...and the mutation route must not act on it.
+    patched = client.patch(
+        f"/api/memories/{mem_id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "rewritten"},
+    )
+    assert patched.status_code == 404
+    assert content not in patched.text
+    assert repo.get_memory_in_tenant("t1", mem_id).content != "rewritten"
+
+    # It is still absent from retrieval, which is what invariant #2 governs.
+    assert repo.retrieve_active("t1", "u1") == []
+    assert [m.id for m in repo.list_memories("t1", "u1")] == []
+
+    # The control-plane detail route is a deliberate exception: it returns
+    # soft-deleted rows for governance/forensics, carrying the true `status`
+    # rather than concealing them. Pinned so the exception stays explicit.
+    detail = client.get(f"/api/memories/{mem_id}?tenant_id=t1&user_id=u1")
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "deleted"

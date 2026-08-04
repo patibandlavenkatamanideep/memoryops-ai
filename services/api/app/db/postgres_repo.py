@@ -295,6 +295,26 @@ class PostgresRepository(Repository):
             stmt = stmt.order_by(MemoryRecordORM.created_at.desc())
             return [_to_stored(r) for r in s.scalars(stmt)]
 
+    def get_memory_in_tenant(self, tenant_id: str, memory_id: str) -> StoredMemory | None:
+        """Load a memory by id *within* a tenant, for ownership authorization.
+
+        The tenant is a predicate in the query, not a check applied to a globally
+        loaded row. `Session.get()` is a primary-key lookup: it would fetch another
+        tenant's row into the session and rely on a Python comparison to reject it —
+        one dropped condition away from a cross-tenant read, and a shape that reads
+        as safe because the comparison is right there. Filtering in SQL means the
+        row never leaves the database. RLS (`004_rls_policies.sql`) is the outer
+        guarantee; this is the inner one, so neither alone is load-bearing.
+        """
+        with self._scoped(tenant_id, "") as s:
+            row = s.execute(
+                select(MemoryRecordORM).where(
+                    MemoryRecordORM.id == memory_id,
+                    MemoryRecordORM.tenant_id == tenant_id,
+                )
+            ).scalar_one_or_none()
+            return _to_stored(row) if row else None
+
     def _apply_memory_fields(self, row: MemoryRecordORM, memory: StoredMemory) -> None:
         # `normalized_content` and `embedding` were previously NOT persisted at all,
         # so a content edit changed `content` while the keyword form and the vector

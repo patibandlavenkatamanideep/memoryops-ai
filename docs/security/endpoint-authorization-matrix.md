@@ -92,7 +92,7 @@ The handler checks the permission. 3 of 39 routes.
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/admin/workers/health` | operator | `worker:read` |  |
-| `GET` | `/api/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) | tenant-wide requires audit:read:tenant; otherwise forced to own user |
+| `GET` | `/api/audit` | subject | `audit:read:self` (own) / `audit:read:tenant` (tenant) | tenant-wide requires audit:read:tenant; otherwise forced to own user |
 | `GET` | `/api/metrics` | tenant | `metrics:read:tenant` |  |
 
 ### Planned — declared, **not yet enforced**
@@ -119,7 +119,7 @@ control.**
 | `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
 | `GET` | `/api/memories/{memory_id}` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
-| `PATCH` | `/api/memories/{memory_id}` | resource | `memory:write:self` (own) / `memory:write:tenant` (tenant) | The action comes from the validated transition, never a client-supplied string. Legal hold and the revision check still apply — authorization does not bypass them. |
+| `PATCH` | `/api/memories/{memory_id}` | resource | — *(any authenticated principal)* | The action comes from the validated transition, never a client-supplied string. Legal hold and the revision check still apply — authorization does not bypass them. |
 | `GET` | `/api/memories/{memory_id}/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) |  |
 | `GET` | `/api/memories/{memory_id}/provenance` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |

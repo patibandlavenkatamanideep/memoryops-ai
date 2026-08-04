@@ -22,6 +22,7 @@ from ..schemas.memory import (
 )
 from ..services.policy_broker import PolicyBroker
 from ..services.status_transitions import (
+    EDIT_FIELDS,
     TRANSITION_AUDIT,
     UNSUPPORTED_PATCH_STATUSES,
     InvalidTransition,
@@ -216,6 +217,16 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
     # Scope lives in the body, so the query-string middleware can't guard it —
     # enforce it here (invariant #1). No-op when auth is disabled.
     enforce_scope(request, patch.tenant_id, patch.user_id)
+    # Refuse a no-op patch before it opens a loop run and an audit trail. It asks
+    # for no action, so there is no permission it could be checked against.
+    if patch.changes_nothing:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "patch requests no change: provide at least one of "
+                f"{', '.join(EDIT_FIELDS)}, status"
+            ),
+        )
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
     loop = start_loop_run_sync(

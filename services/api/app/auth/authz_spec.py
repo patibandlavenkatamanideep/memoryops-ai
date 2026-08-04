@@ -102,13 +102,20 @@ class AuthzSpec:
     status: Status
     #: Required for SELF / TENANT / OPERATOR scopes.
     permission: Permission | None = None
-    #: Required for RESOURCE scope — which permission applies depends on whether the
-    #: loaded record belongs to the caller.
+    #: Required for RESOURCE/SUBJECT scope *without* variants — which permission
+    #: applies depends on whether the record (or requested subject) is the caller's.
+    #: A route that declares variants must leave these unset, so there is no generic
+    #: fallback path alongside the per-action ones.
     self_permission: Permission | None = None
     tenant_permission: Permission | None = None
     #: Set when one method/path performs several distinct actions.
     variants: tuple[AuthzVariant, ...] = ()
     note: str = ""
+
+    @property
+    def is_variant_driven(self) -> bool:
+        """True when authorization is decided per action rather than per route."""
+        return bool(self.variants)
 
     def variant(self, action: str) -> AuthzVariant | None:
         for candidate in self.variants:
@@ -186,10 +193,13 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         tenant_permission=_P.MEMORY_READ_TENANT,
     ),
     ("PATCH", "/api/memories/{memory_id}"): AuthzSpec(
+        # Deliberately no top-level self/tenant pair. Carrying both a generic
+        # route-level check and per-variant checks leaves two authorization paths,
+        # and a handler could take the generic one and silently skip
+        # archive/approve/reject. With variants only, the safe path is the only
+        # representable path.
         _S.RESOURCE,
         _ST.PLANNED,
-        self_permission=_P.MEMORY_WRITE_SELF,
-        tenant_permission=_P.MEMORY_WRITE_TENANT,
         variants=(
             AuthzVariant(
                 "edit",
@@ -247,7 +257,10 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
     ),
     # ── governance + evidence ───────────────────────────────────────────────
     ("GET", "/api/audit"): AuthzSpec(
-        _S.RESOURCE,
+        # Resolves an optional requested user and forces the query to the caller
+        # when tenant-wide access is unavailable — a subject decision, not a loaded
+        # record. It was RESOURCE, which contradicted the registry's own definition.
+        _S.SUBJECT,
         _ST.ENFORCED,
         self_permission=_P.AUDIT_READ_SELF,
         tenant_permission=_P.AUDIT_READ_TENANT,

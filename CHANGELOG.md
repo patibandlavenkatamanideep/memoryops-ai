@@ -3,6 +3,38 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## Unreleased — API authorization boundary
+
+- **Every route is classified, and the classification is enforced in CI.**
+  `app/auth/authz_spec.py` states each route's scope (public / authenticated /
+  self / subject / tenant / resource / operator), its required permission, and
+  whether it is enforced or still planned. A route added without a spec fails the
+  build, and `docs/security/endpoint-authorization-matrix.md` is generated from
+  the spec rather than maintained by hand, so the published matrix cannot drift
+  from the code.
+- **Four authorization helpers** (`app/auth/decisions.py`) replace ad-hoc checks:
+  a fixed capability, a requested subject, a loaded record, and an
+  action-determined permission are four different questions. Ownership-based
+  checks decide from the **stored** record, never from request values, and each
+  records a content-free witness so a route cannot be called enforced without
+  runtime evidence the check ran.
+- **A tenant-only action stays tenant-only on your own record.** `approve` /
+  `reject` declare no self permission, so owning a memory does not let you approve
+  it — self-approval would defeat the review queue that held it.
+- **`GET /api/audit`** now resolves its subject through the shared helper; only
+  the resolved tenant/user reach the repository.
+
+### Behaviour changes
+- **`PATCH /api/memories/{id}` with no changed field now returns 422** (was 200
+  with the unchanged record). Such a body requests no action, so there is no
+  permission it could be authorized against, and it wrote a governance loop run
+  and a `memory_updated` audit event for a mutation that never happened. Refused
+  before any evidence is written. `MemoryOpsClient.update_memory()` raises
+  `ValueError` locally for the same case. No web caller sends an empty patch.
+  This narrows a previously-accepted request shape, so it is a behavioural
+  correction rather than an additive change; every patch that requests a real
+  change is unaffected.
+
 ## Unreleased — worker mutation atomicity
 Additive; completes invariant #7 across the whole system.
 

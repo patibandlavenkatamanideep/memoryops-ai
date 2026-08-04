@@ -10,13 +10,16 @@ import itertools
 
 import pytest
 
-from app.schemas.memory import Status
+from app.schemas.memory import MemoryPatch, Status
 from app.services.status_transitions import (
     ALLOWED_TRANSITIONS,
+    EDIT_FIELDS,
     TRANSITION_AUDIT,
     UNSUPPORTED_PATCH_STATUSES,
+    EmptyPatch,
     InvalidTransition,
     UnsupportedStatus,
+    derive_patch_actions,
     validate_transition,
 )
 
@@ -91,3 +94,79 @@ def test_every_allowed_transition_has_a_distinct_audit_action():
 
 def test_audit_table_covers_every_allowed_action():
     assert set(TRANSITION_AUDIT) >= set(ALLOWED_TRANSITIONS.values())
+
+
+# ── one PATCH, many actions ──────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"has_content": True}, {"edit"}),
+        ({"has_importance": True}, {"edit"}),
+        ({"has_confidence": True}, {"edit"}),
+        # Every edit field collapses to the same single action.
+        ({"has_content": True, "has_importance": True, "has_confidence": True}, {"edit"}),
+        ({"transition": "approve"}, {"approve"}),
+        ({"transition": "archive"}, {"archive"}),
+        # The case the conjunctive rule exists for.
+        ({"has_content": True, "transition": "approve"}, {"edit", "approve"}),
+        ({"has_importance": True, "transition": "restore"}, {"edit", "restore"}),
+    ],
+)
+def test_derived_actions_cover_everything_the_body_requests(kwargs, expected):
+    call = {
+        "has_content": False,
+        "has_importance": False,
+        "has_confidence": False,
+        "transition": None,
+        **kwargs,
+    }
+    assert derive_patch_actions(**call) == expected
+
+
+def test_an_edit_plus_transition_is_two_actions_not_one():
+    """The reason authorization cannot key off the transition alone.
+
+    `approve` has no self permission by design; `edit` does. If one PATCH resolved
+    to a single action, a tenant approver could rewrite a memory's content in the
+    same request that approves it, and the audit would record only the approval.
+    Both permissions must be held.
+    """
+    actions = derive_patch_actions(
+        has_content=True,
+        has_importance=False,
+        has_confidence=False,
+        transition="approve",
+    )
+    assert actions == {"edit", "approve"}
+    assert len(actions) == 2, "an edit must not be absorbed into the transition"
+
+
+def test_a_patch_that_changes_nothing_is_refused():
+    """No action means no permission to check — it must not resolve to 'allowed'."""
+    with pytest.raises(EmptyPatch):
+        derive_patch_actions(
+            has_content=False,
+            has_importance=False,
+            has_confidence=False,
+            transition=None,
+        )
+
+
+def test_edit_fields_matches_the_schema_fields_that_produce_an_edit():
+    """Adding an editable field without adding it here would let it through
+    unauthorized — the field would mutate the memory but contribute no action."""
+    schema_fields = set(MemoryPatch.model_fields)
+    governance_fields = {"tenant_id", "user_id", "status", "expected_revision"}
+    assert set(EDIT_FIELDS) == schema_fields - governance_fields
+
+
+def test_changes_nothing_agrees_with_the_derivation():
+    scoped = {"tenant_id": "acme", "user_id": "alice"}
+    assert MemoryPatch(**scoped).changes_nothing is True
+    assert MemoryPatch(**scoped, expected_revision=3).changes_nothing is True, (
+        "a revision guard alone still requests no change"
+    )
+    for field in EDIT_FIELDS:
+        value = {"content": "x", "importance": 5, "confidence": 0.5}[field]
+        assert MemoryPatch(**scoped, **{field: value}).changes_nothing is False
+    assert MemoryPatch(**scoped, status=Status.active).changes_nothing is False

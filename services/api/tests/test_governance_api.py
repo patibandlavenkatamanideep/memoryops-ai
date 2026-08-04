@@ -12,6 +12,7 @@ import pytest
 
 from app.db.entities import StoredMemory
 from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+from app.services.status_transitions import derive_patch_actions
 
 from ._secret_fixtures import FAKE_PROVIDER_KEY
 
@@ -345,3 +346,68 @@ def test_content_edit_goes_through_governance(api_client):
     assert ok.status_code == 200
     assert ok.json()["content"] == "prefers light mode"
     assert ok.json()["revision"] == 2
+
+
+# ── one patch, every action it requests (v2.4) ───────────────────────────────
+def test_approving_and_editing_in_one_patch_is_two_governance_actions(api_client):
+    """`{"content": ..., "status": "active"}` approves *and* rewrites.
+
+    The route resolves it to a single audit action today, which is the reason
+    authorization cannot key off the status transition alone: whoever may approve
+    would implicitly be allowed to rewrite the text they are approving, in the
+    request that approves it, leaving only the approval in the trail. Pinned here
+    so the coupling is visible while the route is still `planned`.
+    """
+    client, repo = api_client
+    m = _seed(repo, status=Status.pending, content="original claim")
+
+    r = client.patch(
+        f"/api/memories/{m.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "rewritten claim", "status": "active"},
+    )
+    assert r.status_code == 200, r.text
+
+    stored = repo.get_memory("t1", "u1", m.id)
+    assert stored.status is Status.active
+    assert stored.content == "rewritten claim"
+
+    actions = derive_patch_actions(
+        has_content=True,
+        has_importance=False,
+        has_confidence=False,
+        transition="approve",
+    )
+    assert actions == {"edit", "approve"}, (
+        "both permissions must be required once this route is enforced"
+    )
+
+
+def test_a_patch_requesting_no_change_is_refused(api_client):
+    """It returned 200 with the record and wrote a `memory_updated` audit event
+    for a mutation that never happened — a no-op indistinguishable from an edit."""
+    client, repo = api_client
+    m = _seed(repo)
+    audit_before = len(client.get(f"/api/audit{_q()}").json())
+
+    r = client.patch(f"/api/memories/{m.id}", json={"tenant_id": "t1", "user_id": "u1"})
+    assert r.status_code == 422
+    assert "no change" in r.json()["detail"]
+    assert len(client.get(f"/api/audit{_q()}").json()) == audit_before
+
+
+def test_every_single_field_patch_still_works(api_client):
+    """The 422 must catch only genuinely empty bodies."""
+    client, repo = api_client
+    for field, value in (("content", "new text"), ("importance", 9), ("confidence", 0.4)):
+        m = _seed(repo)
+        r = client.patch(
+            f"/api/memories/{m.id}", json={"tenant_id": "t1", "user_id": "u1", field: value}
+        )
+        assert r.status_code == 200, f"{field}: {r.text}"
+
+    pending = _seed(repo, status=Status.pending)
+    r = client.patch(
+        f"/api/memories/{pending.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "status": "active"},
+    )
+    assert r.status_code == 200, r.text

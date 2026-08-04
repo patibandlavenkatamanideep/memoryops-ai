@@ -96,14 +96,51 @@ def test_tenant_scoped_routes_declare_a_tenant_permission(routes):
         assert spec.permission is not None, f"{method} {path} is tenant-scoped with no permission"
 
 
-def test_resource_scoped_routes_declare_both_permissions(routes):
-    """Resource scope exists precisely because self and tenant differ."""
+def test_ownership_scoped_routes_declare_both_permissions(routes):
+    """RESOURCE and SUBJECT exist precisely because self and tenant differ.
+
+    Two valid shapes:
+      * without variants — a top-level self/tenant pair decides the route;
+      * with variants — each action decides itself, and the top-level pair must be
+        ABSENT so there is no second authorization path a handler could take
+        instead, silently skipping archive/approve/reject.
+    """
     for method, path in routes:
         spec = ROUTE_AUTHZ[(method, path)]
-        if spec.scope is not Scope.RESOURCE:
+        if spec.scope not in (Scope.RESOURCE, Scope.SUBJECT):
+            continue
+        if spec.is_variant_driven:
+            assert spec.self_permission is None and spec.tenant_permission is None, (
+                f"{method} {path} declares variants *and* a generic fallback pair — "
+                "remove the fallback so the safe path is the only representable one"
+            )
+            for variant in spec.variants:
+                assert variant.permissions(), (
+                    f"{method} {path} variant '{variant.action}' names no permission"
+                )
             continue
         assert spec.self_permission is not None, f"{method} {path} lacks a self permission"
         assert spec.tenant_permission is not None, f"{method} {path} lacks a tenant permission"
+
+
+def test_subject_and_resource_scopes_are_assigned_deliberately(routes):
+    """RESOURCE means a stored record is loaded before ownership is decided.
+    SUBJECT means a requested user is resolved before querying.
+
+    /api/audit was RESOURCE while resolving an optional `user_id` — contradicting
+    the registry's own definition, and it would have modelled the first real
+    subject-scope helper as a special case.
+    """
+    subject = {p for (m, p) in routes if ROUTE_AUTHZ[(m, p)].scope is Scope.SUBJECT}
+    assert "/api/audit" in subject
+    assert "/api/memories" in subject
+
+    resource = {p for (m, p) in routes if ROUTE_AUTHZ[(m, p)].scope is Scope.RESOURCE}
+    for path in resource:
+        assert "{" in path, (
+            f"{path} is RESOURCE-scoped but takes no identifier — a route with no "
+            "record to load cannot decide ownership from one"
+        )
 
 
 def test_public_routes_are_a_short_explicit_list(routes):
