@@ -151,6 +151,28 @@ per-memory `AuditEvent[]`, newest first.
 Body: `{ tenant_id, user_id, content?, importance?, confidence?, status?, expected_revision? }`.
 Returns the updated `MemoryRecord`. Emits an audit event.
 
+At least one of `content`, `importance`, `confidence`, `status` is **required**. A
+body carrying only scope (and optionally `expected_revision`) returns `422`.
+
+> **Behaviour change (v2.4).** This previously returned `200` with the unchanged
+> record. Such a request asks for no action, so there is no permission it could be
+> authorized against — yet it opened a governance loop run and wrote a
+> `memory_updated` audit event for a mutation that never happened, making a no-op
+> indistinguishable from a real edit in the trail. It is now refused before any
+> evidence is written, and before the memory is looked up, so it cannot be used to
+> probe which ids exist. Every patch that requests a real change is unaffected.
+> `MemoryOpsClient.update_memory()` raises `ValueError` locally for the same case.
+
+### One patch can request several actions
+
+`{ "content": ..., "status": "active" }` is an **edit and an approval**. The two are
+governed differently — `edit` has a self permission, `approve` deliberately does not,
+because approving your own pending memory defeats the review queue that held it.
+Authorization therefore derives the full set of requested actions and requires *every*
+applicable permission, rather than keying off the status transition alone. Otherwise
+`memory:approve:tenant` would implicitly grant a content edit, letting an approver
+rewrite the text in the same request that approves it.
+
 ### Content edits are governed
 
 A `content` change runs through the **governed update service**, not a direct
@@ -236,9 +258,17 @@ audit `memory_deleted`. The memory is never retrievable again.
 Query: `tenant_id` (req), `user_id` (opt), `memory_id` (opt), `limit` (opt, ≤1000).
 Returns `AuditEvent[]` (append-only), newest first.
 
-**Authorization.** A tenant-wide read — omitting `user_id`, or naming another user —
-requires the `audit:read:tenant` permission. Without it the query is forced to the
-caller's own `user_id`; a request naming another user returns `403`.
+**Authorization.** A tenant-wide read — omitting `user_id`, **or** naming another
+user — requires the `audit:read:tenant` permission. Without it both forms return
+`403`; only a request that names the caller's own `user_id` succeeds.
+
+Omitting `user_id` is a tenant-wide request, not an implicit "my own". Reinterpreting
+it as self-scoped would succeed with narrower data than the caller asked for, quietly
+changing the meaning of the request — and omission is exactly how this endpoint
+leaked in the first place. Callers wanting their own rows name themselves.
+
+Only the resolved tenant/user reach the repository; the request's own values are
+never passed through after validation (`authorize_subject_scope`).
 
 `user_id` was previously optional *and unauthorized*, and the scope-validation
 middleware only checks a `user_id` that is **present** — so omitting it skipped
