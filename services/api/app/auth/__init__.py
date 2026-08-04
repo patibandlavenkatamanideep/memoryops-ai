@@ -7,6 +7,13 @@ authenticated tenant/user. It is not an auth product. Off by default.
 
 from __future__ import annotations
 
+from .decisions import (
+    AuthorizationDecision,
+    AuthorizedSubject,
+    authorize_loaded_resource,
+    authorize_subject_scope,
+    authorize_transition,
+)
 from .dependencies import (
     authorize_audit_scope,
     current_principal,
@@ -32,6 +39,11 @@ __all__ = [
     "enforce_scope",
     "require_permission",
     "authorize_audit_scope",
+    "authorize_subject_scope",
+    "authorize_loaded_resource",
+    "authorize_transition",
+    "AuthorizedSubject",
+    "AuthorizationDecision",
     "Permission",
     "Role",
     "DEFAULT_ROLE",

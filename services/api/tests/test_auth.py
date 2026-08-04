@@ -215,3 +215,72 @@ def test_public_paths_need_no_auth(auth_client):
     client, _ = auth_client(MEMORYOPS_AUTH_MODE="trusted_header")
     assert client.get("/healthz").status_code == 200
     assert client.get("/").status_code == 200
+
+
+# ── the roles claim is a container, not a scalar ─────────────────────────────
+def test_a_list_roles_claim_is_read_not_discarded():
+    """The shape virtually every issuer emits.
+
+    `claim_path` rejects containers on purpose — a tenant or subject that arrived as
+    a list is malformed, and `str()`-ing it would invent an identifier. Roles are the
+    opposite: an array is the normal shape. Reading them through `claim_path` returned
+    `None`, which `resolve_roles` cannot tell apart from an omitted claim, so **every**
+    JWT credential fell back to `DEFAULT_ROLE`.
+
+    Both directions were wrong. An `auditor` token silently lost tenant audit access;
+    and a token deliberately issued with `roles: []` — the issuer stating this identity
+    has no privileges — received `memory_user` instead of nothing, which is
+    `memory:read:self`, `memory:write:self` and `memory:delete:self` for a credential
+    that was meant to carry none.
+    """
+    from app.auth.jwt import claim_node, claim_path
+    from app.auth.roles import Role, resolve_roles
+
+    payload = {"roles": ["auditor", "memory_admin"], "tenant_id": "t1"}
+
+    assert claim_path(payload, "roles") is None, "unchanged: scalars only"
+    assert claim_node(payload, "roles") == ["auditor", "memory_admin"]
+
+    roles, present = resolve_roles(claim_node(payload, "roles"))
+    assert roles == frozenset({Role.AUDITOR, Role.MEMORY_ADMIN})
+    assert present is True
+
+
+def test_an_explicitly_empty_roles_claim_grants_nothing_over_jwt(auth_client):
+    """`roles: []` is an authorization decision the issuer already made.
+
+    Under the old reading it became "no claim", and the compatibility fallback handed
+    the credential `memory_user`.
+    """
+    client, _ = auth_client(MEMORYOPS_AUTH_MODE="jwt", MEMORYOPS_AUTH_JWT_KEY="s3cr3t")
+    tok = make_jwt(
+        {"sub": "u1", "tenant_id": "t1", "roles": [], "exp": time.time() + 60},
+        secret="s3cr3t",
+    )
+    r = client.post(
+        "/api/chat",
+        json={"tenant_id": "t1", "user_id": "u1", "message": "hi"},
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert r.status_code == 403
+    assert "memory:write:self" in r.json()["detail"]
+
+
+def test_a_nested_list_roles_claim_is_read(auth_client):
+    """Auth0/Okta-style namespaced claims are nested *and* arrays."""
+    from app.auth.jwt import claim_node
+    from app.auth.roles import Role, resolve_roles
+
+    payload = {"app_metadata": {"roles": ["tenant_admin"]}}
+    roles, present = resolve_roles(claim_node(payload, "app_metadata.roles"))
+    assert roles == frozenset({Role.TENANT_ADMIN})
+    assert present is True
+
+
+def test_a_scalar_claim_still_refuses_a_container():
+    """The narrowing must not leak into tenant/user resolution."""
+    from app.auth.jwt import claim_path
+
+    assert claim_path({"tenant_id": ["t1", "t2"]}, "tenant_id") is None
+    assert claim_path({"tenant_id": {"id": "t1"}}, "tenant_id") is None
+    assert claim_path({"tenant_id": "t1"}, "tenant_id") == "t1"

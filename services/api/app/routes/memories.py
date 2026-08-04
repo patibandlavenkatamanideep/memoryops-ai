@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..auth import enforce_scope
+from ..auth import (
+    Permission,
+    authorize_loaded_resource,
+    authorize_subject_scope,
+    authorize_transition,
+    current_principal,
+    enforce_scope,
+)
+from ..auth.authz_spec import ROUTE_AUTHZ
 from ..db import governance as gov
 from ..db import lineage
 from ..db.entities import StoredAudit
@@ -27,6 +35,7 @@ from ..services.status_transitions import (
     UNSUPPORTED_PATCH_STATUSES,
     InvalidTransition,
     UnsupportedStatus,
+    derive_patch_actions,
     validate_transition,
 )
 from ..services.update_service import (
@@ -36,6 +45,60 @@ from ..services.update_service import (
 )
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
+
+_PATCH_SPEC = ROUTE_AUTHZ[("PATCH", "/api/memories/{memory_id}")]
+
+
+def _load_in_scope(request: Request, memory_id: str, *, tenant_id: str, user_id: str):
+    """Find a memory for authorization, and return the scope to trust afterwards.
+
+    Two lookups, because the question differs. With auth **on**, ownership is not yet
+    known — that is what the caller is being authorized against — so the lookup is
+    tenant-scoped and spans users, and the *stored* owner becomes the scope for
+    everything downstream. With auth **off** there is no principal to scope to, so the
+    supplied values stand (unchanged development behaviour).
+
+    The authenticated tenant is always part of the lookup, so a memory in another
+    tenant is simply not found.
+    """
+    repo = get_repository()
+    principal = current_principal(request)
+    if principal is None:
+        return repo.get_memory(tenant_id, user_id, memory_id), tenant_id, user_id
+    found = repo.get_memory_in_tenant(principal.tenant_id, memory_id)
+    if found is None:
+        return None, tenant_id, user_id
+    # The supplied `user_id` was only ever a hint about which record to find. Once the
+    # record is loaded, its stored owner is the only thing that decides anything —
+    # continuing to pass the caller's value would put caller-controlled input back
+    # into queries that authorization has already settled, and would silently return
+    # nothing when an admin legitimately reads another user's memory.
+    return found, found.tenant_id, found.user_id
+
+
+def _authorized_memory(
+    request: Request,
+    memory_id: str,
+    *,
+    tenant_id: str,
+    user_id: str,
+    self_permission: Permission,
+    tenant_permission: Permission,
+):
+    """`_load_in_scope` plus the ownership check. 404 when absent or not permitted."""
+    memory, scope_tenant, scope_user = _load_in_scope(
+        request, memory_id, tenant_id=tenant_id, user_id=user_id
+    )
+    if memory is None:
+        raise HTTPException(status_code=404, detail="memory not found")
+    authorize_loaded_resource(
+        request,
+        resource_tenant_id=memory.tenant_id,
+        resource_user_id=memory.user_id,
+        self_permission=self_permission,
+        tenant_permission=tenant_permission,
+    )
+    return memory, scope_tenant, scope_user
 
 
 def _audit_event(r: StoredAudit) -> AuditEvent:
@@ -60,6 +123,17 @@ def list_memories(
     status: str | None = Query(None),
     memory_type: str | None = Query(None),
 ) -> list[MemoryRecord]:
+    # Authorize *first*, and continue on the resolved scope. A loop run or audit
+    # event opened on the query-string values would record an unauthorized request
+    # as a governance action that happened, under a scope nothing had checked.
+    subject = authorize_subject_scope(
+        request,
+        requested_tenant_id=tenant_id,
+        requested_user_id=user_id,
+        self_permission=Permission.MEMORY_READ_SELF,
+        tenant_permission=Permission.MEMORY_READ_TENANT,
+    )
+    tenant_id, user_id = subject.tenant_id, subject.user_id or user_id
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
     loop = start_loop_run_sync(
@@ -146,12 +220,18 @@ def get_memory_detail(
     Tenant + user scoped (invariant #1). Returns the row including soft-deleted
     ones for governance/forensics — callers render the real ``status`` and must
     never present a deleted row as active (the ``status`` field carries truth).
+    Authorization visibility is not retrieval visibility: a deleted memory is
+    inspectable here and still absent from every retrieval path.
     """
-    repo = get_repository()
+    m, tenant_id, user_id = _authorized_memory(
+        request,
+        memory_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        self_permission=Permission.MEMORY_READ_SELF,
+        tenant_permission=Permission.MEMORY_READ_TENANT,
+    )
     trace_id = getattr(request.state, "trace_id", "-")
-    m = repo.get_memory(tenant_id, user_id, memory_id)
-    if not m:
-        raise HTTPException(status_code=404, detail="memory not found")
     audit_service().record(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -167,21 +247,33 @@ def get_memory_detail(
 @router.get("/{memory_id}/audit", response_model=list[AuditEvent])
 def get_memory_audit(
     memory_id: str,
+    request: Request,
     tenant_id: str = Query(...),
     user_id: str = Query(...),
     limit: int = Query(200, le=1000),
 ) -> list[AuditEvent]:
-    """Audit timeline for one memory (newest first), tenant + user scoped."""
-    repo = get_repository()
-    if not repo.get_memory(tenant_id, user_id, memory_id):
-        raise HTTPException(status_code=404, detail="memory not found")
-    rows = repo.list_audit(tenant_id, user_id, memory_id=memory_id, limit=limit)
+    """Audit timeline for one memory (newest first), tenant + user scoped.
+
+    Reading a memory's evidence is an *audit* capability, not a memory-read one:
+    the trail names who did what and when, which a memory reader is not thereby
+    entitled to.
+    """
+    _m, tenant_id, user_id = _authorized_memory(
+        request,
+        memory_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        self_permission=Permission.AUDIT_READ_SELF,
+        tenant_permission=Permission.AUDIT_READ_TENANT,
+    )
+    rows = get_repository().list_audit(tenant_id, user_id, memory_id=memory_id, limit=limit)
     return [_audit_event(r) for r in rows]
 
 
 @router.get("/{memory_id}/provenance", response_model=MemoryProvenance)
 def get_memory_provenance(
     memory_id: str,
+    request: Request,
     tenant_id: str = Query(...),
     user_id: str = Query(...),
 ) -> MemoryProvenance:
@@ -190,10 +282,15 @@ def get_memory_provenance(
     Composes the stored ``source`` with the memory's audit trail and the
     governance loop runs that touched it. Never returns embeddings or secrets.
     """
+    m, tenant_id, user_id = _authorized_memory(
+        request,
+        memory_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        self_permission=Permission.MEMORY_READ_SELF,
+        tenant_permission=Permission.MEMORY_READ_TENANT,
+    )
     repo = get_repository()
-    m = repo.get_memory(tenant_id, user_id, memory_id)
-    if not m:
-        raise HTTPException(status_code=404, detail="memory not found")
     audit_rows = repo.list_audit(tenant_id, user_id, memory_id=memory_id, limit=1000)
     runs = repo.list_loop_runs(tenant_id=tenant_id, user_id=user_id, limit=1000)
     loop_run_ids = [r.id for r in runs if (r.metadata or {}).get("memory_id") == memory_id]
@@ -229,31 +326,9 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
         )
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
-    loop = start_loop_run_sync(
-        repo,
-        LoopId.MEMORY_GOVERNANCE,
-        trace_id,
-        tenant_id=patch.tenant_id,
-        user_id=patch.user_id,
-        metadata={"action": "patch", "memory_id": memory_id},
+    m, scope_tenant, scope_user = _load_in_scope(
+        request, memory_id, tenant_id=patch.tenant_id, user_id=patch.user_id
     )
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.OBSERVED,
-        event_type="memory_governance_observed",
-        reason="memory governance patch requested",
-        evidence={"has_content_patch": patch.content is not None, "status": patch.status},
-    )
-    emit_loop_event_sync(
-        repo,
-        loop,
-        LoopState.POLICY_CHECKED,
-        event_type="memory_governance_policy_checked",
-        reason="memory owner/scope checked for patch",
-        evidence={"tenant_scoped": True, "user_scoped": True},
-    )
-    m = repo.get_memory(patch.tenant_id, patch.user_id, memory_id)
     if not m or m.status == Status.deleted:
         raise HTTPException(status_code=404, detail="memory not found")
 
@@ -278,13 +353,68 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
         except InvalidTransition as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    # ── authorize every action the body requests ──────────────────────────────
+    # A PATCH is not one action. `{"content": ..., "status": "active"}` edits *and*
+    # approves, and the two are governed differently — `edit` has a self permission,
+    # `approve` deliberately does not. Requiring only one of them would let
+    # `memory:approve:tenant` grant a content edit, so an approver could rewrite the
+    # text in the request that approves it. Every action is authorized, and each
+    # records its own witness.
+    requested_actions = derive_patch_actions(
+        has_content=patch.content is not None,
+        has_importance=patch.importance is not None,
+        has_confidence=patch.confidence is not None,
+        transition=transition,
+    )
+    authorized_permissions = [
+        authorize_transition(
+            request,
+            spec=_PATCH_SPEC,
+            validated_action=act,
+            resource_tenant_id=m.tenant_id,
+            resource_user_id=m.user_id,
+        ).permission.value
+        for act in sorted(requested_actions)
+    ]
+
+    # Everything past this point runs on the authorized scope, not the body's.
+    patch = patch.model_copy(update={"tenant_id": scope_tenant, "user_id": scope_user})
+    loop = start_loop_run_sync(
+        repo,
+        LoopId.MEMORY_GOVERNANCE,
+        trace_id,
+        tenant_id=scope_tenant,
+        user_id=scope_user,
+        metadata={"action": "patch", "memory_id": memory_id},
+    )
+    emit_loop_event_sync(
+        repo,
+        loop,
+        LoopState.OBSERVED,
+        event_type="memory_governance_observed",
+        reason="memory governance patch requested",
+        evidence={"has_content_patch": patch.content is not None, "status": patch.status},
+    )
+    emit_loop_event_sync(
+        repo,
+        loop,
+        LoopState.POLICY_CHECKED,
+        event_type="memory_governance_policy_checked",
+        reason="memory owner/scope checked for patch",
+        evidence={
+            "tenant_scoped": True,
+            "user_scoped": True,
+            "requested_actions": sorted(requested_actions),
+        },
+    )
+
     # Mutation + audit are one atomic unit of work (P0): a crash mid-way can no
     # longer persist the edit without its audit evidence, or vice versa. The
     # transaction must open *before* the in-place field mutations — the in-memory
     # backend hands back the live stored row, so a rollback can only undo changes
     # made after the unit of work's snapshot is taken.
-    action = "memory_updated"
-    reason = "memory edited"
+    edit_action = "memory_updated"
+    edit_reason = "memory edited"
     update_evidence: dict = {}
     with repo.transaction(patch.tenant_id, patch.user_id):
         if patch.content is not None:
@@ -306,7 +436,7 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             except UpdateRejected as exc:
                 raise HTTPException(status_code=422, detail=exc.reason) from exc
-            action, reason = result.audit_action, result.reason
+            edit_action, edit_reason = result.audit_action, result.reason
             update_evidence = result.evidence
         if patch.importance is not None:
             m.importance = patch.importance
@@ -318,7 +448,6 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             # target alone, so pending→active and archived→active were both recorded
             # as "memory_approved" — a restore was indistinguishable from an approval.
             m.status = patch.status
-            action, reason = TRANSITION_AUDIT[transition]
 
         # Persist. When the caller supplied `expected_revision`, the write is a
         # compare-and-swap so the *database* arbitrates concurrency — a Python-side
@@ -341,6 +470,10 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             m = repo.update_memory(m)
         if update_evidence:
             update_evidence = {**update_evidence, "revision": m.revision}
+
+        # The action the loop reports. A transition is the headline when present,
+        # matching what this route has always recorded for approve/reject/archive.
+        action = TRANSITION_AUDIT[transition][0] if transition else edit_action
         emit_loop_event_sync(
             repo,
             loop,
@@ -357,25 +490,52 @@ def patch_memory(memory_id: str, patch: MemoryPatch, request: Request) -> Memory
             reason="memory status/content update verified",
             evidence={"memory_id": memory_id, "status": m.status.value},
         )
-        audit = audit_service().record(
-            tenant_id=patch.tenant_id,
-            user_id=patch.user_id,
-            memory_id=memory_id,
-            action=action,
-            reason=reason,
-            trace_id=trace_id,
-            # Before/after *hashes* plus the policy decision — never the content
-            # itself: the audit trail is read by operators who may not be cleared
-            # for the memory, and a deleted memory's text must not survive here.
-            metadata=update_evidence or None,
-        )
+
+        # One audit record per action performed. A mixed edit-plus-transition used to
+        # collapse into a single record — the transition overwrote the edit's action
+        # and reason — so the durable evidence said "approved" about a request that
+        # also rewrote the text. Both records commit inside this transaction, so the
+        # pair is atomic and the hash chain stays append-only.
+        provenance = {
+            "requested_actions": sorted(requested_actions),
+            "authorized_permissions": authorized_permissions,
+            "content_updated": patch.content is not None,
+            "transition": transition,
+        }
+        written = []
+        if "edit" in requested_actions:
+            written.append((edit_action, edit_reason, {**update_evidence, **provenance}))
+        if transition is not None:
+            t_action, t_reason = TRANSITION_AUDIT[transition]
+            written.append((t_action, t_reason, dict(provenance)))
+        audits = [
+            audit_service().record(
+                tenant_id=patch.tenant_id,
+                user_id=patch.user_id,
+                memory_id=memory_id,
+                action=written_action,
+                reason=written_reason,
+                trace_id=trace_id,
+                # Before/after *hashes*, the policy decision, and which permissions
+                # authorized the change — never the content itself: the audit trail is
+                # read by operators who may not be cleared for the memory, and a
+                # deleted memory's text must not survive here.
+                metadata=written_metadata,
+            )
+            for written_action, written_reason, written_metadata in written
+        ]
+        audit = audits[-1]
     emit_loop_event_sync(
         repo,
         loop,
         LoopState.AUDITED,
         event_type="memory_governance_audited",
         reason="memory governance audit event written",
-        evidence={"audit_event_id": audit.id, "action": action},
+        evidence={
+            "audit_event_id": audit.id,
+            "action": action,
+            "audit_event_ids": [a.id for a in audits],
+        },
         audit_event_id=audit.id,
     )
     emit_loop_event_sync(
@@ -397,6 +557,19 @@ def delete_memory(memory_id: str, body: DeleteRequest, request: Request) -> dict
     enforce_scope(request, body.tenant_id, body.user_id)
     repo = get_repository()
     trace_id = getattr(request.state, "trace_id", "-")
+    # Authorize before opening the governance loop. A refused caller must not leave a
+    # loop run behind — a delete attempt nobody was permitted to make is not a
+    # governance action that happened. (A *permitted* delete refused by legal hold
+    # still is, and is still recorded below.)
+    existing, scope_tenant, scope_user = _authorized_memory(
+        request,
+        memory_id,
+        tenant_id=body.tenant_id,
+        user_id=body.user_id,
+        self_permission=Permission.MEMORY_DELETE_SELF,
+        tenant_permission=Permission.MEMORY_DELETE_TENANT,
+    )
+    body = body.model_copy(update={"tenant_id": scope_tenant, "user_id": scope_user})
     loop = start_loop_run_sync(
         repo,
         LoopId.MEMORY_GOVERNANCE,
@@ -423,10 +596,9 @@ def delete_memory(memory_id: str, body: DeleteRequest, request: Request) -> dict
     )
     # Legal hold (v0.10) is fail-closed: a held memory cannot be deleted —
     # manually or by a worker — until the hold is released. Refuse with 409 and
-    # leave the loop run recorded so the blocked attempt is auditable.
-    existing = repo.get_memory(body.tenant_id, body.user_id, memory_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="memory not found")
+    # leave the loop run recorded so the blocked attempt is auditable. Authorization
+    # decides whether the caller may *attempt* a deletion; it never overrides a hold,
+    # so this check stays after it and applies to every role including tenant admin.
     if gov.is_legal_hold(existing):
         emit_loop_event_sync(
             repo,

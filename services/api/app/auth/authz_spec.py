@@ -176,19 +176,19 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
     ),
     # ── memory lifecycle ────────────────────────────────────────────────────
     ("POST", "/api/chat"): AuthzSpec(
-        _S.SELF, _ST.PLANNED, permission=_P.MEMORY_WRITE_SELF, note="chat writes memory"
+        _S.SELF, _ST.ENFORCED, permission=_P.MEMORY_WRITE_SELF, note="chat writes memory"
     ),
     ("GET", "/api/memories"): AuthzSpec(
         # Collection query: no stored record exists to inspect ownership on, so the
         # helper resolves the requested subject and forces the query to it.
         _S.SUBJECT,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         self_permission=_P.MEMORY_READ_SELF,
         tenant_permission=_P.MEMORY_READ_TENANT,
     ),
     ("GET", "/api/memories/{memory_id}"): AuthzSpec(
         _S.RESOURCE,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         self_permission=_P.MEMORY_READ_SELF,
         tenant_permission=_P.MEMORY_READ_TENANT,
     ),
@@ -199,7 +199,7 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         # archive/approve/reject. With variants only, the safe path is the only
         # representable path.
         _S.RESOURCE,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         variants=(
             AuthzVariant(
                 "edit",
@@ -238,20 +238,20 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
     ),
     ("DELETE", "/api/memories/{memory_id}"): AuthzSpec(
         _S.RESOURCE,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         self_permission=_P.MEMORY_DELETE_SELF,
         tenant_permission=_P.MEMORY_DELETE_TENANT,
         note="a user may delete their own pending memory; legal hold still overrides",
     ),
     ("GET", "/api/memories/{memory_id}/audit"): AuthzSpec(
         _S.RESOURCE,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         self_permission=_P.AUDIT_READ_SELF,
         tenant_permission=_P.AUDIT_READ_TENANT,
     ),
     ("GET", "/api/memories/{memory_id}/provenance"): AuthzSpec(
         _S.RESOURCE,
-        _ST.PLANNED,
+        _ST.ENFORCED,
         self_permission=_P.MEMORY_READ_SELF,
         tenant_permission=_P.MEMORY_READ_TENANT,
     ),

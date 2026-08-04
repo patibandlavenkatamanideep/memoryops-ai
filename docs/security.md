@@ -280,13 +280,75 @@ It deliberately returns soft-deleted rows, so the deletion guarantee is re-prove
 against it in `tests/test_deletion.py`: the lookup is not a retrieval path, and
 nothing downstream re-enters retrieval or context.
 
+### Enforcement order (v2.4)
+
+Authorization is not only *whether* a check runs but *when*. Every enforced route
+authorizes before it does anything observable:
+
+```
+reject a request that asks for nothing        (422, no lookup — not an id oracle)
+load the record inside the authenticated tenant
+404 if absent
+validate the lifecycle transition
+derive every action the body requests
+authorize every one of them
+open the governance loop run
+policy broker / legal hold / compare-and-swap
+atomic mutation + audit
+```
+
+A refused request must leave **no** loop run, loop event, audit event, policy-broker
+call, embedding, or row change. Otherwise the refusal came too late: the evidence
+trail records an action nobody was permitted to take, and the expensive work ran on
+the caller's schedule. This is asserted per refusal case, with a companion test
+proving the counters move on a real request so the checks cannot pass vacuously.
+
+Legal hold sits *after* authorization and is unaffected by it. Authorization decides
+whether a caller may **attempt** a deletion; a hold decides whether deletion may
+happen at all. A tenant admin holding every delete permission is still refused with
+409 — and that refusal *is* audited, because a permitted action stopped by a
+preservation control is exactly what evidence is for.
+
+### The resource lookup
+
+Resource routes load the memory with `get_memory_in_tenant(principal.tenant_id, id)`
+and authorize against its **stored** owner. Two consequences worth stating:
+
+- The request's `user_id` stops being used once the record is loaded. It was only ever
+  a hint about which record to find; continuing to pass it would put caller-controlled
+  input back into queries authorization has already settled, and would silently return
+  nothing when an admin legitimately reads another user's memory.
+- The authenticated tenant is always part of the lookup, so a memory in another tenant
+  is *not found* rather than *refused*.
+
+### Provider parity
+
+Authorization depends on the resolved `Principal`, never on how it arrived. Trusted-
+header and JWT modes are asserted to produce identical decisions for the same roles,
+including the four-state role resolution (omitted / valid / present-invalid /
+present-empty). This test found a real divergence: a JWT `roles` claim in array form
+— the shape almost every issuer emits — was discarded, so every JWT caller fell back
+to the default role. See the v2.4 entry in `CHANGELOG.md`.
+
 ### What is not claimed
 
 This is an authorization boundary, not an authorization product. Roles are coarse
 named bundles, not per-record ACLs; there is no delegation, no attribute-based policy,
 and no per-field redaction by role. Route statuses are moving from `planned` to
-`enforced` incrementally — read the generated matrix for the current state rather than
-assuming the whole surface is covered.
+`enforced` incrementally — **10 of 39 today** — so read the generated matrix for the
+current state rather than assuming the whole surface is covered.
+
+Two limits specific to the memory routes:
+
+- `GET /api/memories` is effectively self-only. Its `user_id` is a required query
+  parameter and the scope middleware pins query-string scope to the principal, so the
+  tenant branch of the subject helper is not reachable there: an admin lists another
+  user's memories one record at a time, by id. The tenant branch is kept because the
+  helper is shared, and is exercised by `/api/audit`.
+- `GET /api/memories/{id}` still returns soft-deleted records for governance and
+  forensics. This is deliberate and unchanged — authorization visibility is not
+  retrieval visibility, and the row carries its true `status`. Every retrieval path
+  still excludes it (invariant #2), which is re-proved against the new lookup.
 
 ## Production hardening roadmap
 
