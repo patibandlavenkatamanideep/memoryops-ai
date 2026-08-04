@@ -382,3 +382,56 @@ def test_a_content_edit_never_resurrects_or_hides_a_memory(api_client):
     )
     assert edit.status_code == 404
     assert repo.get_memory("t1", "u1", gone.id).content == "already deleted"
+
+
+def test_the_authorization_lookup_is_not_a_retrieval_path(api_client):
+    """`get_memory_in_tenant` (v2.4) is new reach across a tenant, so the deletion
+    guarantee has to be re-proved against it.
+
+    Ownership authorization has to inspect a record *before* it knows the owner, so
+    this lookup spans users and returns soft-deleted rows — otherwise "not yours"
+    and "does not exist" would be indistinguishable. That makes it the one place a
+    deleted memory is legitimately readable inside the process, and therefore the
+    one place a careless caller could turn it back into a retrieval path.
+
+    The invariant is that nothing downstream of it re-enters retrieval or context.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    secret = "renews the enterprise contract in March"
+    mem = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.semantic,
+            content=secret,
+            importance=8,
+            confidence=0.95,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt=secret),
+        )
+    )
+    assert client.request(
+        "DELETE", f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1"}
+    ).status_code == 200
+
+    # The lookup still sees it — deliberately, and it is the only thing that does.
+    assert repo.get_memory_in_tenant("t1", mem.id) is not None
+
+    # None of the retrieval surfaces do.
+    assert repo.retrieve_active("t1", "u1") == []
+    assert repo.search_candidates("t1", "u1", [0.1] * 8, limit=10) == []
+    assert [m.id for m in repo.list_memories("t1", "u1")] == []
+
+    # And a chat response neither uses it nor repeats it.
+    chat = client.post(
+        "/api/chat",
+        json={"tenant_id": "t1", "user_id": "u1", "message": "when does the contract renew?"},
+    )
+    assert chat.status_code == 200, chat.text
+    body = chat.json()
+    assert secret not in chat.text
+    assert mem.id not in {u["memory_id"] for u in body.get("used_memories", [])}

@@ -62,6 +62,28 @@ Newest-first lifecycle history scoped to one memory.
 gains the `memory_id` filter, implemented in both the in-memory and Postgres
 backends. No other repository contract changed.
 
+### Authorization lookup (v2.4)
+
+`Repository.get_memory_in_tenant(tenant_id, memory_id)` loads a memory by id within a
+tenant, **across users**, so ownership can be decided before the owner is known — a
+per-user lookup cannot distinguish "not yours" from "does not exist", and the route
+needs the owner to pick which permission applies. The tenant is a predicate in the
+query, never a check applied to a globally loaded row. See
+[security.md](security.md#authorization-decisions-are-centralized-v24).
+
+## PATCH is not one action (v2.4)
+
+`{ "content": ..., "status": "active" }` edits the memory **and** approves it. The
+control plane treats these as one call, but they are governed differently: `edit` has
+a self permission, `approve` deliberately does not. Authorization requires every
+action the body requests, so an approver cannot rewrite what they are approving in the
+request that approves it.
+
+A patch that changes nothing now returns `422` instead of `200` — it requests no
+action, so there is no permission to check it against, and it was writing a loop run
+and a `memory_updated` event for a mutation that never happened. The web UI always
+sends a field, so no control-plane surface changes.
+
 ## Explainability: "why a memory was used"
 
 v0.5 explains retrieval through signals already in the system:

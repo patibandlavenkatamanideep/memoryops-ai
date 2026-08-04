@@ -201,6 +201,93 @@ The most dangerous failures for an AI memory system are:
   [worker-runtime.md](worker-runtime.md) and
   [ADR-012](../infra/adr/ADR-012-worker-runtime-orchestration.md).
 
+## Authorization decisions are centralized (v2.4)
+
+Authentication answers *who are you*. Authorization answers *may you do this on
+this record*, and until v2.4 each route answered it in its own way — which is how
+`GET /api/audit` came to return tenant-wide rows to any authenticated caller.
+
+### The route contract
+
+`app/auth/authz_spec.py` states, for every route, its **scope**, the permission it
+requires, and whether that requirement is `enforced` or still `planned`:
+
+| Scope | Meaning |
+| --- | --- |
+| `public` | no credential (health, readiness) |
+| `authenticated` | any verified principal |
+| `self` | acts only on the caller |
+| `subject` | resolves a *requested* subject; no stored record exists to inspect |
+| `tenant` | tenant-wide data; needs a `:tenant` permission |
+| `resource` | loads a stored record first, then decides from its owner |
+| `operator` | operational surface, not memory content |
+
+A route added without a spec fails the build, and
+[security/endpoint-authorization-matrix.md](security/endpoint-authorization-matrix.md)
+is **generated** from the spec — the published matrix cannot drift from the code.
+
+`planned` is stated deliberately. A route listed as enforced that is not would be
+worse than an unlisted one, because the matrix is what a reader trusts.
+
+### The four helpers
+
+`app/auth/decisions.py` — separate helpers, not one with optional arguments. A fixed
+capability, a requested subject, a loaded record, and an action-determined permission
+are four different questions; one signature covering all four makes every call site
+look plausible while doing something subtly different.
+
+- `require_permission` — a fixed capability.
+- `authorize_subject_scope` — resolves which subject may be queried and **forces the
+  query to it**. The returned tenant/user are the only values that may reach the
+  repository; echoing back the caller's values after validating them leaves untrusted
+  input in the query path, which is not authorization.
+- `authorize_loaded_resource` — decides from the **stored** record's owner. Never from
+  `tenant_id` / `user_id` in the body, which the caller controls.
+- `authorize_transition` — picks the permission from the action the server already
+  validated, never from a client-supplied action string. An action the route never
+  declared fails closed (500) rather than falling back to a route-level permission.
+
+### Two rules that are easy to get wrong
+
+**Ownership does not grant a tenant-only action.** `approve` and `reject` declare no
+self permission, so owning a memory does not let you approve it — self-approval
+defeats the review queue that held it. A missing self branch means *tenant-only*, not
+*own record, therefore allowed*.
+
+**Concealment over refusal.** A cross-tenant record, or another user's record you may
+not touch, answers `404`, not `403`. A `403` confirms the record exists, which is
+itself a disclosure — an attacker can enumerate ids by status code alone.
+
+### Enforcement evidence
+
+Each helper records a content-free **witness** (`app/auth/witness.py`): the route, the
+helper, the permission, the action, and whether the check was tenant-scoped. A pinned
+list of enforced routes is only a claim; the witness is runtime evidence that a check
+actually ran, so a handler that silently stopped checking — and would still return the
+right answer for an authorized caller — is detectable.
+
+### Cross-tenant lookup for ownership
+
+Deciding ownership needs the record *before* the owner is known, so it cannot filter
+by `user_id`. `Repository.get_memory_in_tenant(tenant_id, memory_id)` provides this
+with the tenant as a **predicate in the query** — not a global lookup by id with the
+tenant compared afterward, which is one dropped condition away from a cross-tenant
+read while reading as safe because the comparison is right there. RLS
+(`004_rls_policies.sql`) remains the outer guarantee; neither layer is alone
+load-bearing.
+
+It deliberately returns soft-deleted rows, so the deletion guarantee is re-proved
+against it in `tests/test_deletion.py`: the lookup is not a retrieval path, and
+nothing downstream re-enters retrieval or context.
+
+### What is not claimed
+
+This is an authorization boundary, not an authorization product. Roles are coarse
+named bundles, not per-record ACLs; there is no delegation, no attribute-based policy,
+and no per-field redaction by role. Route statuses are moving from `planned` to
+`enforced` incrementally — read the generated matrix for the current state rather than
+assuming the whole surface is covered.
+
 ## Production hardening roadmap
 
 - Encryption at rest (pgcrypto / disk) + field-level encryption for high-sensitivity content.
