@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
 
-from ..auth import Permission, authorize_audit_scope, require_permission
+from ..auth import Permission, require_permission
+from ..auth.decisions import authorize_subject_scope
 from ..db.factory import get_repository
 from ..schemas.memory import AuditEvent
 
@@ -29,10 +30,17 @@ def get_audit(
     A tenant-wide read now requires `audit:read:tenant`; without it the query is
     forced to the caller's own `user_id`.
     """
-    effective_user = authorize_audit_scope(request, tenant_id, user_id)
+    subject = authorize_subject_scope(
+        request,
+        requested_tenant_id=tenant_id,
+        requested_user_id=user_id,
+        self_permission=Permission.AUDIT_READ_SELF,
+        tenant_permission=Permission.AUDIT_READ_TENANT,
+    )
     repo = get_repository()
+    # Only the authorized scope reaches the repository — never the request values.
     rows = repo.list_audit(
-        tenant_id, user_id=effective_user, memory_id=memory_id, limit=limit
+        subject.tenant_id, user_id=subject.user_id, memory_id=memory_id, limit=limit
     )
     return [
         AuditEvent(

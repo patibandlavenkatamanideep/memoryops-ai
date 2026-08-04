@@ -295,6 +295,14 @@ class PostgresRepository(Repository):
             stmt = stmt.order_by(MemoryRecordORM.created_at.desc())
             return [_to_stored(r) for r in s.scalars(stmt)]
 
+    def get_memory_in_tenant(self, tenant_id: str, memory_id: str) -> StoredMemory | None:
+        # Tenant is part of the query, never a check applied after a global load.
+        with self._scoped(tenant_id, "") as s:
+            row = s.get(MemoryRecordORM, memory_id)
+            if not row or row.tenant_id != tenant_id:
+                return None
+            return _to_stored(row)
+
     def _apply_memory_fields(self, row: MemoryRecordORM, memory: StoredMemory) -> None:
         # `normalized_content` and `embedding` were previously NOT persisted at all,
         # so a content edit changed `content` while the keyword form and the vector

@@ -196,3 +196,35 @@ def test_no_auth_sends_no_authorization_header() -> None:
     with _client(handler) as mo:
         mo.list_memories()
     assert seen["auth"] is None
+
+
+def test_update_memory_with_no_fields_never_reaches_the_network() -> None:
+    """The server refuses an empty patch with 422 — a body with no action has no
+    permission to authorize it against. The SDK should say which argument is
+    missing rather than surface a status code from a request it should not send."""
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={})
+
+    client = _client(handler)
+    with pytest.raises(ValueError, match="at least one of"):
+        client.update_memory("m1")
+    assert calls == [], "no request should have been sent"
+
+
+def test_update_memory_still_accepts_a_single_field() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "m1", "content": "x", "memory_type": "preference",
+            "status": "active", "importance": 5, "confidence": 0.8,
+            "sensitivity": "low",
+        })
+
+    client = _client(handler)
+    client.update_memory("m1", status="active")
+    assert seen["status"] == "active"

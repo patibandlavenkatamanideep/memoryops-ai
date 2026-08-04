@@ -173,6 +173,13 @@ class InMemoryRepository(Repository):
         return sorted(rows, key=lambda m: m.created_at, reverse=True)
 
     @_locked
+    def get_memory_in_tenant(self, tenant_id: str, memory_id: str) -> StoredMemory | None:
+        memory = self._memories.get(memory_id)
+        if memory is None or memory.tenant_id != tenant_id:
+            return None
+        return memory
+
+    @_locked
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         memory.updated_at = datetime.now(UTC)
         memory.revision = getattr(memory, "revision", 1) + 1

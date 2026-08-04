@@ -251,6 +251,21 @@ class MemoryPatch(BaseModel):
     #: previous last-write-wins behaviour, so existing clients are unaffected.
     expected_revision: int | None = Field(default=None, ge=1)
 
+    @property
+    def changes_nothing(self) -> bool:
+        """True when the body carries scope but requests no change.
+
+        Such a patch has no action, and therefore no permission to check. Letting
+        it succeed would mean a request that nothing authorized returned 200 —
+        cheap to send, and indistinguishable in a log from a real edit.
+        """
+        return (
+            self.content is None
+            and self.importance is None
+            and self.confidence is None
+            and self.status is None
+        )
+
 
 class DeleteRequest(BaseModel):
     tenant_id: str

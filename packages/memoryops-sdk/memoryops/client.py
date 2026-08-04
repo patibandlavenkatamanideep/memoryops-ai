@@ -200,6 +200,14 @@ class MemoryOpsClient:
         ):
             if val is not None:
                 body[key] = val
+        if len(body) == len(self._scope()):
+            # The server refuses this with 422: a patch requesting no change has no
+            # action, so there is no permission it could be authorized against.
+            # Fail here instead, where the caller can see which argument they missed.
+            raise ValueError(
+                "update_memory() requires at least one of "
+                "content, importance, confidence, status"
+            )
         return Memory.from_dict(self._request("PATCH", f"/api/memories/{memory_id}", json=body))
 
     def delete_memory(self, memory_id: str) -> dict:
