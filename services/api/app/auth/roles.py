@@ -59,6 +59,7 @@ class Permission(str, Enum):
     METRICS_READ_TENANT = "metrics:read:tenant"
     TRACES_READ_TENANT = "traces:read:tenant"
     EVIDENCE_READ = "evidence:read"
+    RETENTION_READ = "retention:read"
     RETENTION_MANAGE = "retention:manage"
     CONSENT_MANAGE = "consent:manage"
     # Operations.
@@ -127,6 +128,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.MEMORY_DELETE_TENANT,
             _P.MEMORY_APPROVE_TENANT,
             _P.MEMORY_REJECT_TENANT,
+            _P.RETENTION_READ,
             _P.RETENTION_MANAGE,
             _P.CONSENT_MANAGE,
         }
@@ -142,6 +144,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.METRICS_READ_TENANT,
             _P.TRACES_READ_TENANT,
             _P.EVIDENCE_READ,
+            _P.RETENTION_READ,
         }
     ),
     Role.TENANT_ADMIN: frozenset(set(Permission)),
