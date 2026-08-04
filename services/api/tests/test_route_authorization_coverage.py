@@ -204,9 +204,16 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         f"{m} {p}" for (m, p), spec in ROUTE_AUTHZ.items() if spec.status is Status.ENFORCED
     )
     assert enforced == [
+        "DELETE /api/memories/{memory_id}",
         "GET /api/admin/workers/health",
         "GET /api/audit",
+        "GET /api/memories",
+        "GET /api/memories/{memory_id}",
+        "GET /api/memories/{memory_id}/audit",
+        "GET /api/memories/{memory_id}/provenance",
         "GET /api/metrics",
+        "PATCH /api/memories/{memory_id}",
+        "POST /api/chat",
     ], f"enforced set changed: {enforced}"
 
 
@@ -317,17 +324,40 @@ def test_the_helpers_record_a_witness_for_every_enforced_route():
     assert decision.permission is Permission.WORKER_READ
 
 
-def test_every_enforced_route_has_a_witness_test():
-    """A route may not be marked ENFORCED without evidence that a check runs."""
-    enforced = {
-        f"{m} {p}" for (m, p), spec in ROUTE_AUTHZ.items() if spec.status is Status.ENFORCED
-    }
-    covered = {
+#: Enforced routes whose witness is asserted in this module, by driving the helper
+#: directly. Everything under `/api/memories` and `/api/chat` is covered instead by
+#: `test_memory_route_authorization.py`, which drives the **real route** through the
+#: app and reads the witness back off the request — a stronger check than a name in
+#: a list, because it fails when a handler stops calling the helper.
+_WITNESSED_HERE = frozenset(
+    {
         "GET /api/audit",
         "GET /api/metrics",
         "GET /api/admin/workers/health",
     }
-    assert enforced == covered, (
+)
+
+
+def test_every_enforced_route_has_a_witness_test():
+    """A route may not be marked ENFORCED without evidence that a check runs.
+
+    Two lists agreeing proves only that someone updated both. The memory routes are
+    therefore held to the runtime gate in `test_memory_route_authorization.py`; this
+    guard exists to catch an enforced route that belongs to *neither* set, which is
+    the case that would otherwise pass silently.
+    """
+    enforced = {
+        f"{m} {p}" for (m, p), spec in ROUTE_AUTHZ.items() if spec.status is Status.ENFORCED
+    }
+    runtime_gated = {
+        f"{m} {p}"
+        for (m, p), spec in ROUTE_AUTHZ.items()
+        if spec.status is Status.ENFORCED and (p.startswith("/api/memories") or p == "/api/chat")
+    }
+    uncovered = enforced - _WITNESSED_HERE - runtime_gated
+    assert not uncovered, (
         "an ENFORCED route has no witness test — add one before flipping its status: "
-        f"{sorted(enforced ^ covered)}"
+        f"{sorted(uncovered)}"
     )
+    stale = _WITNESSED_HERE - enforced
+    assert not stale, f"witness list names routes that are no longer enforced: {sorted(stale)}"

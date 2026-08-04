@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .jwt import JWTError, claim_path, decode_jwt
+from .jwt import JWTError, claim_node, claim_path, decode_jwt
 from .principal import Principal
 from .roles import resolve_roles
 
@@ -119,7 +119,9 @@ class JWTProvider:
         user = claim_path(payload, self._user_claim)
         if not tenant or not user:
             return None
-        roles, claim_present = resolve_roles(claim_path(payload, self._roles_claim))
+        # `claim_node`, not `claim_path`: a roles claim is normally a JSON array, and
+        # stringifying containers turned `["auditor"]` into "no claim at all".
+        roles, claim_present = resolve_roles(claim_node(payload, self._roles_claim))
         return Principal(
             tenant_id=tenant,
             user_id=user,

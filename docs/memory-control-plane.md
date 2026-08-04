@@ -71,6 +71,17 @@ needs the owner to pick which permission applies. The tenant is a predicate in t
 query, never a check applied to a globally loaded row. See
 [security.md](security.md#authorization-decisions-are-centralized-v24).
 
+## Authorization is enforced (v2.4)
+
+All seven control-plane routes — chat, list, detail, audit, provenance, patch, delete
+— now enforce their declared permission. Ownership is decided from the stored record,
+so the UI never has to name the owner of a memory it is acting on: it sends the
+signed-in user's scope and the record decides which permission applies.
+
+The web BFF's role checks remain a UX affordance. They are no longer the only thing
+standing between a caller and another user's memory — a direct API caller bypasses
+the BFF entirely, which is why these checks live in the API.
+
 ## PATCH is not one action (v2.4)
 
 `{ "content": ..., "status": "active" }` edits the memory **and** approves it. The

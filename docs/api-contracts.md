@@ -38,6 +38,11 @@ gateway/Redis limiter in front.
 Client IP is read from `X-Forwarded-For` (first hop) when present, else the socket peer.
 
 ## POST /api/chat
+Requires `memory:write:self`. When auth is enabled the request runs on the
+authenticated principal's tenant/user — the body values are validated *and* replaced,
+so no caller-supplied scope reaches the write path.
+
+
 Write + read path for a turn.
 
 Request:
@@ -163,6 +168,21 @@ body carrying only scope (and optionally `expected_revision`) returns `422`.
 > probe which ids exist. Every patch that requests a real change is unaffected.
 > `MemoryOpsClient.update_memory()` raises `ValueError` locally for the same case.
 
+### Authorization (enforced, v2.4)
+
+| Case | Required |
+| --- | --- |
+| edit your own memory | `memory:write:self` |
+| edit another user's, same tenant | `memory:write:tenant` |
+| approve / reject | `memory:approve:tenant` — **no self form exists** |
+| archive / restore your own | `memory:archive:self` / `memory:restore:self` |
+| another user's memory, no tenant permission | `404` (not `403` — see below) |
+| another tenant's memory | `404` |
+
+Ownership is read from the **stored** record, never from the `tenant_id`/`user_id` in
+the body. A `403` on an individual record would confirm it exists, so an unauthorized
+caller gets `404` and cannot enumerate ids by status code.
+
 ### One patch can request several actions
 
 `{ "content": ..., "status": "active" }` is an **edit and an approval**. The two are
@@ -171,7 +191,25 @@ because approving your own pending memory defeats the review queue that held it.
 Authorization therefore derives the full set of requested actions and requires *every*
 applicable permission, rather than keying off the status transition alone. Otherwise
 `memory:approve:tenant` would implicitly grant a content edit, letting an approver
-rewrite the text in the same request that approves it.
+rewrite the text in the same request that approves it. A caller holding one permission
+but not the other is refused, and **nothing is applied** — a mixed patch is not
+partially performed.
+
+Such a request now writes **two** audit records inside the same transaction —
+`memory_updated` and `memory_approved` — plus content-free metadata on each:
+
+```json
+{
+  "requested_actions": ["approve", "edit"],
+  "authorized_permissions": ["memory:write:self", "memory:approve:tenant"],
+  "content_updated": true,
+  "transition": "approve"
+}
+```
+
+It previously collapsed to a single record naming only the transition, so the durable
+evidence said "approved" about a request that also rewrote the content. Single-action
+patches still write exactly one record.
 
 ### Content edits are governed
 

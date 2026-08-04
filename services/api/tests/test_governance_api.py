@@ -411,3 +411,87 @@ def test_every_single_field_patch_still_works(api_client):
         json={"tenant_id": "t1", "user_id": "u1", "status": "active"},
     )
     assert r.status_code == 200, r.text
+
+
+def test_a_mixed_patch_writes_one_record_per_action(api_client):
+    """v2.4: the mixed case no longer collapses into a single audit record.
+
+    With auth disabled there is no principal to authorize, so this is purely about
+    the *evidence*: an edit bundled with an approval used to leave a trail naming
+    only the approval, because the transition overwrote the edit's action and reason.
+    """
+    client, repo = api_client
+    m = _seed(repo, status=Status.pending, content="original claim")
+    before = len(repo.list_audit("t1", "u1", memory_id=m.id, limit=50))
+
+    r = client.patch(
+        f"/api/memories/{m.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "content": "corrected claim",
+              "status": "active"},
+    )
+    assert r.status_code == 200, r.text
+
+    rows = repo.list_audit("t1", "u1", memory_id=m.id, limit=50)
+    assert len(rows) == before + 2, [row.action for row in rows]
+    actions = {row.action for row in rows}
+    assert "memory_approved" in actions
+    assert actions & {"memory_updated", "memory_content_updated"}, actions
+
+    for row in rows:
+        if row.action == "memory_approved":
+            assert row.metadata["requested_actions"] == ["approve", "edit"]
+            assert row.metadata["content_updated"] is True
+            assert row.metadata["transition"] == "approve"
+            break
+    else:
+        pytest.fail("no memory_approved record")
+
+
+def test_single_action_patches_still_write_exactly_one_record(api_client):
+    """The fix must not double every ordinary patch."""
+    client, repo = api_client
+    for body in (
+        {"content": "just an edit"},
+        {"importance": 8},
+        {"confidence": 0.55},
+    ):
+        m = _seed(repo)
+        before = len(repo.list_audit("t1", "u1", memory_id=m.id, limit=50))
+        r = client.patch(f"/api/memories/{m.id}", json={"tenant_id": "t1", "user_id": "u1", **body})
+        assert r.status_code == 200, r.text
+        after = repo.list_audit("t1", "u1", memory_id=m.id, limit=50)
+        assert len(after) == before + 1, (body, [row.action for row in after])
+
+    pending = _seed(repo, status=Status.pending)
+    before = len(repo.list_audit("t1", "u1", memory_id=pending.id, limit=50))
+    r = client.patch(
+        f"/api/memories/{pending.id}", json={"tenant_id": "t1", "user_id": "u1", "status": "active"}
+    )
+    assert r.status_code == 200
+    after = repo.list_audit("t1", "u1", memory_id=pending.id, limit=50)
+    assert len(after) == before + 1
+    assert after[0].action == "memory_approved"
+
+
+def test_governance_transitions_are_unchanged_with_auth_disabled(api_client):
+    """The development default. Enforcement must not have changed what works here."""
+    client, repo = api_client
+    pending = _seed(repo, status=Status.pending)
+    assert client.patch(
+        f"/api/memories/{pending.id}", json={"tenant_id": "t1", "user_id": "u1", "status": "active"}
+    ).status_code == 200
+
+    active = _seed(repo)
+    assert client.patch(
+        f"/api/memories/{active.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "status": "archived"},
+    ).status_code == 200
+    assert client.patch(
+        f"/api/memories/{active.id}", json={"tenant_id": "t1", "user_id": "u1", "status": "active"}
+    ).status_code == 200
+
+    rejectable = _seed(repo, status=Status.pending)
+    assert client.patch(
+        f"/api/memories/{rejectable.id}",
+        json={"tenant_id": "t1", "user_id": "u1", "status": "rejected"},
+    ).status_code == 200

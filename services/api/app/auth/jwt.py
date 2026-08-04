@@ -87,13 +87,33 @@ def decode_jwt(
         raise JWTError(str(exc)) from exc
 
 
-def claim_path(payload: dict, dotted: str) -> str | None:
-    """Read a possibly nested claim (e.g. `app_metadata.tenant_id`)."""
+def claim_node(payload: dict, dotted: str) -> object | None:
+    """Read a possibly nested claim **without** coercing it to a string.
+
+    For claims whose legitimate shape is a container. `roles` is the case that
+    matters: virtually every issuer emits it as a JSON array, and reading it through
+    `claim_path` returned `None` — which `resolve_roles` cannot distinguish from an
+    omitted claim, so the credential silently fell back to `DEFAULT_ROLE`.
+
+    Returns `None` for an absent claim and for an explicit JSON `null`; both mean
+    "the issuer said nothing", which is the compatibility case.
+    """
     node: object = payload
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
             return None
         node = node[part]
+    return node
+
+
+def claim_path(payload: dict, dotted: str) -> str | None:
+    """Read a possibly nested **scalar** claim (e.g. `app_metadata.tenant_id`).
+
+    Containers are rejected on purpose: a tenant or subject that arrived as a list
+    or object is malformed, and `str()`-ing it would invent an identifier. Use
+    `claim_node` for claims that are legitimately containers.
+    """
+    node = claim_node(payload, dotted)
     if node is None or isinstance(node, dict | list):
         return None
     return str(node)

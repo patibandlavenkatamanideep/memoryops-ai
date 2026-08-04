@@ -435,3 +435,58 @@ def test_the_authorization_lookup_is_not_a_retrieval_path(api_client):
     body = chat.json()
     assert secret not in chat.text
     assert mem.id not in {u["memory_id"] for u in body.get("used_memories", [])}
+
+
+def test_the_deletion_workflow_survives_authorization_being_moved_ahead_of_it(api_client):
+    """v2.4 reordered DELETE: authorize, *then* open the loop, check legal hold, and
+    run the deletion transaction.
+
+    The risk in moving a check earlier is that something it used to run after now
+    runs before, or not at all. This pins the whole sequence still happening with
+    auth disabled — the development default, and the configuration the rest of this
+    suite runs under.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    mem = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.preference,
+            content="dark mode",
+            importance=7,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt="dark mode"),
+        )
+    )
+    runs_before = len(repo.list_loop_runs(tenant_id="t1", user_id="u1", limit=1000))
+
+    r = client.request(
+        "DELETE", f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1"}
+    )
+    assert r.status_code == 200
+
+    after = repo.get_memory("t1", "u1", mem.id)
+    assert after.status is Status.deleted
+    assert after.deleted_at is not None, "the workflow still stamps deleted_at"
+    assert after.metadata["lineage"]["tombstoned"] is True, (
+        "tombstone lineage must still be stamped after the reorder"
+    )
+    assert mem.id not in {m.id for m in repo.retrieve_active("t1", "u1")}
+
+    # The governance loop still runs — authorization moved ahead of it, not over it.
+    assert len(repo.list_loop_runs(tenant_id="t1", user_id="u1", limit=1000)) > runs_before
+    actions = {a.action for a in repo.list_audit("t1", "u1", memory_id=mem.id, limit=50)}
+    assert any("delet" in a for a in actions), actions
+
+
+def test_a_missing_memory_is_still_not_deletable(api_client):
+    client, _repo = api_client
+    r = client.request(
+        "DELETE", "/api/memories/does-not-exist", json={"tenant_id": "t1", "user_id": "u1"}
+    )
+    assert r.status_code == 404

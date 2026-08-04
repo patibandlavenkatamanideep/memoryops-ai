@@ -35,6 +35,44 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — memory routes enforced
+
+Ten of 39 routes now enforce their declared permission (was three): `POST /api/chat`,
+`GET /api/memories`, and the five `/api/memories/{id}` routes join `/api/audit`,
+`/api/metrics` and `/healthz/workers`.
+
+- **Ownership comes from the stored record.** Resource routes load the memory inside
+  the authenticated tenant and decide from its stored owner — never from `tenant_id` /
+  `user_id` in the request, which the caller controls. The supplied `user_id` stops
+  being used at all once the record is loaded.
+- **Authorization runs before side effects.** A refused request creates no loop run,
+  no loop event, no audit event, no policy-broker call, no embedding, and no mutation.
+  A correct status code is not the control if the evidence trail already records the
+  attempt as a governance action that happened.
+- **A mixed PATCH requires every applicable permission.** `{"content": …,
+  "status": "active"}` is an edit *and* an approval; holding `memory:approve:tenant`
+  no longer implies permission to rewrite the text being approved.
+- **A mixed PATCH now leaves two audit records** (`memory_updated` + `memory_approved`)
+  inside the same transaction, plus content-free `requested_actions` /
+  `authorized_permissions` metadata. It previously collapsed to one record naming only
+  the transition, so durable evidence said "approved" about a request that also
+  rewrote the content.
+- Self-approval remains impossible: the `approve` variant declares no self permission,
+  so ownership cannot satisfy it.
+- Legal hold still overrides a permitted delete (409), and that refusal is still
+  audited — authorization decides whether a caller may *attempt* deletion, never
+  whether a preservation control applies.
+
+### Fixed
+- **A JWT `roles` claim in array form was silently discarded.** `claim_path` rejects
+  containers by design (a tenant or subject arriving as a list is malformed), but
+  roles are normally a JSON array — so `["auditor"]` read as *no claim* and every
+  JWT-authenticated caller fell back to `DEFAULT_ROLE`. An `auditor` token lost tenant
+  audit access, and a token deliberately issued with `roles: []` received
+  `memory_user` — read, write and delete over its own memory — for a credential the
+  issuer said should carry none. Roles are now read with a new `claim_node`; scalar
+  claims are unchanged. Trusted-header mode was never affected.
+
 ## Unreleased — worker mutation atomicity
 Additive; completes invariant #7 across the whole system.
 
