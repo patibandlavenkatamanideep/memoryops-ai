@@ -236,3 +236,54 @@ def test_content_only_patch_is_unaffected(api_client):
     assert r.status_code == 200
     assert r.json()["content"] == "prefers light mode"
     assert repo.get_memory("t1", "u1", m.id).status is Status.active
+
+
+# ── a patch that asks for nothing ────────────────────────────────────────────
+def test_a_patch_with_no_changed_field_is_refused(api_client):
+    """It returned 200 and a full memory record while requesting no change.
+
+    That matters once the route is authorized: a body with no action has no
+    permission to check against, so it would be a request nothing authorized that
+    still succeeded — and in the audit trail it is indistinguishable from a real
+    edit, because it opens a governance loop run and writes a `memory_updated`
+    event for a mutation that never happened.
+    """
+    client, repo = api_client
+    m = _seed(repo)
+    before = repo.get_memory("t1", "u1", m.id)
+    revision_before = before.revision
+
+    r = _patch(client, m.id)
+    assert r.status_code == 422
+    assert "no change" in r.json()["detail"]
+
+    after = repo.get_memory("t1", "u1", m.id)
+    assert after.revision == revision_before, "a refused patch must not bump revision"
+
+
+def test_a_revision_guard_alone_is_still_no_change(api_client):
+    client, repo = api_client
+    m = _seed(repo)
+    r = _patch(client, m.id, expected_revision=repo.get_memory("t1", "u1", m.id).revision)
+    assert r.status_code == 422
+
+
+def test_the_refusal_happens_before_any_governance_evidence_is_written(api_client):
+    """No loop run, no audit event. A rejected request must leave no trace that
+    reads like a completed governance action."""
+    client, repo = api_client
+    m = _seed(repo)
+    audit_before = len(client.get(f"/api/audit{_Q}").json())
+    runs_before = len(client.get(f"/api/loops/runs{_Q}").json())
+
+    assert _patch(client, m.id).status_code == 422
+
+    assert len(client.get(f"/api/audit{_Q}").json()) == audit_before
+    assert len(client.get(f"/api/loops/runs{_Q}").json()) == runs_before
+
+
+def test_a_nonexistent_memory_still_reports_the_empty_patch(api_client):
+    """The emptiness check runs before the lookup, so it cannot be used to probe
+    which memory ids exist."""
+    client, _repo = api_client
+    assert _patch(client, "does-not-exist").status_code == 422

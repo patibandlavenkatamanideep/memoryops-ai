@@ -46,6 +46,19 @@ class Repository(ABC):
     ) -> list[StoredMemory]: ...
 
     @abstractmethod
+    def get_memory_in_tenant(self, tenant_id: str, memory_id: str) -> StoredMemory | None:
+        """Load a memory by id within one tenant, whatever user owns it.
+
+        Needed because ownership is what authorization inspects: a tenant
+        administrator acting on another user's record cannot be made to supply that
+        user's id first. The alternative — an unscoped `get_memory_by_id` with the
+        tenant checked afterwards — would put a global lookup in the codebase and
+        make tenant isolation depend on every caller remembering the follow-up
+        check. The tenant is part of the query, always.
+        """
+        ...
+
+    @abstractmethod
     def update_memory(self, memory: StoredMemory) -> StoredMemory:
         """Persist a mutated memory and bump its ``revision``.
 
