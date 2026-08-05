@@ -68,6 +68,13 @@ def gov(monkeypatch):
     client = TestClient(app)
     repo = factory.get_repository()
 
+    # `GET /api/evals/latest` is a pure read: it serves the last completed run and
+    # never triggers one, so a result has to exist for the read to be exercised.
+    import app.routes.evals as evals_route
+
+    evals_route.reset_cache()
+    evals_route._store_result({"total": 1, "passed": 1, "failed": 0, "pass_rate": 1.0})
+
     class Harness:
         def __init__(self):
             self.client = client
@@ -107,7 +114,6 @@ def _paths(h, memory_id: str, trace_id: str) -> dict[tuple[str, str], str]:
     """Every enforced governance read, mapped to a concrete URL."""
     q = f"?tenant_id={TENANT}&user_id=alice"
     return {
-        ("GET", "/api/traces"): f"/api/traces{q}",
         ("GET", "/api/evidence/audit/verify"): f"/api/evidence/audit/verify{q}",
         ("GET", "/api/evidence/policy"): f"/api/evidence/policy{q}",
         ("GET", "/api/evidence/response/{trace_id}"): f"/api/evidence/response/{trace_id}{q}",
@@ -327,16 +333,16 @@ class _Counters:
 
     def __init__(self, h, monkeypatch):
         self.h = h
-        self.evals = 0
+        self.harness_runs = 0
         import app.routes.evals as evals_route
 
-        original = evals_route._latest_cached
+        original = evals_route.run_evals
 
         def counting(*a, **kw):
-            self.evals += 1
+            self.harness_runs += 1
             return original(*a, **kw)
 
-        monkeypatch.setattr(evals_route, "_latest_cached", counting)
+        monkeypatch.setattr(evals_route, "run_evals", counting)
 
     def snapshot(self) -> dict:
         repo = self.h.repo
@@ -345,7 +351,7 @@ class _Counters:
             "loop_runs": len(repo.list_loop_runs(tenant_id=TENANT, limit=1000)),
             "loop_events": len(repo.list_loop_events(tenant_id=TENANT, limit=1000)),
             "memories": len(repo.list_memories(TENANT, "alice")),
-            "eval_runs": self.evals,
+            "harness_runs": self.harness_runs,
         }
 
 
@@ -380,16 +386,20 @@ def test_a_refused_read_creates_no_side_effects(gov, counters, path_for):
 
 
 def test_an_unauthorized_eval_read_never_reaches_the_harness(gov, counters):
-    """`/api/evals/latest` regenerates on a cache miss. Authorizing after the cache
-    lookup would let an unauthorized caller drive that compute."""
+    """`evals:read` must not carry execution authority.
+
+    `latest` used to regenerate on a cold or stale cache, so an auditor holding only
+    `evals:read` could drive real harness runs — collapsing the `evals:read` /
+    `evals:run` split. It is a pure read now, and this asserts both halves: the
+    unauthorized caller is refused, and *nobody* on this path reaches the harness.
+    """
     q = f"?tenant_id={TENANT}&user_id=alice"
     assert gov.client.get(f"/api/evals/latest{q}", headers=_hdr("alice")).status_code == 403
-    assert counters.evals == 0
+    assert counters.harness_runs == 0
 
-    assert (
-        gov.client.get(f"/api/evals/latest{q}", headers=_hdr("alice", "auditor")).status_code == 200
-    )
-    assert counters.evals == 1, "positive control: the authorized read does reach it"
+    r = gov.client.get(f"/api/evals/latest{q}", headers=_hdr("alice", "auditor"))
+    assert r.status_code == 200
+    assert counters.harness_runs == 0, "an authorized read must not execute either"
 
 
 def test_authorized_reads_do_move_the_counters(gov, counters):
@@ -489,7 +499,10 @@ def test_the_static_loop_definitions_need_only_a_valid_credential_under_jwt(jwt_
 def test_governance_reads_are_unchanged_with_auth_disabled(api_client):
     """The development default: no principal, so nothing to authorize, and every
     surface still answers."""
+    import app.routes.evals as evals_route
+
     client, _repo = api_client
+    evals_route._store_result({"total": 1, "passed": 1, "failed": 0, "pass_rate": 1.0})
     q = "?tenant_id=t1&user_id=u1"
     for url in (
         f"/api/traces{q}",

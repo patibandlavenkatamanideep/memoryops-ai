@@ -87,7 +87,7 @@ cannot get ahead of the runtime again.
 
 ### Enforced
 
-The handler checks the permission. 25 of 39 routes.
+The handler checks the permission. 24 of 39 routes.
 
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
@@ -115,7 +115,6 @@ The handler checks the permission. 25 of 39 routes.
 | `GET` | `/api/retention/decisions` | tenant | `retention:read` |  |
 | `GET` | `/api/retention/memory/{memory_id}` | tenant | `retention:read` |  |
 | `GET` | `/api/retention/policies` | tenant | `retention:read` |  |
-| `GET` | `/api/traces` | tenant | `traces:read:tenant` |  |
 
 ### Planned — declared, **not yet enforced**
 
@@ -130,6 +129,7 @@ control.**
 | `POST` | `/api/retention/legal-hold` | tenant | `retention:manage` |  |
 | `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
 | `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
+| `GET` | `/api/traces` | tenant | `traces:read:tenant` | permission-gated but not tenant-isolated; span buffer is process-wide |
 
 ### Public
 

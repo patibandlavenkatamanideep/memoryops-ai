@@ -228,7 +228,6 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         "GET /api/retention/decisions",
         "GET /api/retention/memory/{memory_id}",
         "GET /api/retention/policies",
-        "GET /api/traces",
         "PATCH /api/memories/{memory_id}",
         "POST /api/chat",
     ], f"enforced set changed: {enforced}"

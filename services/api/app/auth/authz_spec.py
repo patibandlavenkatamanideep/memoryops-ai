@@ -270,7 +270,19 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.TENANT, _ST.ENFORCED, permission=_P.METRICS_READ_TENANT
     ),
     ("GET", "/api/traces"): AuthzSpec(
-        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
+        # Permission-gated today, but **not** tenant-isolated: the in-process span
+        # buffer carries no tenant dimension, so a permitted caller observes the
+        # timing, volume and decisions of every tenant sharing the process. Spans hold
+        # no tenant id, user id or memory content, which limits the disclosure — but
+        # "enforced" under a `:tenant` permission would claim a scope the runtime does
+        # not provide, and this registry exists to stop exactly that. The check stays
+        # as defence in depth; the status stays honest until spans carry a tenant and
+        # are filtered by it, or the route is reclassified as deployment-level
+        # telemetry under a future `ops:traces` permission.
+        _S.TENANT,
+        _ST.PLANNED,
+        permission=_P.TRACES_READ_TENANT,
+        note="permission-gated but not tenant-isolated; span buffer is process-wide",
     ),
     ("GET", "/api/evidence/response/{trace_id}"): AuthzSpec(
         _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
