@@ -23,7 +23,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from ..auth import enforce_scope
+from ..auth import Permission, enforce_scope, require_permission
 from ..db import governance as gov
 from ..db.factory import get_repository
 from ..deps import audit_service
@@ -148,8 +148,27 @@ def set_consent(req: ConsentRequest, request: Request) -> dict:
 
 
 # ── reads ─────────────────────────────────────────────────────────────────────
+def _retention_scope(request: Request, tenant_id: str, user_id: str) -> tuple[str, str]:
+    """Authorize a retention read and return the scope to query with.
+
+    `retention:read` is held by memory_admin as well as auditor: retention windows and
+    expiry decisions are lifecycle management, which is what a memory admin is for.
+    That is the deliberate difference from `evidence:read` and `traces:read:tenant`,
+    which stay auditor-only — reading *what the system will forget* is not the same
+    capability as reading *the record of who did what*.
+    """
+    principal = require_permission(request, Permission.RETENTION_READ)
+    if principal is None:
+        return tenant_id, user_id
+    return principal.tenant_id, principal.user_id
+
+
 @router.get("/policies")
-def list_policies() -> dict:
+def list_policies(request: Request) -> dict:
+    """The available policy packs. Static configuration, but it describes how long
+    this deployment keeps each sensitivity tier — operational detail an unauthorized
+    caller has no reason to enumerate."""
+    require_permission(request, Permission.RETENTION_READ)
     return {
         "policies": [
             {"name": p.name, "description": p.description, "windows": p.windows}
@@ -160,6 +179,7 @@ def list_policies() -> dict:
 
 @router.get("/decisions")
 def list_decisions(
+    request: Request,
     tenant_id: str = Query(...),
     user_id: str = Query(...),
     policy: str | None = Query(None),
@@ -171,6 +191,7 @@ def list_decisions(
     returns admin-readable decisions. Performs no deletion — this is the preview
     the retention worker would act on when enabled.
     """
+    tenant_id, user_id = _retention_scope(request, tenant_id, user_id)
     repo = get_repository()
     pack = get_policy(policy)
     rows = repo.list_memories(tenant_id, user_id, status="active", include_deleted=False)[:limit]
@@ -189,10 +210,12 @@ def list_decisions(
 @router.get("/memory/{memory_id}")
 def get_memory_governance(
     memory_id: str,
+    request: Request,
     tenant_id: str = Query(...),
     user_id: str = Query(...),
     policy: str | None = Query(None),
 ) -> dict:
+    tenant_id, user_id = _retention_scope(request, tenant_id, user_id)
     repo = get_repository()
     memory = repo.get_memory(tenant_id, user_id, memory_id)
     if memory is None:

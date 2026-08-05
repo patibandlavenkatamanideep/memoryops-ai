@@ -353,6 +353,110 @@ authentication rather than invent an identifier.
 
 See the v2.4 entries in `CHANGELOG.md`.
 
+### Governance evidence is tenant-scoped in the query
+
+Loop runs, loop events and audit rows record *who did what, when*. They carry no
+memory content, but the trail itself is tenant-confidential, so every read puts the
+tenant in the query rather than filtering afterwards:
+
+| Read | Scoping |
+| --- | --- |
+| loop runs / events | `WHERE tenant_id = :tenant`, and a missing tenant raises |
+| audit rows | `WHERE tenant_id = :tenant` (+ optional user / memory) |
+| evidence deletion, lifecycle | `repo.get_memory(tenant, user, id)` |
+| retention governance view | `repo.get_memory(tenant, user, id)` |
+| evidence bundle by `trace_id` | tenant-scoped audit read, then filtered by trace |
+
+An opaque identifier is **not** an authorization token. `loop_run_id`, `trace_id` and
+`memory_id` are all unguessable, and none of them is allowed to stand in for scope — a
+leaked or brute-forced id still returns nothing outside its tenant.
+
+The in-memory backend previously filtered loop evidence with `if tenant_id:`, so an
+empty string meant *no filter* and returned every tenant's runs. Because `tenant_id`
+is a plain `str` query parameter, `?tenant_id=` reached it as `""`. Postgres already
+refused this, so the two backends disagreed about invariant #1 — the kind of gap that
+only shows up when both are tested against the same assertion. Both now fail closed.
+
+#### Why some evidence reads answer 200 with no data
+
+`GET /api/evidence/deletion/{memory_id}` returns `200` with `found: false` rather than
+`404` when the memory is not in scope. That is deliberate: a deletion proof has to be
+answerable for a memory that no longer exists, which is the case it exists *for*. A
+`404` would fail on exactly the memories that were most thoroughly forgotten, making
+"prove this is gone" unanswerable. It discloses nothing, because the lookup is
+tenant-scoped and "absent" covers never-existed, hard-purged, and belongs-to-another-
+tenant without distinguishing them.
+
+Record-shaped governance views that are *not* proofs — `GET /api/retention/memory/{id}`
+— still answer `404`.
+
+### Governance reads: capability, not rank
+
+The role model is capabilities, not a ladder, and the governance reads are where that
+matters most:
+
+| | traces\* | evidence | eval results | retention reads | memory mutation |
+| --- | --- | --- | --- | --- | --- |
+| `memory_viewer` | – | – | – | – | – |
+| `memory_user` | – | – | – | – | own only |
+| `memory_admin` | – | – | – | ✓ | tenant-wide |
+| `auditor` | ✓ | ✓ | ✓ | ✓ | – |
+| `tenant_admin` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `service_worker` | – | – | – | – | – |
+
+\* `/api/traces` is permission-gated but still `planned` — see below.
+
+`memory_admin` can edit and delete anyone's memory in the tenant and cannot read the
+record of it. That is the point of having an auditor, and it is the property the web
+persona ladder did not have — there `memory_admin` outranked `auditor` and inherited
+its reads. Roles are translated at the boundary
+(`contracts/auth-role-map.json`), never assumed to correspond.
+
+Retention is the deliberate exception: *what the system will forget* is lifecycle
+management, so a memory admin holds `retention:read`. *Who did what* is not.
+
+#### `authenticated` is enforced as itself
+
+The two static loop-definition routes need no capability — they are product
+documentation, identical for every caller. `require_authenticated` enforces exactly
+that. Attaching an unrelated permission so the witness had one to record would put a
+capability in the matrix that the route does not need, and the first person to widen
+that permission for another reason would silently change who can read them.
+
+#### Reads are authorized before they cost anything
+
+A refused read creates no audit event, loop run, loop event, or database change —
+asserted per case, each with a positive control, since a zero-side-effect assertion
+passes trivially when the instrumentation is broken.
+
+#### A read must not be an execution path
+
+`GET /api/evals/latest` used to regenerate its result whenever the process cache was
+cold or older than `evals_cache_ttl_seconds`. Authorizing it with `evals:read` was
+therefore wrong in a way no ordering fix addresses: the *permission* was a read
+permission, but the *action* was bounded execution. That collapses the
+`evals:read` / `evals:run` distinction. A TTL limits how often work happens; it does
+not turn the work into a read.
+
+`latest` is now pure — it serves the last completed run or `404`s — and
+`POST /api/evals/run` is the only request path that calls the harness.
+
+#### `/api/traces` stays `planned`, on purpose
+
+`traces:read:tenant` is checked as defence in depth, but the route is **not**
+tenant-isolated: the in-process span buffer has no tenant dimension, so a permitted
+caller observes the timing, volume and decisions of every tenant sharing the process.
+Spans carry no tenant id, user id, or memory content (asserted in tests), which limits
+the disclosure to activity patterns rather than data.
+
+That is a real reduction in sensitivity, and it is not tenant scoping. Marking the
+route `enforced` under a `:tenant` permission would publish a claim the runtime does
+not meet — the precise failure mode this registry exists to prevent — so the status
+stays honest until either spans carry a tenant and are filtered by it, or the endpoint
+is reclassified as deployment-level telemetry under an `ops:traces` permission with a
+dedicated observability role. An ordinary tenant auditor should not implicitly become
+a deployment-wide observability operator.
+
 ### What is not claimed
 
 This is an authorization boundary, not an authorization product. Roles are coarse

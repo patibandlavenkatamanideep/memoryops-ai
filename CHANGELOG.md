@@ -35,6 +35,73 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — governance and evidence reads enforced
+
+**24 of 39 routes enforced** (was 10). Planned 6, public 9.
+
+- **Traces, evidence, retention and loop reads now require a permission.** The
+  separation that matters: `memory_admin` can edit and delete anyone's memory in the
+  tenant and **cannot** read the traces, evidence, or eval results that would show it.
+  Reading the record of who acted is an auditor capability, not something memory
+  management implies. Retention reads are the deliberate exception — describing what
+  the system will forget is lifecycle management, so `memory_admin` holds
+  `retention:read` too.
+- **`require_authenticated`** implements the `authenticated` scope for the two static
+  loop-definition routes, which need no capability. Borrowing an unrelated permission
+  so the witness had one to record would have been a lie in the matrix. The
+  definitions were inspected — and are now pinned by a test — as free of prompts,
+  provider names, environment values, deployment detail, and tenant data.
+- Authorization runs before any repository read, loop event, audit write, or
+  computation. A refused read leaves no audit event, loop run, loop event, or row
+  change — asserted per case, each with a positive control so the checks cannot pass
+  vacuously.
+- Every route forces the query to `principal.tenant_id` after authorizing; the
+  request's own value is not reused.
+
+### Behaviour changes
+- **`GET /api/evals/latest` is now a pure read** and returns `404 no_result_available`
+  when the process has completed no run. It previously regenerated whenever the cache
+  was cold or older than `evals_cache_ttl_seconds`, so holding `evals:read` granted
+  bounded but real *execution* authority — collapsing the `evals:read` / `evals:run`
+  split those permissions exist to express. A TTL limits how often the work happens;
+  it does not make the action a read. `POST /api/evals/run` is now the only request
+  path that calls the harness, and it updates what `latest` serves. A stale result is
+  still served (with `generated_at`) rather than regenerated, and a failed run does
+  not replace the last known-good result.
+  *These are deployment-wide results — the harness runs against its own isolated
+  fixtures — not per-tenant evidence; the route takes no tenant parameter.*
+
+### Deliberately still `planned`
+- **`GET /api/traces`** is permission-gated (`traces:read:tenant`) as defence in
+  depth, but stays `planned` because it is **not tenant-isolated**: the in-process
+  span buffer has no tenant dimension, so a permitted caller observes the timing,
+  volume and decisions of every tenant sharing the process. Spans carry no tenant id,
+  user id or memory content, which limits the disclosure — but marking it `enforced`
+  under a `:tenant` permission would claim a scope the runtime does not provide, which
+  is the exact mismatch this route registry exists to prevent. Resolving it means
+  either attaching a tenant to spans and filtering, or reclassifying the endpoint as
+  deployment-level telemetry under a future `ops:traces` permission and operator role.
+  A tenant auditor should not implicitly become a deployment-wide observability
+  operator.
+
+## Unreleased — governance read boundary
+
+### Fixed
+- **Loop evidence could be read across tenants on the in-memory backend.**
+  `list_loop_runs` / `list_loop_events` filtered with `if tenant_id:`, so an empty
+  string meant *no filter* and returned every tenant's loop runs — who did what,
+  across the whole store. `tenant_id` is a plain `str` query parameter, so
+  `GET /api/loops/runs?tenant_id=` reached the repository as `""`. The Postgres
+  backend already refused this (`ValueError`), so the two backends disagreed about
+  invariant #1. Both now fail closed identically. Reachable with authentication
+  disabled, which is the development default and the playground's configuration.
+- The eval harness listed loop runs unscoped, asking "did any write loop run
+  *anywhere* in the store" — satisfiable by another case's runs. Now scoped to the
+  case's tenant.
+- Loop bookkeeping no longer raises when a run carries no tenant: the prior-state
+  lookup is skipped instead, so evidence recording can never be the reason a request
+  fails (invariant #4).
+
 ## Unreleased — memory routes enforced
 
 Ten of 39 routes now enforce their declared permission (was three): `POST /api/chat`,

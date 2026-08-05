@@ -490,3 +490,52 @@ def test_a_missing_memory_is_still_not_deletable(api_client):
         "DELETE", "/api/memories/does-not-exist", json={"tenant_id": "t1", "user_id": "u1"}
     )
     assert r.status_code == 404
+
+
+def test_loop_evidence_outlives_a_deleted_memory_without_carrying_its_content(api_client):
+    """Governance evidence is *meant* to survive deletion — that is what proves the
+    deletion happened. So the deletion guarantee depends on those records never
+    having held the content in the first place.
+
+    Tightening the loop queries in v2.4 made them tenant-scoped; this pins the other
+    half, that what they return is content-free even for a memory that is now gone.
+    """
+    from app.db.entities import StoredMemory
+    from app.schemas.memory import MemoryType, Sensitivity, Source, Status
+
+    client, repo = api_client
+    secret = "the acquisition closes on the fourteenth"
+    mem = repo.create_memory(
+        StoredMemory(
+            tenant_id="t1",
+            user_id="u1",
+            memory_type=MemoryType.semantic,
+            content=secret,
+            importance=8,
+            confidence=0.9,
+            sensitivity=Sensitivity.low,
+            status=Status.active,
+            source=Source(kind="chat", excerpt=secret),
+        )
+    )
+    assert client.patch(
+        f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1", "importance": 9}
+    ).status_code == 200
+    assert client.request(
+        "DELETE", f"/api/memories/{mem.id}", json={"tenant_id": "t1", "user_id": "u1"}
+    ).status_code == 200
+
+    runs = repo.list_loop_runs(tenant_id="t1", user_id="u1", limit=1000)
+    events = repo.list_loop_events(tenant_id="t1", user_id="u1", limit=1000)
+    assert runs and events, "the evidence that the deletion happened must survive"
+
+    blob = "".join(r.model_dump_json() for r in runs) + "".join(
+        e.model_dump_json() for e in events
+    )
+    assert secret not in blob
+    assert "acquisition" not in blob
+
+    # The same holds for what the API serves.
+    served = client.get("/api/loops/runs?tenant_id=t1&user_id=u1").text
+    served += client.get("/api/loops/events?tenant_id=t1&user_id=u1").text
+    assert secret not in served

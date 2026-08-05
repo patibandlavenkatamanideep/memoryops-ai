@@ -347,3 +347,39 @@ def test_a_deleted_memory_is_not_exposed_through_the_authorization_lookup(api_cl
     detail = client.get(f"/api/memories/{mem_id}?tenant_id=t1&user_id=u1")
     assert detail.status_code == 200
     assert detail.json()["status"] == "deleted"
+
+
+# ── loop evidence (v2.4) ─────────────────────────────────────────────────────
+def test_loop_evidence_cannot_be_listed_across_tenants(gateway, repo):
+    """Loop runs are governance evidence — who did what, when — so listing them
+    unscoped is a cross-tenant read even though no memory content is returned.
+
+    The in-memory backend filtered with `if tenant_id:`, so an empty string meant
+    "no filter" and returned every tenant's runs. `tenant_id` is a plain `str` query
+    parameter, so `?tenant_id=` arrived as `""`. Postgres already refused it, so the
+    backends disagreed about this invariant.
+    """
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    _chat(gateway, "tenant_demo", "user_demo", "Remember Demo prefers email.")
+
+    import pytest
+
+    for unscoped in ("", None):
+        with pytest.raises(ValueError, match="tenant_id is required"):
+            repo.list_loop_runs(tenant_id=unscoped)
+        with pytest.raises(ValueError, match="tenant_id is required"):
+            repo.list_loop_events(tenant_id=unscoped)
+
+    acme = repo.list_loop_runs(tenant_id="tenant_acme")
+    assert acme and {r.tenant_id for r in acme} == {"tenant_acme"}
+    assert repo.list_loop_runs(tenant_id="tenant_demo", trace_id="test") != acme
+
+
+def test_a_loop_run_id_is_not_an_authorization_token(gateway, repo):
+    """Unguessable is not the same as scoped: the tenant stays a predicate, so a
+    leaked run id still returns nothing outside its tenant."""
+    _chat(gateway, "tenant_acme", "user_acme", "Remember Acme's roadmap is confidential.")
+    run = repo.list_loop_runs(tenant_id="tenant_acme")[0]
+
+    assert repo.list_loop_events(loop_run_id=run.id, tenant_id="tenant_acme")
+    assert repo.list_loop_events(loop_run_id=run.id, tenant_id="tenant_demo") == []

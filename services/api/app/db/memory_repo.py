@@ -440,13 +440,20 @@ class InMemoryRepository(Repository):
         status: str | None = None,
         limit: int = 200,
     ) -> list[LoopRun]:
+        # Fail closed, matching the Postgres backend. `if tenant_id:` treated an empty
+        # string as "no filter requested" and returned **every tenant's** loop runs —
+        # and `tenant_id` is a plain `str` query parameter, so `?tenant_id=` reached
+        # here as `""`. Loop runs are governance evidence, so that was a cross-tenant
+        # read of who did what (invariant #1). Postgres already refused it; the two
+        # backends must not disagree about an invariant.
+        if not tenant_id:
+            raise ValueError("tenant_id is required when listing loop run evidence")
         rows = list(self._loop_runs.values())
         if loop_id:
             rows = [r for r in rows if r.loop_id.value == loop_id]
         if trace_id:
             rows = [r for r in rows if r.trace_id == trace_id]
-        if tenant_id:
-            rows = [r for r in rows if r.tenant_id == tenant_id]
+        rows = [r for r in rows if r.tenant_id == tenant_id]
         if user_id:
             rows = [r for r in rows if r.user_id == user_id]
         if status:
@@ -479,6 +486,8 @@ class InMemoryRepository(Repository):
         # Snapshot shared collections before iterating: concurrent requests mutate
         # these dicts/lists in the threadpool, and iterating a live dict raises
         # "dictionary changed size during iteration" under load.
+        if not tenant_id:
+            raise ValueError("tenant_id is required when listing loop event evidence")
         rows = list(self._loop_events)
         if loop_run_id:
             rows = [e for e in rows if e.loop_run_id == loop_run_id]
@@ -486,16 +495,12 @@ class InMemoryRepository(Repository):
             rows = [e for e in rows if e.loop_id.value == loop_id]
         if trace_id:
             rows = [e for e in rows if e.trace_id == trace_id]
-        if tenant_id:
-            allowed_run_ids = {
-                r.id
-                for r in list(self._loop_runs.values())
-                if r.tenant_id == tenant_id and (user_id is None or r.user_id == user_id)
-            }
-            rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
-        elif user_id:
-            allowed_run_ids = {r.id for r in list(self._loop_runs.values()) if r.user_id == user_id}
-            rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
+        allowed_run_ids = {
+            r.id
+            for r in list(self._loop_runs.values())
+            if r.tenant_id == tenant_id and (user_id is None or r.user_id == user_id)
+        }
+        rows = [e for e in rows if e.loop_run_id in allowed_run_ids]
         if event_type:
             rows = [e for e in rows if e.event_type == event_type]
         return sorted(rows, key=lambda e: e.created_at, reverse=True)[:limit]

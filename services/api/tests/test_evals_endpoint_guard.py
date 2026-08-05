@@ -34,11 +34,17 @@ def test_run_allowed_when_opted_in(monkeypatch):
     assert resp.json()["total"] >= 1
 
 
-def test_latest_is_always_available_and_cached(monkeypatch):
+def test_latest_never_triggers_the_harness(monkeypatch):
+    """The contract this route used to have was the opposite.
+
+    It regenerated whenever the cache was cold or past `evals_cache_ttl_seconds`, so
+    two requests could cost one harness run — bounded, but real execution granted to
+    anyone who could read. `latest` is now a pure read of the last completed run, and
+    `POST /run` is the only request path that executes. Full contract in
+    `test_eval_result_purity.py`.
+    """
     monkeypatch.delenv("MEMORYOPS_PUBLIC_EVALS", raising=False)
-    # Reset the module cache so this test controls regeneration.
-    evals_route._cached = None
-    evals_route._cached_at = 0.0
+    evals_route.reset_cache()
 
     calls = {"n": 0}
     real = evals_route.run_evals
@@ -50,9 +56,15 @@ def test_latest_is_always_available_and_cached(monkeypatch):
     monkeypatch.setattr(evals_route, "run_evals", counting_run)
 
     client = _client()
+    cold = client.get("/api/evals/latest")
+    assert cold.status_code == 404, "no completed run in this process"
+    assert calls["n"] == 0, "a read must never execute the harness"
+
+    # Once a run has completed, repeated reads serve it without re-running.
+    evals_route._store_result(real().to_dict())
+    calls["n"] = 0
     first = client.get("/api/evals/latest")
     second = client.get("/api/evals/latest")
     assert first.status_code == second.status_code == 200
     assert first.json()["total"] >= 1
-    # Within the TTL window the harness runs at most once despite two requests.
-    assert calls["n"] == 1
+    assert calls["n"] == 0

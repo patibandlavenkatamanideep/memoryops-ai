@@ -78,11 +78,11 @@ def test_memory_path_attaches_economics(gateway):
 def test_memory_read_loop_emits_events(gateway, repo):
     _chat(gateway, "Remember that I prefer dark mode dashboards.", trace_id="seed")
     resp = _chat(gateway, "Which dashboard theme do I like?")
-    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value, trace_id="trace-read")
+    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value, trace_id="trace-read", tenant_id="t1")
     assert runs
     assert runs[0].status == LoopStatus.COMPLETED
     assert resp.loop_evidence[LoopId.MEMORY_READ.value] == "completed"
-    assert repo.list_loop_events(loop_run_id=runs[0].id, event_type="memory_read_completed")
+    assert repo.list_loop_events(loop_run_id=runs[0].id, event_type="memory_read_completed", tenant_id="t1")
 
 
 def test_safe_degraded_loop_is_not_failure(gateway, repo, monkeypatch):
@@ -93,7 +93,7 @@ def test_safe_degraded_loop_is_not_failure(gateway, repo, monkeypatch):
 
     monkeypatch.setattr("app.services.retriever.embed", _raise)
     resp = _chat(gateway, "Which dashboard theme do I like?", trace_id="trace-fallback")
-    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value, trace_id="trace-fallback")
+    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value, trace_id="trace-fallback", tenant_id="t1")
     assert runs[0].status == LoopStatus.SAFE_DEGRADED
     assert runs[0].status != LoopStatus.FAILED
     assert resp.loop_evidence[LoopId.MEMORY_READ.value] == "safe_degraded"

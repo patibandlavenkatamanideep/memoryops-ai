@@ -270,33 +270,45 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.TENANT, _ST.ENFORCED, permission=_P.METRICS_READ_TENANT
     ),
     ("GET", "/api/traces"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.TRACES_READ_TENANT
+        # Permission-gated today, but **not** tenant-isolated: the in-process span
+        # buffer carries no tenant dimension, so a permitted caller observes the
+        # timing, volume and decisions of every tenant sharing the process. Spans hold
+        # no tenant id, user id or memory content, which limits the disclosure — but
+        # "enforced" under a `:tenant` permission would claim a scope the runtime does
+        # not provide, and this registry exists to stop exactly that. The check stays
+        # as defence in depth; the status stays honest until spans carry a tenant and
+        # are filtered by it, or the route is reclassified as deployment-level
+        # telemetry under a future `ops:traces` permission.
+        _S.TENANT,
+        _ST.PLANNED,
+        permission=_P.TRACES_READ_TENANT,
+        note="permission-gated but not tenant-isolated; span buffer is process-wide",
     ),
     ("GET", "/api/evidence/response/{trace_id}"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVIDENCE_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
     ),
     ("GET", "/api/evidence/deletion/{memory_id}"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVIDENCE_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
     ),
     ("GET", "/api/evidence/lifecycle/{memory_id}"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVIDENCE_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
     ),
     ("GET", "/api/evidence/policy"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVIDENCE_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
     ),
     ("GET", "/api/evidence/audit/verify"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVIDENCE_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
     ),
     # Retention: reads and mutations are deliberately separate permissions rather
     # than one blanket grant on the router.
     ("GET", "/api/retention/policies"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_READ
     ),
     ("GET", "/api/retention/decisions"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_READ
     ),
     ("GET", "/api/retention/memory/{memory_id}"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_READ
     ),
     ("POST", "/api/retention/legal-hold"): AuthzSpec(
         _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_MANAGE
@@ -312,19 +324,19 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
     ),
     # ── loops (operational timelines, tenant-scoped) ────────────────────────
     ("GET", "/api/loops"): AuthzSpec(
-        _S.AUTHENTICATED, _ST.PLANNED, note="static loop definitions; no tenant data"
+        _S.AUTHENTICATED, _ST.ENFORCED, note="static loop definitions; no tenant data"
     ),
     ("GET", "/api/loops/{loop_id}"): AuthzSpec(
-        _S.AUTHENTICATED, _ST.PLANNED, note="static loop definition"
+        _S.AUTHENTICATED, _ST.ENFORCED, note="static loop definition"
     ),
     ("GET", "/api/loops/runs"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
     ),
     ("GET", "/api/loops/events"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
     ),
     ("GET", "/api/loops/trace/{trace_id}"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
     ),
     # ── evals (cost-bearing) ────────────────────────────────────────────────
     ("POST", "/api/evals/run"): AuthzSpec(
@@ -332,7 +344,7 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
     ),
     ("GET", "/api/evals/latest"): AuthzSpec(
         # Reading a stored result is not cost-bearing; running one is.
-        _S.TENANT, _ST.PLANNED, permission=_P.EVALS_READ
+        _S.TENANT, _ST.ENFORCED, permission=_P.EVALS_READ
     ),
     # ── operator ────────────────────────────────────────────────────────────
     ("GET", "/api/admin/workers/health"): AuthzSpec(
