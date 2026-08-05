@@ -120,8 +120,11 @@ class JWTProvider:
         if not tenant or not user:
             return None
         # `claim_node`, not `claim_path`: a roles claim is normally a JSON array, and
-        # stringifying containers turned `["auditor"]` into "no claim at all".
-        roles, claim_present = resolve_roles(claim_node(payload, self._roles_claim))
+        # stringifying containers turned `["auditor"]` into "no claim at all". Presence
+        # comes from the claim's *existence*, never from its value — `{"roles": null}`
+        # is an issuer saying "no roles", not a credential that predates roles.
+        roles_present, raw_roles = claim_node(payload, self._roles_claim)
+        roles, claim_present = resolve_roles(raw_roles, claim_present=roles_present)
         return Principal(
             tenant_id=tenant,
             user_id=user,

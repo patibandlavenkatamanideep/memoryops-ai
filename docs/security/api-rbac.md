@@ -46,7 +46,33 @@ MemoryOps stays identity-neutral — roles are claims from your existing issuer.
 | `jwt` | a claim in the verified token | `MEMORYOPS_AUTH_JWT_ROLES_CLAIM` (default `roles`, dotted paths allowed) |
 | `trusted_header` | a header from the trusted proxy | `MEMORYOPS_AUTH_ROLES_HEADER` (default `X-MemoryOps-Roles`) |
 
-Accepts a list, or a space/comma-separated string.
+Accepts a list, or a space/comma-separated string. A list is the common shape and is
+read as-is — under JWT it was previously stringified and discarded, which silently
+handed every token the fallback role below.
+
+### The six claim states
+
+Only an **omitted** claim may fall back. Everything else is an authorization decision
+the issuer already made, and is honoured:
+
+| Claim | Roles granted |
+| --- | --- |
+| omitted entirely | `MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM` decides: the default role, or nothing |
+| `null` | **none** |
+| `[]` | **none** |
+| `""` | **none** |
+| `["not_a_role"]` | **none** |
+| `["auditor"]` | `auditor` |
+
+Presence is taken from whether the claim *exists*, never from whether its value is
+non-null — `{"roles": null}` and a token with no `roles` key both carry `None`, but
+the first is an issuer saying "this identity has no roles" and must not be given the
+fallback.
+
+If you issue tokens where an unprivileged identity gets `"roles": null`, that
+identity receives **zero** permissions and every governed route will refuse it. That
+is intended; set `MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM=false` and omit the claim if you
+want the compatibility fallback instead.
 
 > **Trusted-header mode inherits its trust from the network.** The role header is as
 > authoritative as the tenant/user headers already were: only safe when the API is
@@ -56,12 +82,15 @@ Accepts a list, or a space/comma-separated string.
 
 ## Defaults are least-privilege
 
-An authenticated caller with no recognised role gets `memory_reader`: read and write
-their **own** memory, read their **own** audit. Never a tenant-wide or administrative
-default.
+An authenticated caller whose credential carries **no role claim at all** gets
+`memory_user` (formerly named `memory_reader`, which was misleading — it could always
+write): read, write, archive and delete their **own** memory, read their **own**
+audit. Never a tenant-wide or administrative default.
 
-Unrecognised role names are dropped rather than trusted — an issuer sending `"admin"`
-must not accidentally match `tenant_admin`.
+A caller whose claim is *present but names nothing recognised* gets **nothing**, not
+this fallback. Unrecognised names are dropped rather than trusted — an issuer sending
+`"admin"` must not accidentally match `tenant_admin`, and a typo
+(`["service_workre"]`) must not quietly grant self-service memory permissions.
 
 ## Behaviour change
 

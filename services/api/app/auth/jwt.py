@@ -87,33 +87,40 @@ def decode_jwt(
         raise JWTError(str(exc)) from exc
 
 
-def claim_node(payload: dict, dotted: str) -> object | None:
-    """Read a possibly nested claim **without** coercing it to a string.
+def claim_node(payload: dict, dotted: str) -> tuple[bool, object | None]:
+    """Read a possibly nested claim as `(present, value)`, uncoerced.
 
     For claims whose legitimate shape is a container. `roles` is the case that
     matters: virtually every issuer emits it as a JSON array, and reading it through
-    `claim_path` returned `None` — which `resolve_roles` cannot distinguish from an
-    omitted claim, so the credential silently fell back to `DEFAULT_ROLE`.
+    `claim_path` returned `None` — which cannot be distinguished from an omitted
+    claim, so the credential silently fell back to `DEFAULT_ROLE`.
 
-    Returns `None` for an absent claim and for an explicit JSON `null`; both mean
-    "the issuer said nothing", which is the compatibility case.
+    Presence is returned separately because it cannot be recovered from the value.
+    `{"roles": null}` and a payload with no `roles` key both yield a value of `None`,
+    but they are different statements: the first is an issuer saying *this identity
+    has no roles*, the second is a credential that predates roles entirely. Only the
+    second may take the compatibility fallback. Inferring presence from
+    `value is not None` collapses them, which is how an explicit `null` kept
+    receiving `DEFAULT_ROLE` after the array fix.
     """
     node: object = payload
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
-            return None
+            return False, None
         node = node[part]
-    return node
+    return True, node
 
 
 def claim_path(payload: dict, dotted: str) -> str | None:
     """Read a possibly nested **scalar** claim (e.g. `app_metadata.tenant_id`).
 
     Containers are rejected on purpose: a tenant or subject that arrived as a list
-    or object is malformed, and `str()`-ing it would invent an identifier. Use
-    `claim_node` for claims that are legitimately containers.
+    or object is malformed, and `str()`-ing it would invent an identifier. An explicit
+    `null` is rejected the same way — for identity claims there is nothing to fall
+    back to, so absent and null are correctly identical here. Use `claim_node` where
+    that distinction carries meaning.
     """
-    node = claim_node(payload, dotted)
+    _present, node = claim_node(payload, dotted)
     if node is None or isinstance(node, dict | list):
         return None
     return str(node)

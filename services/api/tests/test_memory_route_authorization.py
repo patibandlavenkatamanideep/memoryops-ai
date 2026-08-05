@@ -775,3 +775,54 @@ def test_jwt_self_approval_is_refused_exactly_as_under_trusted_header(monkeypatc
     assert r.status_code == 403
     assert "memory:approve:tenant" in r.json()["detail"]
     assert repo.get_memory(TENANT, "alice", pending.id).status is MemStatus.pending
+
+
+def test_a_null_roles_claim_is_refused_at_the_route_with_no_side_effects(monkeypatch):
+    """The end-to-end shape of the claim-state fix.
+
+    `{"roles": null}` is an issuer stating this identity has no roles. Read as an
+    omitted claim it took the compatibility fallback to `memory_user` — which carries
+    `memory:write:self`, so the chat write path ran for a credential meant to carry
+    nothing. The refusal must also land before any of it: no loop run, no audit event,
+    no policy-broker call, no memory.
+    """
+    import time
+
+    from app.services import policy_broker
+
+    from .test_auth import make_jwt
+
+    client, repo = _jwt_client(monkeypatch)
+
+    calls = {"policy": 0}
+    original = policy_broker.PolicyBroker.evaluate
+
+    def counting(inner_self, *a, **kw):
+        calls["policy"] += 1
+        return original(inner_self, *a, **kw)
+
+    monkeypatch.setattr(policy_broker.PolicyBroker, "evaluate", counting)
+
+    def _token(claims: dict) -> dict:
+        payload = {"sub": "alice", "tenant_id": TENANT, "exp": time.time() + 60, **claims}
+        return {"Authorization": f"Bearer {make_jwt(payload, secret=FAKE_JWT_SIGNING_KEY)}"}
+
+    body = {"tenant_id": TENANT, "user_id": "alice", "message": "remember I prefer dark mode"}
+
+    runs_before = len(repo.list_loop_runs(tenant_id=TENANT, user_id="alice", limit=1000))
+    audit_before = len(repo.list_audit(TENANT, "alice", limit=1000))
+
+    refused = client.post("/api/chat", json=body, headers=_token({"roles": None}))
+    assert refused.status_code == 403
+    assert "memory:write:self" in refused.json()["detail"]
+
+    assert len(repo.list_loop_runs(tenant_id=TENANT, user_id="alice", limit=1000)) == runs_before
+    assert len(repo.list_audit(TENANT, "alice", limit=1000)) == audit_before
+    assert calls["policy"] == 0
+    assert repo.list_memories(TENANT, "alice") == []
+
+    # The same request with the claim genuinely omitted still works, so the refusal
+    # is the null claim being honoured — not chat being broken for everyone.
+    allowed = client.post("/api/chat", json=body, headers=_token({}))
+    assert allowed.status_code == 200
+    assert calls["policy"] > 0
