@@ -60,6 +60,47 @@ def enforce_scope(request: Request, tenant_id: str, user_id: str) -> None:
         )
 
 
+def _auth_enabled() -> bool:
+    """Whether an identity provider is configured at all.
+
+    Read at call time, not import time: tests and the playground flip the mode
+    between requests, and a cached value would make the check answer for the wrong
+    configuration.
+    """
+    from ..core.config import get_settings
+
+    return get_settings().auth_mode != "none"
+
+
+def require_authenticated(request: Request) -> Principal | None:
+    """Assert there is an authenticated caller, with no further capability required.
+
+    Implements the `authenticated` scope for routes that expose nothing tenant-
+    specific — the static loop *definitions*, which are product documentation
+    identical for every caller and carry no prompts, configuration, or tenant data
+    (asserted in `tests/test_governance_read_boundary.py`).
+
+    The alternative was to give them some existing permission so the witness had one
+    to record. That would be a lie in the matrix: the route would claim to enforce a
+    capability it does not need, and the first person to widen that permission for an
+    unrelated reason would silently change who can read these. A scope that means
+    "any verified caller" should be enforced as exactly that.
+
+    Returns the principal, or `None` when auth is disabled — matching
+    `enforce_scope` / `require_permission`, and safe because
+    `MEMORYOPS_PROFILE=production` refuses to start with `auth_mode=none`. The 401 for
+    a missing credential is issued by the middleware before the route runs; this is
+    the in-route counterpart for anything the middleware does not cover.
+    """
+    principal = current_principal(request)
+    if principal is None:
+        if _auth_enabled():
+            raise HTTPException(status_code=401, detail="missing or invalid credentials")
+        return None
+    _witness(request, helper="require_authenticated")
+    return principal
+
+
 def require_permission(request: Request, permission: Permission) -> Principal | None:
     """Assert the caller holds `permission`; 403 otherwise.
 

@@ -21,6 +21,8 @@ import pytest
 from app.auth.authz_spec import ROUTE_AUTHZ, AuthzSpec, Scope, Status, iter_routes
 from app.auth.roles import Permission, Role, permissions_for
 
+from ._authz_domains import is_governance_domain, is_memory_domain
+
 
 @pytest.fixture(scope="module")
 def routes():
@@ -207,11 +209,26 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         "DELETE /api/memories/{memory_id}",
         "GET /api/admin/workers/health",
         "GET /api/audit",
+        "GET /api/evals/latest",
+        "GET /api/evidence/audit/verify",
+        "GET /api/evidence/deletion/{memory_id}",
+        "GET /api/evidence/lifecycle/{memory_id}",
+        "GET /api/evidence/policy",
+        "GET /api/evidence/response/{trace_id}",
+        "GET /api/loops",
+        "GET /api/loops/events",
+        "GET /api/loops/runs",
+        "GET /api/loops/trace/{trace_id}",
+        "GET /api/loops/{loop_id}",
         "GET /api/memories",
         "GET /api/memories/{memory_id}",
         "GET /api/memories/{memory_id}/audit",
         "GET /api/memories/{memory_id}/provenance",
         "GET /api/metrics",
+        "GET /api/retention/decisions",
+        "GET /api/retention/memory/{memory_id}",
+        "GET /api/retention/policies",
+        "GET /api/traces",
         "PATCH /api/memories/{memory_id}",
         "POST /api/chat",
     ], f"enforced set changed: {enforced}"
@@ -325,10 +342,12 @@ def test_the_helpers_record_a_witness_for_every_enforced_route():
 
 
 #: Enforced routes whose witness is asserted in this module, by driving the helper
-#: directly. Everything under `/api/memories` and `/api/chat` is covered instead by
-#: `test_memory_route_authorization.py`, which drives the **real route** through the
-#: app and reads the witness back off the request — a stronger check than a name in
-#: a list, because it fails when a handler stops calling the helper.
+#: directly. The memory and governance domains are covered instead by their runtime
+#: gates (`test_memory_route_authorization.py`, `test_governance_read_authorization.py`),
+#: which drive the **real route** through the app and read the witness back off the
+#: request — a stronger check than a name in a list, because it fails when a handler
+#: stops calling the helper. Domain membership is shared via `_authz_domains` so the
+#: gates and this guard cannot disagree about who covers what.
 _WITNESSED_HERE = frozenset(
     {
         "GET /api/audit",
@@ -352,7 +371,8 @@ def test_every_enforced_route_has_a_witness_test():
     runtime_gated = {
         f"{m} {p}"
         for (m, p), spec in ROUTE_AUTHZ.items()
-        if spec.status is Status.ENFORCED and (p.startswith("/api/memories") or p == "/api/chat")
+        if spec.status is Status.ENFORCED
+        and (is_memory_domain(p) or is_governance_domain(p))
     }
     uncovered = enforced - _WITNESSED_HERE - runtime_gated
     assert not uncovered, (

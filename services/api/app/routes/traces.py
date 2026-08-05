@@ -9,8 +9,9 @@ receives when `otel_enabled` is set.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
+from ..auth import Permission, require_permission
 from ..observability import recent_spans
 
 router = APIRouter(prefix="/api", tags=["observability"])
@@ -18,8 +19,10 @@ router = APIRouter(prefix="/api", tags=["observability"])
 
 @router.get("/traces")
 def get_traces(
+    request: Request,
     limit: int = Query(100, ge=1, le=512),
     correlation_id: str | None = Query(None, description="filter to one correlated trace"),
 ) -> dict:
+    require_permission(request, Permission.TRACES_READ_TENANT)
     spans = recent_spans(limit=limit, correlation_id=correlation_id)
     return {"count": len(spans), "spans": spans}

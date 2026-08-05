@@ -18,6 +18,7 @@ from .dependencies import (
     authorize_audit_scope,
     current_principal,
     enforce_scope,
+    require_authenticated,
     require_permission,
 )
 from .jwt import JWTError, decode_jwt
@@ -38,6 +39,7 @@ __all__ = [
     "current_principal",
     "enforce_scope",
     "require_permission",
+    "require_authenticated",
     "authorize_audit_scope",
     "authorize_subject_scope",
     "authorize_loaded_resource",

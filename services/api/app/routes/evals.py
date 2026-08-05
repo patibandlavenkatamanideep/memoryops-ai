@@ -15,8 +15,9 @@ from __future__ import annotations
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from ..auth import Permission, require_permission
 from ..core.config import get_settings
 from ..services.eval_harness import run_evals
 
@@ -55,6 +56,12 @@ def run() -> dict:
 
 
 @router.get("/latest")
-def latest() -> dict:
-    """Return the most recent eval result, regenerating at most once per TTL."""
+def latest(request: Request) -> dict:
+    """Return the most recent eval result, regenerating at most once per TTL.
+
+    `evals:read` — results are tenant-wide governance evidence, so this is an auditor
+    capability rather than something memory management implies. Authorized before the
+    cache is consulted, since a miss regenerates and that is real compute.
+    """
+    require_permission(request, Permission.EVALS_READ)
     return _latest_cached()

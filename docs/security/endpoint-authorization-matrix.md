@@ -87,31 +87,14 @@ cannot get ahead of the runtime again.
 
 ### Enforced
 
-The handler checks the permission. 10 of 39 routes.
+The handler checks the permission. 25 of 39 routes.
 
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/admin/workers/health` | operator | `worker:read` |  |
 | `GET` | `/api/audit` | subject | `audit:read:self` (own) / `audit:read:tenant` (tenant) | tenant-wide requires audit:read:tenant; otherwise forced to own user |
 | `POST` | `/api/chat` | self | `memory:write:self` | chat writes memory |
-| `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
-| `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
-| `GET` | `/api/memories/{memory_id}` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
-| `PATCH` | `/api/memories/{memory_id}` | resource | — *(any authenticated principal)* | The action comes from the validated transition, never a client-supplied string. Legal hold and the revision check still apply — authorization does not bypass them. |
-| `GET` | `/api/memories/{memory_id}/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) |  |
-| `GET` | `/api/memories/{memory_id}/provenance` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
-| `GET` | `/api/metrics` | tenant | `metrics:read:tenant` |  |
-
-### Planned — declared, **not yet enforced**
-
-The contract is agreed and the enumeration guard holds these routes to it, but the
-handler does not check the permission yet. **Do not rely on this section as a
-control.**
-
-| Method | Path | Scope | Permission | Note |
-| --- | --- | --- | --- | --- |
 | `GET` | `/api/evals/latest` | tenant | `evals:read` |  |
-| `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
 | `GET` | `/api/evidence/audit/verify` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/deletion/{memory_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/lifecycle/{memory_id}` | tenant | `evidence:read` |  |
@@ -122,14 +105,31 @@ control.**
 | `GET` | `/api/loops/runs` | tenant | `traces:read:tenant` |  |
 | `GET` | `/api/loops/trace/{trace_id}` | tenant | `traces:read:tenant` |  |
 | `GET` | `/api/loops/{loop_id}` | authenticated | — *(any authenticated principal)* | static loop definition |
-| `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |
+| `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
+| `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
+| `GET` | `/api/memories/{memory_id}` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
+| `PATCH` | `/api/memories/{memory_id}` | resource | — *(any authenticated principal)* | The action comes from the validated transition, never a client-supplied string. Legal hold and the revision check still apply — authorization does not bypass them. |
+| `GET` | `/api/memories/{memory_id}/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) |  |
+| `GET` | `/api/memories/{memory_id}/provenance` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
+| `GET` | `/api/metrics` | tenant | `metrics:read:tenant` |  |
 | `GET` | `/api/retention/decisions` | tenant | `retention:read` |  |
-| `POST` | `/api/retention/legal-hold` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/memory/{memory_id}` | tenant | `retention:read` |  |
-| `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/policies` | tenant | `retention:read` |  |
-| `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
 | `GET` | `/api/traces` | tenant | `traces:read:tenant` |  |
+
+### Planned — declared, **not yet enforced**
+
+The contract is agreed and the enumeration guard holds these routes to it, but the
+handler does not check the permission yet. **Do not rely on this section as a
+control.**
+
+| Method | Path | Scope | Permission | Note |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
+| `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |
+| `POST` | `/api/retention/legal-hold` | tenant | `retention:manage` |  |
+| `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
+| `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
 
 ### Public
 
