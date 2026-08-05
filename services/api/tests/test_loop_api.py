@@ -22,8 +22,8 @@ def test_trace_endpoint_returns_timeline(gateway, repo):
     )
     body = LoopTrace(
         trace_id="trace-api",
-        runs=repo.list_loop_runs(trace_id="trace-api"),
-        events=repo.list_loop_events(trace_id="trace-api"),
+        runs=repo.list_loop_runs(trace_id="trace-api", tenant_id="t1"),
+        events=repo.list_loop_events(trace_id="trace-api", tenant_id="t1"),
     )
     assert body.trace_id == "trace-api"
     assert body.runs

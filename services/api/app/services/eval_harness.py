@@ -401,8 +401,12 @@ def _run_case(gw: Gateway, repo: InMemoryRepository, case: dict) -> CaseResult:
         query = case.get("query", "What evidence do I prefer?")
         write_resp = _decisions_for(gw, tenant, user, save_msg)
         read_resp = _decisions_for(gw, tenant, user, query)
-        write_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value)
-        read_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value)
+        # Scoped to the case's tenant. Unscoped, this asked "did any write loop run
+        # anywhere in the store", which another case's runs could satisfy — and it
+        # only worked at all because the in-memory backend treated a missing tenant
+        # as "no filter"; Postgres refuses it.
+        write_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value, tenant_id=tenant)
+        read_runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_READ.value, tenant_id=tenant)
         ok = (
             write_resp.loop_evidence.get(LoopId.MEMORY_WRITE.value) == "completed"
             and read_resp.loop_evidence.get(LoopId.MEMORY_READ.value)

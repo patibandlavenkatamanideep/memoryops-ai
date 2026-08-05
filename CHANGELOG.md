@@ -35,6 +35,24 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — governance read boundary
+
+### Fixed
+- **Loop evidence could be read across tenants on the in-memory backend.**
+  `list_loop_runs` / `list_loop_events` filtered with `if tenant_id:`, so an empty
+  string meant *no filter* and returned every tenant's loop runs — who did what,
+  across the whole store. `tenant_id` is a plain `str` query parameter, so
+  `GET /api/loops/runs?tenant_id=` reached the repository as `""`. The Postgres
+  backend already refused this (`ValueError`), so the two backends disagreed about
+  invariant #1. Both now fail closed identically. Reachable with authentication
+  disabled, which is the development default and the playground's configuration.
+- The eval harness listed loop runs unscoped, asking "did any write loop run
+  *anywhere* in the store" — satisfiable by another case's runs. Now scoped to the
+  case's tenant.
+- Loop bookkeeping no longer raises when a run carries no tenant: the prior-state
+  lookup is skipped instead, so evidence recording can never be the reason a request
+  fails (invariant #4).
+
 ## Unreleased — memory routes enforced
 
 Ten of 39 routes now enforce their declared permission (was three): `POST /api/chat`,

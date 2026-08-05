@@ -47,6 +47,24 @@ def sanitize_loop_metadata(value: Any) -> Any:
     return text
 
 
+def _prior_state(repo: Repository, run: LoopRun):
+    """The last state this run reached, for inferring `state_from`.
+
+    Skipped when the run carries no tenant. The evidence repositories now require a
+    tenant for loop queries (they are governance evidence, and an unscoped read
+    returned every tenant's), so an unscoped lookup would raise — and loop
+    bookkeeping must never be the reason a request fails (invariant #4). Every
+    production caller sets a tenant; this keeps the degenerate case harmless instead
+    of turning it into a 500.
+    """
+    if not run.tenant_id:
+        return None
+    prior = repo.list_loop_events(
+        loop_run_id=run.id, tenant_id=run.tenant_id, user_id=run.user_id, limit=1
+    )
+    return prior[0].state_to if prior else None
+
+
 async def start_loop_run(
     repo: Repository,
     loop_id: LoopId,
@@ -84,13 +102,7 @@ async def emit_loop_event(
 ) -> LoopEvent:
     previous = state_from
     if previous is None:
-        prior = repo.list_loop_events(
-            loop_run_id=run.id,
-            tenant_id=run.tenant_id,
-            user_id=run.user_id,
-            limit=1,
-        )
-        previous = prior[0].state_to if prior else None
+        previous = _prior_state(repo, run)
     validate_transition(previous, state_to)
     event = LoopEvent(
         id=str(uuid.uuid4()),
@@ -178,13 +190,7 @@ def emit_loop_event_sync(
     evidence: dict[str, Any] | None = None,
     audit_event_id: str | None = None,
 ) -> LoopEvent:
-    prior = repo.list_loop_events(
-        loop_run_id=run.id,
-        tenant_id=run.tenant_id,
-        user_id=run.user_id,
-        limit=1,
-    )
-    state_from = prior[0].state_to if prior else None
+    state_from = _prior_state(repo, run)
     validate_transition(state_from, state_to)
     event = LoopEvent(
         id=str(uuid.uuid4()),

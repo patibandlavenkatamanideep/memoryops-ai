@@ -353,6 +353,43 @@ authentication rather than invent an identifier.
 
 See the v2.4 entries in `CHANGELOG.md`.
 
+### Governance evidence is tenant-scoped in the query
+
+Loop runs, loop events and audit rows record *who did what, when*. They carry no
+memory content, but the trail itself is tenant-confidential, so every read puts the
+tenant in the query rather than filtering afterwards:
+
+| Read | Scoping |
+| --- | --- |
+| loop runs / events | `WHERE tenant_id = :tenant`, and a missing tenant raises |
+| audit rows | `WHERE tenant_id = :tenant` (+ optional user / memory) |
+| evidence deletion, lifecycle | `repo.get_memory(tenant, user, id)` |
+| retention governance view | `repo.get_memory(tenant, user, id)` |
+| evidence bundle by `trace_id` | tenant-scoped audit read, then filtered by trace |
+
+An opaque identifier is **not** an authorization token. `loop_run_id`, `trace_id` and
+`memory_id` are all unguessable, and none of them is allowed to stand in for scope — a
+leaked or brute-forced id still returns nothing outside its tenant.
+
+The in-memory backend previously filtered loop evidence with `if tenant_id:`, so an
+empty string meant *no filter* and returned every tenant's runs. Because `tenant_id`
+is a plain `str` query parameter, `?tenant_id=` reached it as `""`. Postgres already
+refused this, so the two backends disagreed about invariant #1 — the kind of gap that
+only shows up when both are tested against the same assertion. Both now fail closed.
+
+#### Why some evidence reads answer 200 with no data
+
+`GET /api/evidence/deletion/{memory_id}` returns `200` with `found: false` rather than
+`404` when the memory is not in scope. That is deliberate: a deletion proof has to be
+answerable for a memory that no longer exists, which is the case it exists *for*. A
+`404` would fail on exactly the memories that were most thoroughly forgotten, making
+"prove this is gone" unanswerable. It discloses nothing, because the lookup is
+tenant-scoped and "absent" covers never-existed, hard-purged, and belongs-to-another-
+tenant without distinguishing them.
+
+Record-shaped governance views that are *not* proofs — `GET /api/retention/memory/{id}`
+— still answer `404`.
+
 ### What is not claimed
 
 This is an authorization boundary, not an authorization product. Roles are coarse

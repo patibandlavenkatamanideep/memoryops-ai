@@ -28,8 +28,8 @@ def test_loop_events_do_not_store_raw_secret(repo):
         )
 
     asyncio.run(_run())
-    event_blob = repo.list_loop_events(trace_id="trace-secret")[0].model_dump_json()
-    run_blob = repo.list_loop_runs(trace_id="trace-secret")[0].model_dump_json()
+    event_blob = repo.list_loop_events(trace_id="trace-secret", tenant_id="t1")[0].model_dump_json()
+    run_blob = repo.list_loop_runs(trace_id="trace-secret", tenant_id="t1")[0].model_dump_json()
     assert "sk-test" not in event_blob
     assert "hunter2" not in event_blob
     assert "sk-test" not in run_blob
@@ -37,7 +37,11 @@ def test_loop_events_do_not_store_raw_secret(repo):
 
 def test_async_loop_helpers_persist_events(repo):
     async def _run():
-        run = await start_loop_run(repo, LoopId.MEMORY_EVALUATION, "trace-eval")
+        # Tenant-scoped, as every production caller is: loop runs are governance
+        # evidence, and the repositories now refuse to list them unscoped.
+        run = await start_loop_run(
+            repo, LoopId.MEMORY_EVALUATION, "trace-eval", tenant_id="t1", user_id="u1"
+        )
         event = await emit_loop_event(
             repo,
             run,
@@ -48,8 +52,8 @@ def test_async_loop_helpers_persist_events(repo):
         return run, event
 
     run, event = asyncio.run(_run())
-    assert repo.list_loop_runs(trace_id="trace-eval")[0].id == run.id
-    assert repo.list_loop_events(loop_run_id=run.id)[0].id == event.id
+    assert repo.list_loop_runs(trace_id="trace-eval", tenant_id="t1")[0].id == run.id
+    assert repo.list_loop_events(loop_run_id=run.id, tenant_id="t1")[0].id == event.id
 
 
 def test_governed_content_update_emits_a_full_governance_loop(api_client):
@@ -88,7 +92,7 @@ def test_governed_content_update_emits_a_full_governance_loop(api_client):
     edit_runs = [x for x in runs if (x.metadata or {}).get("memory_id") == m.id]
     assert edit_runs, "the content edit produced no governance loop run"
 
-    events = repo.list_loop_events(loop_run_id=edit_runs[0].id)
+    events = repo.list_loop_events(loop_run_id=edit_runs[0].id, tenant_id="t1")
     states = {e.state_to.value for e in events}
     for required in ("observed", "policy_checked", "executed", "verified", "audited"):
         assert required in states, f"missing loop state: {required}"
@@ -129,7 +133,7 @@ def test_a_blocked_content_edit_does_not_emit_an_executed_state(api_client):
     runs = repo.list_loop_runs(tenant_id="t1", user_id="u1", limit=50)
     edit_runs = [x for x in runs if (x.metadata or {}).get("memory_id") == m.id]
     for run in edit_runs:
-        states = {e.state_to.value for e in repo.list_loop_events(loop_run_id=run.id)}
+        states = {e.state_to.value for e in repo.list_loop_events(loop_run_id=run.id, tenant_id="t1")}
         assert "executed" not in states, "a blocked edit must not record an execution"
     assert repo.get_memory("t1", "u1", m.id).content == "prefers dark mode"
 

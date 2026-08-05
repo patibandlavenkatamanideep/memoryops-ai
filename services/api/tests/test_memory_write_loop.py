@@ -23,11 +23,11 @@ def test_memory_write_loop_emits_events(gateway, repo):
         ChatRequest(tenant_id="t1", user_id="u1", message="Remember that I prefer loops."),
         trace_id="trace-write",
     )
-    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value, trace_id="trace-write")
+    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value, trace_id="trace-write", tenant_id="t1")
     assert runs
     assert runs[0].status == LoopStatus.COMPLETED
     assert resp.loop_evidence[LoopId.MEMORY_WRITE.value] == "completed"
-    states = [e.state_to.value for e in repo.list_loop_events(loop_run_id=runs[0].id)]
+    states = [e.state_to.value for e in repo.list_loop_events(loop_run_id=runs[0].id, tenant_id="t1")]
     assert "observed" in states
     assert "policy_checked" in states
     assert "audited" in states
@@ -54,10 +54,10 @@ def test_multi_memory_write_emits_single_policy_checked(gateway, repo):
     # Genuinely a multi-memory turn.
     assert len(resp.candidate_memories) >= 2
 
-    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value, trace_id="trace-multi")
+    runs = repo.list_loop_runs(loop_id=LoopId.MEMORY_WRITE.value, trace_id="trace-multi", tenant_id="t1")
     assert runs and runs[0].status == LoopStatus.COMPLETED
     assert resp.loop_evidence[LoopId.MEMORY_WRITE.value] == "completed"
 
-    states = [e.state_to.value for e in repo.list_loop_events(loop_run_id=runs[0].id)]
+    states = [e.state_to.value for e in repo.list_loop_events(loop_run_id=runs[0].id, tenant_id="t1")]
     assert states.count("policy_checked") == 1, states
     assert states.count("executed") == 1, states
