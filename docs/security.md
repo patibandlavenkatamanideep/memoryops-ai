@@ -399,8 +399,8 @@ matters most:
 | --- | --- | --- | --- | --- | --- |
 | `memory_viewer` | – | – | – | – | – |
 | `memory_user` | – | – | – | – | own only |
-| `memory_admin` | – | – | – | ✓ | tenant-wide |
-| `auditor` | ✓ | ✓ | ✓ | ✓ | – |
+| `memory_admin` | – | – | – | ✓ (+ manage) | tenant-wide |
+| `auditor` | ✓ | ✓ | ✓ | ✓ (read only) | – |
 | `tenant_admin` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service_worker` | – | – | – | – | – |
 
@@ -456,6 +456,36 @@ stays honest until either spans carry a tenant and are filtered by it, or the en
 is reclassified as deployment-level telemetry under an `ops:traces` permission with a
 dedicated observability role. An ordinary tenant auditor should not implicitly become
 a deployment-wide observability operator.
+
+### Governance mutations: the stored owner is the target
+
+Legal hold, pin, protect and consent require `retention:manage` / `consent:manage` —
+held by `memory_admin` and `tenant_admin`, and deliberately **not** by `auditor`, who
+reads governance evidence and must not be able to change it.
+
+Administering another user's record was previously impossible: the handler validated
+the request's `user_id` against the principal and *then* looked the memory up with it,
+so naming the owner was refused as a scope mismatch and naming yourself found nothing.
+The rule is now the same one the memory routes follow — the request's `user_id` is a
+hint about where to look, and the **stored** owner decides everything after that.
+
+#### Actor and target are different facts
+
+Once an admin can change someone else's governance state, an audit row saying
+`user_id: bob` is ambiguous: did Bob act, or was Bob acted upon? `user_id` remains the
+**target** so existing per-user queries keep working, and each mutation additionally
+records, content-free:
+
+| Field | Meaning |
+| --- | --- |
+| `actor_id` / `actor_user_id` | who performed it |
+| `actor_type` | `human` or `service_account` |
+| `target_user_id` | whose record changed |
+| `authorized_permission` | which capability permitted it |
+| `acted_on_behalf_of_another_user` | true when actor ≠ target |
+
+The credential, its claims, and memory content are never written to the audit trail —
+it is read by operators who may not be cleared for the memory itself.
 
 ### What is not claimed
 

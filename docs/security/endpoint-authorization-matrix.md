@@ -87,7 +87,7 @@ cannot get ahead of the runtime again.
 
 ### Enforced
 
-The handler checks the permission. 24 of 39 routes.
+The handler checks the permission. 28 of 39 routes.
 
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
@@ -112,9 +112,13 @@ The handler checks the permission. 24 of 39 routes.
 | `GET` | `/api/memories/{memory_id}/audit` | resource | `audit:read:self` (own) / `audit:read:tenant` (tenant) |  |
 | `GET` | `/api/memories/{memory_id}/provenance` | resource | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `GET` | `/api/metrics` | tenant | `metrics:read:tenant` |  |
+| `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |
 | `GET` | `/api/retention/decisions` | tenant | `retention:read` |  |
+| `POST` | `/api/retention/legal-hold` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/memory/{memory_id}` | tenant | `retention:read` |  |
+| `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/policies` | tenant | `retention:read` |  |
+| `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
 
 ### Planned — declared, **not yet enforced**
 
@@ -125,10 +129,6 @@ control.**
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
 | `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
-| `POST` | `/api/retention/consent` | tenant | `consent:manage` |  |
-| `POST` | `/api/retention/legal-hold` | tenant | `retention:manage` |  |
-| `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
-| `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
 | `GET` | `/api/traces` | tenant | `traces:read:tenant` | permission-gated but not tenant-isolated; span buffer is process-wide |
 
 ### Public
