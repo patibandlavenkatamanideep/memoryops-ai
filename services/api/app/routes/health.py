@@ -50,8 +50,29 @@ def workers_health_public() -> dict:
     # activity and operational condition to an unauthenticated caller, and this
     # endpoint sits outside the /api/* auth boundary. Counts, per-scope history and
     # failure reasons all live behind `worker:read` on /api/admin/workers/health.
-    detail = _worker_health_detail()
-    return {"healthy": detail.get("healthy")}
+    # Built by *selecting* one key rather than deleting others: `_worker_health_detail()`
+    # returns counts on success and a `detail` naming an exception type on failure, and
+    # none of that belongs to an unauthenticated caller. Selecting means a field added
+    # upstream later cannot leak here by default.
+    try:
+        healthy = bool(_worker_health_detail().get("healthy"))
+    except Exception:  # noqa: BLE001 — a liveness probe must not 500 (invariant #4)
+        healthy = False
+    return {"healthy": healthy}
+
+
+@admin_router.get("/readiness")
+def readiness_detail(request: Request) -> dict:
+    """The full readiness report, for operators.
+
+    `/readyz` narrows to a boolean in production because the detailed form is an
+    unauthenticated inventory of what this installation runs — storage backend, LLM
+    and embedding providers, profile, and each dependency's state. That is useful to
+    whoever runs the deployment and to nobody else, so it lives here behind
+    `ops:readiness` rather than being removed.
+    """
+    require_permission(request, Permission.OPS_READINESS)
+    return _readiness_report(get_settings())
 
 
 @admin_router.get("/workers/health")
@@ -86,8 +107,7 @@ def _worker_health_detail() -> dict:
         return {"healthy": False, "detail": f"unavailable: {type(exc).__name__}"}
 
 
-@router.get("/readyz")
-def readyz() -> dict:
+def _readiness_report(settings) -> dict:
     """Readiness probe with *dependency-specific* states (v2.3).
 
     Rather than a single combined detail string, each backing dependency reports
@@ -101,7 +121,6 @@ def readyz() -> dict:
     new ``profile`` + ``checks`` so the response stays additive under the ``1.x``
     compatibility promise — existing consumers keep working, new ones read ``checks``.
     """
-    settings = get_settings()
     checks: dict[str, dict] = {
         name: _safe_check(name, probe, settings)
         for name, probe in (
@@ -132,6 +151,32 @@ def readyz() -> dict:
         "detail": detail,
         # ── v2.3 dependency-specific view ─────────────────────────────────────
         "checks": checks,
+    }
+
+
+@router.get("/readyz")
+def readyz() -> dict:
+    """Readiness probe.
+
+    In **production** this reports only whether the deployment is ready. The detailed
+    form names the storage backend, the LLM and embedding providers, the profile, and
+    each dependency's state — an unauthenticated inventory of what this installation
+    runs, which is reconnaissance rather than health. Orchestrators need the status
+    code and a boolean; operators use `GET /api/admin/readiness`, which carries the
+    full report behind `ops:readiness`.
+
+    Outside production the detailed shape is unchanged, so the documented `1.x`
+    fields (`storage`, `llm_provider`, `embeddings_provider`, `embedding_dim`,
+    `detail`, `checks`) still serve dev, demos and the playground.
+    """
+    settings = get_settings()
+    report = _readiness_report(settings)
+    if settings.profile != "production":
+        return report
+    return {
+        "ready": report["ready"],
+        "degraded": report["degraded"],
+        "detail": "ready" if report["ready"] else "not ready",
     }
 
 

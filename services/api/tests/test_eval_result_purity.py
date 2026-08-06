@@ -173,12 +173,15 @@ def test_authorization_precedes_the_cache_lookup(evals_client, monkeypatch):
     client, calls = evals_client
     hdr = {"X-MemoryOps-Tenant": "acme", "X-MemoryOps-User": "alice"}
 
-    # Cold cache: an authorized caller would see 404; an unauthorized one sees 403,
-    # so the refusal does not double as an existence probe.
+    # Cold store: an authorized operator sees 404; an unauthorized caller sees 403,
+    # so the refusal does not double as an existence probe. A tenant role is
+    # unauthorized here — evaluation results describe the deployment.
     r = client.get("/api/evals/latest", headers=hdr)
     assert r.status_code == 403
     assert calls["n"] == 0
 
-    r = client.get("/api/evals/latest", headers={**hdr, "X-MemoryOps-Roles": "auditor"})
+    r = client.get(
+        "/api/evals/latest", headers={**hdr, "X-MemoryOps-Roles": "platform_operator"}
+    )
     assert r.status_code == 404
     assert calls["n"] == 0

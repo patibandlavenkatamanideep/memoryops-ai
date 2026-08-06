@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     # safe values (see `production_readiness_errors`). Set MEMORYOPS_PROFILE=production
     # on real deployments. See docs/production-readiness.md.
     profile: Literal["dev", "production"] = "dev"
+    #: Serve the interactive API documentation (`/docs`, `/redoc`, `/openapi.json`).
+    #: Defaults to on in dev and **off in production**: the schema enumerates every
+    #: route, parameter and model, which is a map of the attack surface handed to an
+    #: unauthenticated caller. Set true to re-enable deliberately.
+    expose_api_docs: bool | None = None
+    #: Require `ops:metrics` on `GET /metrics` when authentication is enabled.
+    #: `/metrics` sits outside the `/api/*` boundary, so the scope middleware never
+    #: covered it. Off by default because most deployments scrape it from a private
+    #: network; turn on when the endpoint is reachable more widely.
+    protect_metrics_endpoint: bool = False
 
     # CORS allow-list. "*" (default) is fine for the public demo but is rejected under
     # the production profile. Comma-separated origins, e.g.
@@ -278,6 +288,16 @@ class Settings(BaseSettings):
     circuit_breaker_reset_seconds: float = 30.0
 
     # ── derived helpers ──────────────────────────────────────────────────────
+    def docs_enabled(self) -> bool:
+        """Whether to mount `/docs`, `/redoc` and `/openapi.json`.
+
+        Unset means "follow the profile": on in dev, off in production. An explicit
+        value always wins, so an operator who wants the schema published can say so.
+        """
+        if self.expose_api_docs is not None:
+            return self.expose_api_docs
+        return self.profile != "production"
+
     def cors_origins_list(self) -> list[str]:
         """CORS allow-list as a list. '*' stays a single wildcard entry."""
         raw = self.cors_allow_origins.strip()
@@ -513,6 +533,11 @@ def get_settings() -> Settings:
         overrides["public_evals"] = val.lower() not in ("0", "false", "no")
     if (val := os.getenv("MEMORYOPS_RATE_LIMIT_ENABLED")) is not None:
         overrides["rate_limit_enabled"] = val.lower() not in ("0", "false", "no")
+    if (val := os.getenv("MEMORYOPS_PROTECT_METRICS_ENDPOINT")) is not None:
+        overrides["protect_metrics_endpoint"] = val.lower() not in ("0", "false", "no")
+    # Tri-state: unset means "follow the profile", so absence is not `False`.
+    if (val := os.getenv("MEMORYOPS_EXPOSE_API_DOCS")) is not None:
+        overrides["expose_api_docs"] = val.lower() not in ("0", "false", "no")
     for env_name, field_name in (
         ("MEMORYOPS_RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute"),
         ("MEMORYOPS_RATE_LIMIT_CHAT_PER_MINUTE", "rate_limit_chat_per_minute"),

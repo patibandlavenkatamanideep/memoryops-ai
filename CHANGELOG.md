@@ -35,6 +35,50 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — the platform operational boundary
+
+**31 of 40 routes enforced. Zero planned.** 9 public, each reviewed below.
+
+### The distinction this draws
+"Administrator of tenant A" and "operator of this deployment" are different
+authorities. Three surfaces describe the *installation* rather than any tenant, and
+now say so: `/api/traces` (a process-wide span buffer), `/api/evals/{latest,run}` (a
+harness over its own fixtures and a process-wide result store), and the worker fleet.
+
+- **`Role.PLATFORM_OPERATOR`** with `ops:evals:read`, `ops:evals:run`,
+  `ops:traces:read`, `ops:metrics`, `ops:readiness` (plus `worker:read`). It holds no
+  memory, audit, evidence, retention or consent permission — running the platform does
+  not include reading what customers stored in it, and the two sets are asserted
+  disjoint. Distinct from `service_worker`, which is the fleet's own identity.
+- **No tenant role can reach an `ops:*` permission**, asserted for every one.
+- `GET /api/traces` moves from `planned` to `enforced` as `Scope.OPERATOR` —
+  classified for what it actually serves rather than redesigning tracing storage.
+- `GET /api/loops/{runs,events,trace}` now use `audit:read:tenant`; both they and the
+  audit trail answer "who acted in this tenant", and `traces:read:tenant` is retired.
+
+### Fixed
+- **`tenant_admin` was `frozenset(set(Permission))`** — every permission in the enum,
+  including ones that did not exist yet. Any capability added anywhere became tenant
+  authority by definition. The bundle is explicit, and a guard fails while any
+  permission is neither granted nor recorded as deployment-scoped with a reason.
+
+### Behaviour changes
+- **`tenant_admin` no longer reads `/api/admin/workers/health`.** Fleet health is
+  deployment state; it held that only through the blanket grant.
+- **`auditor` and `tenant_admin` no longer read or run deployment evaluations.**
+- **`/readyz` reports only `{ready, degraded, detail}` in production.** The detailed
+  form named the storage backend, both providers, the embedding dimension, the profile
+  and every dependency's state — an unauthenticated inventory of what the installation
+  runs. The full report moved to `GET /api/admin/readiness` behind `ops:readiness`.
+  Outside production the documented `1.x` shape is unchanged.
+- **`/docs`, `/redoc` and `/openapi.json` are off in production** unless
+  `MEMORYOPS_EXPOSE_API_DOCS=true`. The schema enumerates every route, parameter and
+  model — a map of the attack surface, served unauthenticated.
+- **`/metrics` can require `ops:metrics`** via `MEMORYOPS_PROTECT_METRICS_ENDPOINT`.
+  Off by default, since most deployments scrape it privately. The auth middleware now
+  authenticates that path when the switch is on — without a principal the route's
+  check would silently no-op and the setting would look enforced while doing nothing.
+
 ## Unreleased — governance mutations enforced
 
 **28 of 39 routes enforced.** Planned 2 (`POST /api/evals/run`, `GET /api/traces`),

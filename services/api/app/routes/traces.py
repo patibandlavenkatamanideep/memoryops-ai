@@ -23,6 +23,6 @@ def get_traces(
     limit: int = Query(100, ge=1, le=512),
     correlation_id: str | None = Query(None, description="filter to one correlated trace"),
 ) -> dict:
-    require_permission(request, Permission.TRACES_READ_TENANT)
+    require_permission(request, Permission.OPS_TRACES_READ)
     spans = recent_spans(limit=limit, correlation_id=correlation_id)
     return {"count": len(spans), "spans": spans}

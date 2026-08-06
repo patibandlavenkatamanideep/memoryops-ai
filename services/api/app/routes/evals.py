@@ -18,7 +18,10 @@ path that does.
 
 The result is **process-wide and has no tenant dimension**: these are deployment-level
 evaluation results (the harness runs against its own isolated fixtures, not tenant
-data), which is why the route takes no tenant parameter.
+data), which is why the route takes no tenant parameter — and why both endpoints are
+`ops:*` rather than tenant capabilities. A tenant administrator running the harness
+would spend platform compute and replace the result every other tenant reads; that is
+platform operation, not tenant administration.
 """
 
 from __future__ import annotations
@@ -71,12 +74,13 @@ def reset_cache() -> None:
 
 
 @router.post("/run")
-def run() -> dict:
+def run(request: Request) -> dict:
     """Trigger a fresh eval-harness run. Guarded — off by default.
 
     Also refreshes what `GET /latest` serves, so the only path that spends the compute
     is the only path that updates the result.
     """
+    require_permission(request, Permission.OPS_EVALS_RUN)
     if not get_settings().public_evals:
         raise HTTPException(
             status_code=403,
@@ -92,13 +96,13 @@ def run() -> dict:
 def latest(request: Request) -> dict:
     """The last completed eval run. Never triggers one.
 
-    `evals:read`. Results are deployment-wide governance evidence, so this is an
-    auditor capability rather than something memory management implies.
+    `ops:evals:read`. Deployment-level evidence, so a tenant auditor does not hold it:
+    the result describes this installation, not their tenant.
 
     404 when this process has completed no run: there is no result to report, and
     manufacturing one would be exactly the execution path this route must not have.
     """
-    require_permission(request, Permission.EVALS_READ)
+    require_permission(request, Permission.OPS_EVALS_READ)
     result = _latest_completed()
     if result is None:
         raise HTTPException(

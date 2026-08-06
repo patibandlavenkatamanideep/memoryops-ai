@@ -87,23 +87,25 @@ cannot get ahead of the runtime again.
 
 ### Enforced
 
-The handler checks the permission. 28 of 39 routes.
+The handler checks the permission. 31 of 40 routes.
 
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
+| `GET` | `/api/admin/readiness` | operator | `ops:readiness` |  |
 | `GET` | `/api/admin/workers/health` | operator | `worker:read` |  |
 | `GET` | `/api/audit` | subject | `audit:read:self` (own) / `audit:read:tenant` (tenant) | tenant-wide requires audit:read:tenant; otherwise forced to own user |
 | `POST` | `/api/chat` | self | `memory:write:self` | chat writes memory |
-| `GET` | `/api/evals/latest` | tenant | `evals:read` |  |
+| `GET` | `/api/evals/latest` | operator | `ops:evals:read` |  |
+| `POST` | `/api/evals/run` | operator | `ops:evals:run` | denial-of-wallet vector |
 | `GET` | `/api/evidence/audit/verify` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/deletion/{memory_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/lifecycle/{memory_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/policy` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/response/{trace_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/loops` | authenticated | — *(any authenticated principal)* | static loop definitions; no tenant data |
-| `GET` | `/api/loops/events` | tenant | `traces:read:tenant` |  |
-| `GET` | `/api/loops/runs` | tenant | `traces:read:tenant` |  |
-| `GET` | `/api/loops/trace/{trace_id}` | tenant | `traces:read:tenant` |  |
+| `GET` | `/api/loops/events` | tenant | `audit:read:tenant` |  |
+| `GET` | `/api/loops/runs` | tenant | `audit:read:tenant` |  |
+| `GET` | `/api/loops/trace/{trace_id}` | tenant | `audit:read:tenant` |  |
 | `GET` | `/api/loops/{loop_id}` | authenticated | — *(any authenticated principal)* | static loop definition |
 | `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
@@ -119,6 +121,7 @@ The handler checks the permission. 28 of 39 routes.
 | `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/policies` | tenant | `retention:read` |  |
 | `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
+| `GET` | `/api/traces` | operator | `ops:traces:read` |  |
 
 ### Planned — declared, **not yet enforced**
 
@@ -126,10 +129,7 @@ The contract is agreed and the enumeration guard holds these routes to it, but t
 handler does not check the permission yet. **Do not rely on this section as a
 control.**
 
-| Method | Path | Scope | Permission | Note |
-| --- | --- | --- | --- | --- |
-| `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
-| `GET` | `/api/traces` | tenant | `traces:read:tenant` | permission-gated but not tenant-isolated; span buffer is process-wide |
+_(none)_
 
 ### Public
 
@@ -142,7 +142,7 @@ Unauthenticated by design. These must expose no tenant or user identifiers.
 | `GET` | `/docs/oauth2-redirect` | public | — *(public)* |  |
 | `GET` | `/healthz` | public | — *(public)* | process liveness |
 | `GET` | `/healthz/workers` | public | — *(public)* | boolean health only; no counts, no scope keys |
-| `GET` | `/metrics` | public | — *(public)* | Prometheus exposition, content-free and low-cardinality (no tenant or user labels). Should be private-network-only or operator-gated; it sits outside the /api/* auth boundary today. |
+| `GET` | `/metrics` | public | — *(public)* | Public by default; conditionally operator-protected when MEMORYOPS_PROTECT_METRICS_ENDPOINT=true (requires ops:metrics). |
 | `GET` | `/openapi.json` | public | — *(public)* | deployment-configurable; describes the full surface |
 | `GET` | `/readyz` | public | — *(public)* | dependency states with reason codes, no secrets. Candidate for restriction: it discloses which providers and backends are configured. |
 | `GET` | `/redoc` | public | — *(public)* | deployment-configurable |

@@ -21,8 +21,8 @@ enforced here or it is not enforced at all.
 
 Design
 ------
-Deliberately small. Five roles, a flat permission set, and a static mapping — no
-hierarchy engine, no per-resource ACLs, no policy DSL. Permissions are checked at
+Deliberately small: a fixed role set, a flat permission set, and a static mapping —
+no hierarchy engine, no per-resource ACLs, no policy DSL. Permissions are checked at
 the route; roles are only a way to name bundles of them.
 
 MemoryOps stays identity-neutral: roles arrive as claims from whatever issuer you
@@ -57,7 +57,6 @@ class Permission(str, Enum):
     AUDIT_READ_SELF = "audit:read:self"
     AUDIT_READ_TENANT = "audit:read:tenant"
     METRICS_READ_TENANT = "metrics:read:tenant"
-    TRACES_READ_TENANT = "traces:read:tenant"
     EVIDENCE_READ = "evidence:read"
     RETENTION_READ = "retention:read"
     RETENTION_MANAGE = "retention:manage"
@@ -66,10 +65,15 @@ class Permission(str, Enum):
     WORKER_READ = "worker:read"
     WORKER_REPLAY = "worker:replay"
     SETTINGS_MANAGE = "settings:manage"
-    #: Reading a stored evaluation result. Not cost-bearing.
-    EVALS_READ = "evals:read"
-    #: Executing an evaluation. Cost-bearing — a denial-of-wallet vector.
-    EVALS_RUN = "evals:run"
+    # Deployment operations. These act on the process or the whole installation, not
+    # on one tenant's data, so no tenant role holds them however senior it is —
+    # "administrator of tenant A" and "operator of this deployment" are different
+    # authorities, and conflating them lets one customer act for all of them.
+    OPS_EVALS_READ = "ops:evals:read"
+    OPS_EVALS_RUN = "ops:evals:run"
+    OPS_TRACES_READ = "ops:traces:read"
+    OPS_METRICS = "ops:metrics"
+    OPS_READINESS = "ops:readiness"
 
 
 class Role(str, Enum):
@@ -88,6 +92,10 @@ class Role(str, Enum):
     MEMORY_ADMIN = "memory_admin"
     TENANT_ADMIN = "tenant_admin"
     SERVICE_WORKER = "service_worker"
+    #: Runs the deployment. Not a tenant role and not reachable by escalation within
+    #: one — a platform operator sees process-wide state and spends platform compute,
+    #: neither of which belongs to any single customer.
+    PLATFORM_OPERATOR = "platform_operator"
 
 
 #: Accepted role names that are not `Role` values. `memory_reader` shipped in the
@@ -115,6 +123,63 @@ _SELF_MEMORY = frozenset(
         _P.AUDIT_READ_SELF,
     }
 )
+
+#: Everything a tenant administrator may do. Written out rather than computed.
+#:
+#: This was `frozenset(set(Permission))` — "whatever exists". That is a standing
+#: hazard rather than a shortcut: any permission added anywhere, for any reason,
+#: silently became tenant-admin authority the moment it was defined, with no decision
+#: and no diff at the grant site. A deployment capability introduced for operators
+#: would have been handed to every tenant admin without anyone choosing that.
+#:
+#: Listing it explicitly means a new permission is *not* granted until someone writes
+#: it down. `tests/test_tenant_admin_bundle.py` fails while a permission is neither
+#: granted here nor recorded in `_NOT_TENANT_SCOPED` with a reason.
+#:
+#: This bundle explicitly contains every tenant-scoped permission. Permissions
+#: excluded as deployment-level or machine-only authority are recorded in
+#: `_NOT_TENANT_SCOPED` with a reason.
+_TENANT_ADMIN: frozenset[Permission] = frozenset(
+    {
+        # Memory lifecycle, tenant-wide.
+        _P.MEMORY_READ_SELF,
+        _P.MEMORY_READ_TENANT,
+        _P.MEMORY_WRITE_SELF,
+        _P.MEMORY_WRITE_TENANT,
+        _P.MEMORY_ARCHIVE_SELF,
+        _P.MEMORY_ARCHIVE_TENANT,
+        _P.MEMORY_DELETE_SELF,
+        _P.MEMORY_DELETE_TENANT,
+        _P.MEMORY_APPROVE_TENANT,
+        _P.MEMORY_REJECT_TENANT,
+        # Governance + evidence.
+        _P.AUDIT_READ_SELF,
+        _P.AUDIT_READ_TENANT,
+        _P.METRICS_READ_TENANT,
+        _P.EVIDENCE_READ,
+        _P.RETENTION_READ,
+        _P.RETENTION_MANAGE,
+        _P.CONSENT_MANAGE,
+        # Tenant configuration.
+        _P.SETTINGS_MANAGE,
+    }
+)
+
+#: Permissions deliberately withheld from `_TENANT_ADMIN`, each with the reason, so an
+#: exclusion reads as a decision rather than an oversight.
+_NOT_TENANT_SCOPED: dict[Permission, str] = {
+    _P.WORKER_READ: "worker fleet health is deployment state, not one tenant's data",
+    _P.WORKER_REPLAY: "replaying a job affects the deployment, not one tenant",
+    _P.OPS_EVALS_READ: "evaluation results are deployment-wide; the harness runs "
+    "against its own fixtures and the result store has no tenant dimension",
+    _P.OPS_EVALS_RUN: "executing the harness is platform compute — one tenant must "
+    "not be able to spend it or replace the result every other tenant reads",
+    _P.OPS_TRACES_READ: "the span buffer is process-wide and carries no tenant "
+    "dimension, so reading it is deployment observability",
+    _P.OPS_METRICS: "process-wide Prometheus exposition, not per-tenant counts",
+    _P.OPS_READINESS: "dependency and configuration state for the installation",
+}
+
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     # Read-only persona.
@@ -145,18 +210,30 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.AUDIT_READ_SELF,
             _P.AUDIT_READ_TENANT,
             _P.METRICS_READ_TENANT,
-            _P.TRACES_READ_TENANT,
             _P.EVIDENCE_READ,
             _P.RETENTION_READ,
-            # Results are tenant-wide governance evidence, so this is an auditor
-            # capability. memory_admin manages lifecycle and does not receive it.
-            _P.EVALS_READ,
         }
     ),
-    Role.TENANT_ADMIN: frozenset(set(Permission)),
+    Role.TENANT_ADMIN: _TENANT_ADMIN,
     # Machine identity for the worker fleet: operational reads and replay, never
     # memory content or governance mutation.
     Role.SERVICE_WORKER: frozenset({_P.WORKER_READ, _P.WORKER_REPLAY}),
+    # Deployment authority. Deliberately holds no memory, audit, or governance
+    # permission: operating the platform does not include reading what customers
+    # stored in it. Distinct from `service_worker`, which is the worker fleet's own
+    # machine identity and may replay jobs but never inspect the deployment at large.
+    Role.PLATFORM_OPERATOR: frozenset(
+        {
+            _P.OPS_EVALS_READ,
+            _P.OPS_EVALS_RUN,
+            _P.OPS_TRACES_READ,
+            _P.OPS_METRICS,
+            _P.OPS_READINESS,
+            # Fleet health is deployment state. `service_worker` also holds this for
+            # its own self-reporting; an operator needs it to run the installation.
+            _P.WORKER_READ,
+        }
+    ),
 }
 
 #: Applied only when a credential carries **no role claim at all** and the

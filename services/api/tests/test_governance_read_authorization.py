@@ -68,13 +68,6 @@ def gov(monkeypatch):
     client = TestClient(app)
     repo = factory.get_repository()
 
-    # `GET /api/evals/latest` is a pure read: it serves the last completed run and
-    # never triggers one, so a result has to exist for the read to be exercised.
-    import app.routes.evals as evals_route
-
-    evals_route.reset_cache()
-    evals_route._store_result({"total": 1, "passed": 1, "failed": 0, "pass_rate": 1.0})
-
     class Harness:
         def __init__(self):
             self.client = client
@@ -127,7 +120,6 @@ def _paths(h, memory_id: str, trace_id: str) -> dict[tuple[str, str], str]:
         ("GET", "/api/loops/runs"): f"/api/loops/runs{q}",
         ("GET", "/api/loops/events"): f"/api/loops/events{q}",
         ("GET", "/api/loops/trace/{trace_id}"): f"/api/loops/trace/{trace_id}{q}",
-        ("GET", "/api/evals/latest"): f"/api/evals/latest{q}",
     }
 
 
@@ -185,13 +177,11 @@ def test_the_governance_witness_gate_is_not_vacuous(gov, monkeypatch):
 _AUDITOR_ONLY = pytest.mark.parametrize(
     "path_for",
     [
-        pytest.param(lambda m, t: "/api/traces", id="traces"),
         pytest.param(lambda m, t: "/api/evidence/policy", id="evidence-policy"),
         pytest.param(lambda m, t: "/api/evidence/audit/verify", id="evidence-verify"),
         pytest.param(lambda m, t: f"/api/evidence/deletion/{m}", id="evidence-deletion"),
         pytest.param(lambda m, t: f"/api/evidence/lifecycle/{m}", id="evidence-lifecycle"),
         pytest.param(lambda m, t: f"/api/evidence/response/{t}", id="evidence-bundle"),
-        pytest.param(lambda m, t: "/api/evals/latest", id="evals-latest"),
         pytest.param(lambda m, t: "/api/loops/runs", id="loop-runs"),
         pytest.param(lambda m, t: "/api/loops/events", id="loop-events"),
         pytest.param(lambda m, t: f"/api/loops/trace/{t}", id="loop-trace"),
@@ -333,16 +323,6 @@ class _Counters:
 
     def __init__(self, h, monkeypatch):
         self.h = h
-        self.harness_runs = 0
-        import app.routes.evals as evals_route
-
-        original = evals_route.run_evals
-
-        def counting(*a, **kw):
-            self.harness_runs += 1
-            return original(*a, **kw)
-
-        monkeypatch.setattr(evals_route, "run_evals", counting)
 
     def snapshot(self) -> dict:
         repo = self.h.repo
@@ -351,7 +331,6 @@ class _Counters:
             "loop_runs": len(repo.list_loop_runs(tenant_id=TENANT, limit=1000)),
             "loop_events": len(repo.list_loop_events(tenant_id=TENANT, limit=1000)),
             "memories": len(repo.list_memories(TENANT, "alice")),
-            "harness_runs": self.harness_runs,
         }
 
 
@@ -363,10 +342,8 @@ def counters(gov, monkeypatch):
 @pytest.mark.parametrize(
     "path_for",
     [
-        pytest.param(lambda m, t: "/api/traces", id="traces"),
         pytest.param(lambda m, t: "/api/evidence/policy", id="evidence-policy"),
         pytest.param(lambda m, t: f"/api/evidence/deletion/{m}", id="evidence-deletion"),
-        pytest.param(lambda m, t: "/api/evals/latest", id="evals-latest"),
         pytest.param(lambda m, t: "/api/loops/runs", id="loop-runs"),
         pytest.param(lambda m, t: f"/api/loops/trace/{t}", id="loop-trace"),
         pytest.param(lambda m, t: "/api/retention/decisions", id="retention-decisions"),
@@ -383,23 +360,6 @@ def test_a_refused_read_creates_no_side_effects(gov, counters, path_for):
     after = counters.snapshot()
     moved = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
     assert not moved, f"refused read left side effects: {moved}"
-
-
-def test_an_unauthorized_eval_read_never_reaches_the_harness(gov, counters):
-    """`evals:read` must not carry execution authority.
-
-    `latest` used to regenerate on a cold or stale cache, so an auditor holding only
-    `evals:read` could drive real harness runs — collapsing the `evals:read` /
-    `evals:run` split. It is a pure read now, and this asserts both halves: the
-    unauthorized caller is refused, and *nobody* on this path reaches the harness.
-    """
-    q = f"?tenant_id={TENANT}&user_id=alice"
-    assert gov.client.get(f"/api/evals/latest{q}", headers=_hdr("alice")).status_code == 403
-    assert counters.harness_runs == 0
-
-    r = gov.client.get(f"/api/evals/latest{q}", headers=_hdr("alice", "auditor"))
-    assert r.status_code == 200
-    assert counters.harness_runs == 0, "an authorized read must not execute either"
 
 
 def test_authorized_reads_do_move_the_counters(gov, counters):
@@ -483,7 +443,9 @@ _OMITTED = object()
 def test_jwt_governance_reads_match_trusted_header(jwt_client, roles, expected):
     """Authorization depends on the resolved principal, not on how it arrived — and
     every role-claim state resolves the same way it does for memory routes."""
-    r = jwt_client.get(f"/api/traces?tenant_id={TENANT}&user_id=alice", headers=_bearer(roles))
+    r = jwt_client.get(
+        f"/api/evidence/policy?tenant_id={TENANT}&user_id=alice", headers=_bearer(roles)
+    )
     assert r.status_code == expected, r.text
 
 
@@ -499,13 +461,9 @@ def test_the_static_loop_definitions_need_only_a_valid_credential_under_jwt(jwt_
 def test_governance_reads_are_unchanged_with_auth_disabled(api_client):
     """The development default: no principal, so nothing to authorize, and every
     surface still answers."""
-    import app.routes.evals as evals_route
-
     client, _repo = api_client
-    evals_route._store_result({"total": 1, "passed": 1, "failed": 0, "pass_rate": 1.0})
     q = "?tenant_id=t1&user_id=u1"
     for url in (
-        f"/api/traces{q}",
         f"/api/evidence/policy{q}",
         f"/api/evidence/audit/verify{q}",
         f"/api/retention/policies{q}",
@@ -513,6 +471,5 @@ def test_governance_reads_are_unchanged_with_auth_disabled(api_client):
         f"/api/loops{q}",
         f"/api/loops/runs{q}",
         f"/api/loops/events{q}",
-        f"/api/evals/latest{q}",
     ):
         assert client.get(url).status_code == 200, url

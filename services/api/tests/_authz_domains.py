@@ -13,7 +13,17 @@ would make the read gate responsible for the mutations it does not drive.
 from __future__ import annotations
 
 _GOVERNANCE_PREFIXES = ("/api/evidence", "/api/retention", "/api/loops")
-_GOVERNANCE_PATHS = frozenset({"/api/traces", "/api/evals/latest"})
+#: Deployment-level surfaces. Not governance reads: they describe the installation,
+#: not one tenant's activity, and are gated by `ops:*` rather than tenant permissions.
+_OPERATIONAL_PATHS = frozenset(
+    {
+        "/api/traces",
+        "/api/evals/latest",
+        "/api/evals/run",
+        "/api/admin/workers/health",
+        "/api/admin/readiness",
+    }
+)
 
 
 def is_memory_domain(method: str, path: str) -> bool:
@@ -23,11 +33,15 @@ def is_memory_domain(method: str, path: str) -> bool:
 def is_governance_read(method: str, path: str) -> bool:
     if method != "GET":
         return False
-    return path.startswith(_GOVERNANCE_PREFIXES) or path in _GOVERNANCE_PATHS
+    return path.startswith(_GOVERNANCE_PREFIXES)
 
 
 def is_governance_mutation(method: str, path: str) -> bool:
     return method == "POST" and path.startswith("/api/retention/")
+
+
+def is_operational_domain(method: str, path: str) -> bool:
+    return path in _OPERATIONAL_PATHS
 
 
 def is_runtime_gated(method: str, path: str) -> bool:
@@ -35,6 +49,7 @@ def is_runtime_gated(method: str, path: str) -> bool:
         is_memory_domain(method, path)
         or is_governance_read(method, path)
         or is_governance_mutation(method, path)
+        or is_operational_domain(method, path)
     )
 
 

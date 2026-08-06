@@ -207,6 +207,7 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
     )
     assert enforced == [
         "DELETE /api/memories/{memory_id}",
+        "GET /api/admin/readiness",
         "GET /api/admin/workers/health",
         "GET /api/audit",
         "GET /api/evals/latest",
@@ -228,8 +229,10 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         "GET /api/retention/decisions",
         "GET /api/retention/memory/{memory_id}",
         "GET /api/retention/policies",
+        "GET /api/traces",
         "PATCH /api/memories/{memory_id}",
         "POST /api/chat",
+        "POST /api/evals/run",
         "POST /api/retention/consent",
         "POST /api/retention/legal-hold",
         "POST /api/retention/pin",
@@ -238,8 +241,12 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
 
 
 def test_a_planned_route_is_not_described_as_enforced():
+    """Every remaining `planned` route must still name the permission it intends.
+
+    The list is empty now — every classified route is enforced or public — so this
+    guards the *next* route added in a planned state rather than a current one.
+    """
     planned = [spec for spec in ROUTE_AUTHZ.values() if spec.status is Status.PLANNED]
-    assert planned, "nothing planned — did the registry lose its remaining work?"
     for spec in planned:
         if spec.scope is Scope.AUTHENTICATED:
             # "any authenticated principal" is the contract; there is no narrower
@@ -383,3 +390,55 @@ def test_every_enforced_route_has_a_witness_test():
     )
     stale = _WITNESSED_HERE - enforced
     assert not stale, f"witness list names routes that are no longer enforced: {sorted(stale)}"
+
+
+# ── conditionally protected routes must say so ───────────────────────────────
+def test_the_metrics_note_matches_its_conditional_runtime_contract():
+    """`/metrics` has two runtime states and the registry must describe both.
+
+    Public by default — it sits outside `/api/*` and is normally scraped over a
+    private network — but `MEMORYOPS_PROTECT_METRICS_ENDPOINT=true` authenticates it
+    and requires `ops:metrics`. A flat `public` classification would publish half the
+    contract, and specifically the weaker half: a reader of the matrix would conclude
+    the endpoint cannot be protected.
+
+    This guard is tied to the code that implements the condition, so the note cannot
+    drift from it while both halves still exist.
+    """
+    import inspect
+
+    from app.core.config import Settings
+    from app.routes import metrics_prometheus
+
+    spec = ROUTE_AUTHZ[("GET", "/metrics")]
+    assert spec.status is Status.PUBLIC
+
+    setting = "protect_metrics_endpoint"
+    assert hasattr(Settings, "model_fields") and setting in Settings.model_fields, (
+        "the conditional setting is gone — update the note and delete this guard"
+    )
+    source = inspect.getsource(metrics_prometheus)
+    assert setting in source and "OPS_METRICS" in source, (
+        "the route no longer implements the conditional check — the note is now false"
+    )
+
+    note = spec.note.lower()
+    assert "public by default" in note
+    assert "memoryops_protect_metrics_endpoint" in note
+    assert "ops:metrics" in note
+
+
+def test_the_metrics_conditional_note_reaches_the_generated_matrix():
+    """The published document, not just the registry, has to carry it."""
+    from pathlib import Path
+
+    matrix = (
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "security"
+        / "endpoint-authorization-matrix.md"
+    ).read_text()
+    row = [ln for ln in matrix.splitlines() if "`/metrics`" in ln and "`GET`" in ln]
+    assert row, "no /metrics row in the generated matrix"
+    assert "MEMORYOPS_PROTECT_METRICS_ENDPOINT" in row[0]
+    assert "ops:metrics" in row[0]
