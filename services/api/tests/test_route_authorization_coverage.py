@@ -21,7 +21,7 @@ import pytest
 from app.auth.authz_spec import ROUTE_AUTHZ, AuthzSpec, Scope, Status, iter_routes
 from app.auth.roles import Permission, Role, permissions_for
 
-from ._authz_domains import is_governance_domain, is_memory_domain
+from ._authz_domains import is_runtime_gated
 
 
 @pytest.fixture(scope="module")
@@ -230,6 +230,10 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         "GET /api/retention/policies",
         "PATCH /api/memories/{memory_id}",
         "POST /api/chat",
+        "POST /api/retention/consent",
+        "POST /api/retention/legal-hold",
+        "POST /api/retention/pin",
+        "POST /api/retention/protect",
     ], f"enforced set changed: {enforced}"
 
 
@@ -370,8 +374,7 @@ def test_every_enforced_route_has_a_witness_test():
     runtime_gated = {
         f"{m} {p}"
         for (m, p), spec in ROUTE_AUTHZ.items()
-        if spec.status is Status.ENFORCED
-        and (is_memory_domain(p) or is_governance_domain(p))
+        if spec.status is Status.ENFORCED and is_runtime_gated(m, p)
     }
     uncovered = enforced - _WITNESSED_HERE - runtime_gated
     assert not uncovered, (

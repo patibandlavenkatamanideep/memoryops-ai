@@ -35,6 +35,32 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — governance mutations enforced
+
+**28 of 39 routes enforced.** Planned 2 (`POST /api/evals/run`, `GET /api/traces`),
+public 9.
+
+- **Legal hold, pin, protect and consent now require `retention:manage` /
+  `consent:manage`.** `auditor` reads governance state and cannot change it;
+  `memory_admin` and `tenant_admin` manage it within their tenant.
+
+### Fixed
+- **An admin could not govern another user's memory.** `_load()` ran
+  `enforce_scope(request, tenant_id, user_id)` and then looked the record up with
+  `repo.get_memory(tenant_id, user_id, memory_id)` — both halves trusting the
+  request's `user_id`. Naming the real owner was refused (`403`, scope mismatch);
+  naming yourself found nothing (`404`). The stored owner is now authoritative: the
+  request's `user_id` is a compatibility hint about where to look, and the lookup is
+  tenant-scoped and user-spanning.
+
+### Audit evidence
+- **Actor and target are recorded separately.** Once an admin can change someone
+  else's governance state, `audit.user_id = "bob"` cannot say whether Bob acted or was
+  acted upon. `user_id` stays the *target* for query compatibility, and content-free
+  metadata now names `actor_id`, `actor_user_id`, `actor_type` (human /
+  service_account), `target_user_id`, `authorized_permission`, and
+  `acted_on_behalf_of_another_user`. Never the credential, its claims, or memory text.
+
 ## Unreleased — governance and evidence reads enforced
 
 **24 of 39 routes enforced** (was 10). Planned 6, public 9.

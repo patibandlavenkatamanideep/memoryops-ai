@@ -22,7 +22,7 @@ from app.db.entities import StoredMemory
 from app.schemas.memory import MemoryType, Sensitivity, Source
 from app.schemas.memory import Status as MemStatus
 
-from ._authz_domains import enforced_in, is_governance_domain
+from ._authz_domains import enforced_in, is_governance_read
 from ._secret_fixtures import FAKE_JWT_SIGNING_KEY
 
 TENANT = "acme"
@@ -148,7 +148,7 @@ def test_every_enforced_governance_read_records_a_decision(gov):
     )
     urls = _paths(gov, mem.id, trace)
 
-    expected = enforced_in(ROUTE_AUTHZ, Status.ENFORCED, is_governance_domain)
+    expected = enforced_in(ROUTE_AUTHZ, Status.ENFORCED, is_governance_read)
     assert set(urls) == expected, (
         "the gate does not drive every enforced governance route: "
         f"{sorted(set(urls) ^ expected)}"

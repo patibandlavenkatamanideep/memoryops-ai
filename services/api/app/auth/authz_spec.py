@@ -311,16 +311,16 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_READ
     ),
     ("POST", "/api/retention/legal-hold"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_MANAGE
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_MANAGE
     ),
     ("POST", "/api/retention/pin"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_MANAGE
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_MANAGE
     ),
     ("POST", "/api/retention/protect"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.RETENTION_MANAGE
+        _S.TENANT, _ST.ENFORCED, permission=_P.RETENTION_MANAGE
     ),
     ("POST", "/api/retention/consent"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.CONSENT_MANAGE
+        _S.TENANT, _ST.ENFORCED, permission=_P.CONSENT_MANAGE
     ),
     # ── loops (operational timelines, tenant-scoped) ────────────────────────
     ("GET", "/api/loops"): AuthzSpec(

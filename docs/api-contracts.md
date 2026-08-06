@@ -344,6 +344,23 @@ calls the harness, and it updates what this route serves.
 Results are **deployment-wide**, not per-tenant — the harness runs against its own
 isolated fixtures — which is why this route takes no tenant parameter.
 
+## Retention + consent mutations
+`POST /api/retention/{legal-hold,pin,protect}` require `retention:manage`;
+`POST /api/retention/consent` requires `consent:manage`. Both are held by
+`memory_admin` and `tenant_admin`; `auditor` is deliberately refused — reading
+governance evidence is not permission to change it.
+
+Body: `{ tenant_id, user_id, memory_id, ... }`. **The stored memory's owner is
+authoritative**, not the body's `user_id`, which is only a hint about where to look.
+An administrator therefore sends their own scope and the loaded record decides. A
+memory outside the authenticated tenant answers `404`; naming another tenant outright
+answers `403`.
+
+Each mutation appends one content-free audit event in the same transaction as the
+governance change. `user_id` on that event is the **target**; the actor is recorded
+separately in metadata (`actor_user_id`, `actor_type`, `authorized_permission`,
+`acted_on_behalf_of_another_user`) so "who did this to whom" is unambiguous.
+
 ## Retention reads
 `GET /api/retention/policies`, `/decisions`, `/memory/{memory_id}` require
 `retention:read` — held by **both** `auditor` and `memory_admin`. Retention describes
