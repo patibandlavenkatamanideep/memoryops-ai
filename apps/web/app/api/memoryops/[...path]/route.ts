@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 
-import {
-  hasAtLeast,
-  requiredRole,
-  resolveIdentity,
-  UnauthenticatedError,
-} from "@/lib/identity";
+import { resolveIdentity, UnauthenticatedError } from "@/lib/identity";
+import { canAttempt } from "@/lib/capabilities";
 import { apiRoleForWebRole } from "@/lib/apiRoles";
 import { apiCredential } from "@/lib/memoryopsToken";
 import { stripClientScope, stripScopeFromBody } from "@/lib/scope";
@@ -64,11 +60,43 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
     throw error;
   }
 
-  // ── may they do this ──────────────────────────────────────────────────────
-  const needed = requiredRole(targetPath, method);
-  if (!hasAtLeast(identity.role, needed)) {
+  // ── read the body once ────────────────────────────────────────────────────
+  // Before the capability check, because a PATCH's decision depends on its shape,
+  // and the request stream cannot be read twice.
+  const hasBody = method !== "GET" && method !== "HEAD";
+  let parsedBody: unknown;
+  if (hasBody) {
+    const raw = await request.text();
+    if (raw) {
+      try {
+        parsedBody = JSON.parse(raw);
+      } catch {
+        return NextResponse.json({ detail: "invalid JSON body" }, { status: 400 });
+      }
+    } else {
+      parsedBody = {};
+    }
+  }
+
+  // ── may they attempt this ─────────────────────────────────────────────────
+  // Capability, not rank. The ladder this replaces let `memory_admin` pass every
+  // `auditor` check and `owner` pass everything, including deployment surfaces no
+  // tenant role can reach — and it defaulted unknown paths to readable.
+  //
+  // Defence in depth only: this can refuse, never authorize. The API re-decides
+  // after loading the record, which is the only place ownership is known.
+  const decision = canAttempt({
+    webRole: identity.role,
+    method,
+    path: targetPath,
+    body: parsedBody,
+  });
+  if (!decision.allowed) {
     return NextResponse.json(
-      { detail: "insufficient role", required_role: needed },
+      {
+        detail: "insufficient capability",
+        required_permissions: decision.requiredPermissions,
+      },
       { status: 403 },
     );
   }
@@ -107,21 +135,12 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
   }
 
   let body: string | undefined;
-  if (method !== "GET" && method !== "HEAD") {
-    const raw = await request.text();
-    if (raw) {
-      try {
-        body = JSON.stringify({
-          ...(stripScopeFromBody(JSON.parse(raw)) as Record<string, unknown>),
-          tenant_id: identity.tenantId,
-          user_id: identity.userId,
-        });
-      } catch {
-        return NextResponse.json({ detail: "invalid JSON body" }, { status: 400 });
-      }
-    } else {
-      body = JSON.stringify({ tenant_id: identity.tenantId, user_id: identity.userId });
-    }
+  if (hasBody) {
+    body = JSON.stringify({
+      ...(stripScopeFromBody(parsedBody) as Record<string, unknown>),
+      tenant_id: identity.tenantId,
+      user_id: identity.userId,
+    });
   }
 
   let upstream: Response;

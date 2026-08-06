@@ -35,6 +35,39 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — web capabilities replace the role ladder
+
+- **`hasAtLeast()`, `ROLE_RANK` and `requiredRole()` are gone.** The web ranked
+  personas — viewer < developer < auditor < memory_admin < owner — and asked "is this
+  role at least X". Ranks cannot express orthogonal capabilities, and the API's model
+  is capabilities. Three consequences, all reproduced before the change:
+  `memory_admin` passed every `auditor` check (it outranked auditor, while holding no
+  `evidence:read` at the API); `owner` passed checks for deployment surfaces no tenant
+  role can reach; and an unrecognised path fell through to the least-privileged role,
+  so a newly added endpoint was **readable** rather than denied.
+- **`apps/web/lib/authzCapabilities.generated.ts`** is generated from the API's own
+  `ROUTE_AUTHZ` and `ROLE_PERMISSIONS` — the objects the server enforces from, walked
+  as structured data rather than parsed. A new permission granted to a role, a changed
+  route requirement, or a new route all fail `--check` in CI.
+- **Unknown fails closed**: unknown path, unknown method, unknown persona, unknown
+  PATCH field and unknown status transition are all denied. Paths are normalised
+  first, so `/healthz/../api/evidence/policy` cannot dodge a match.
+- **UI controls use the same evaluator** (`uiCapabilities()`), so an affordance cannot
+  claim a capability the proxy would refuse. There is no component-level role table.
+- The BFF denial names capabilities, not rank:
+  `{"detail": "insufficient capability", "required_permissions": [...]}`.
+- `NEVER_WEB_ASSIGNABLE` is now emitted to the web mirror and enforced: no persona can
+  resolve to `service_worker` or `platform_operator`.
+
+### The boundary this deliberately does not cross
+The web answers *may this persona attempt this route and action shape* — never *is
+this operation authorized on this record*. The browser does not know a memory's stored
+owner, whether a call is self- or tenant-scoped, the record's lifecycle status, or
+anything about legal hold, revisions or consent. So `status: "active"` is treated as
+**approve-or-restore** and allowed when the persona holds either, with the API
+resolving the real transition after loading the record. This layer only ever removes
+access; the API stays authoritative.
+
 ## Unreleased — the platform operational boundary
 
 **31 of 40 routes enforced. Zero planned.** 9 public, each reviewed below.

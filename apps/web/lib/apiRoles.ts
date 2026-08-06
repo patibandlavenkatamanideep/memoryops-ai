@@ -1,4 +1,4 @@
-import type { Role as WebRole } from "./roles";
+import type { Role as WebRole } from "./webRoles";
 import {
   API_ROLES,
   NEVER_ASSIGNABLE_TO_HUMANS,

@@ -27,12 +27,12 @@ import "server-only";
  */
 
 import { auth } from "@/auth";
-import { isRole, type Role } from "@/lib/roles";
+import { isRole, type Role } from "@/lib/webRoles";
 
-// Re-exported so callers have one import site; the rules themselves live in
-// lib/roles.ts, free of server-only/NextAuth so they stay directly unit-testable.
-export { hasAtLeast, isRole, requiredRole, ROLES } from "@/lib/roles";
-export type { Role } from "@/lib/roles";
+// Re-exported so callers have one import site. The persona list lives in
+// lib/webRoles.ts and what each may attempt in lib/capabilities.ts — both free of
+// server-only/NextAuth so they stay directly unit-testable.
+export { isRole, ROLES, type Role } from "@/lib/webRoles";
 
 export type WebMode = "demo" | "authenticated";
 
