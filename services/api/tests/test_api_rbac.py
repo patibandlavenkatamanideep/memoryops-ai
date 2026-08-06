@@ -91,8 +91,17 @@ def test_service_worker_is_operational_only():
     assert Permission.MEMORY_READ_SELF not in granted
 
 
-def test_tenant_admin_holds_every_permission():
-    assert permissions_for(frozenset({Role.TENANT_ADMIN})) == frozenset(Permission)
+def test_tenant_admin_holds_every_tenant_permission_and_no_deployment_one():
+    """It used to hold `frozenset(Permission)` — literally every permission, including
+    ones that did not exist yet. The bundle is explicit now, so a deployment
+    capability is not granted by the act of defining it."""
+    from app.auth.roles import _NOT_TENANT_SCOPED
+
+    granted = permissions_for(frozenset({Role.TENANT_ADMIN}))
+    assert granted == frozenset(Permission) - set(_NOT_TENANT_SCOPED)
+    assert granted, "tenant_admin must still hold every tenant-scoped capability"
+    for permission in _NOT_TENANT_SCOPED:
+        assert permission not in granted
 
 
 def test_every_role_is_mapped():
@@ -460,6 +469,16 @@ def test_no_human_persona_maps_to_the_service_worker_role():
     contract = _role_contract()
     assert "service_worker" not in contract["web_to_api"].values()
     assert contract["never_assignable_to_humans"] == ["service_worker"]
+
+
+def test_no_web_persona_can_become_deployment_authority():
+    """`platform_operator` is assignable to a person, but never as a tenant's web
+    persona — a customer's UI session must not be able to reach process-wide
+    observability or platform compute."""
+    contract = _role_contract()
+    never = set(contract["never_web_assignable"]["roles"])
+    assert never == {"service_worker", "platform_operator"}
+    assert never.isdisjoint(contract["web_to_api"].values())
 
 
 def test_the_contract_lists_exactly_the_api_roles_that_exist():

@@ -22,6 +22,7 @@ export const API_ROLES = [
   "memory_admin",
   "tenant_admin",
   "service_worker",
+  "platform_operator",
 ] as const;
 
 export const NEVER_ASSIGNABLE_TO_HUMANS = [

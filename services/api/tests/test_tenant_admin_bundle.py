@@ -73,13 +73,39 @@ def test_withheld_permissions_are_actually_withheld():
         assert permission not in granted, f"{permission.value} still granted: {reason}"
 
 
-def test_this_commit_moves_no_authority():
-    """A refactor, not a policy change: tenant_admin holds exactly what it held.
+def test_tenant_admin_is_exactly_the_tenant_scoped_permissions():
+    """Everything except what is deliberately withheld — no more, no less."""
+    granted = permissions_for(frozenset({Role.TENANT_ADMIN}))
+    assert granted == frozenset(Permission) - set(_NOT_TENANT_SCOPED)
 
-    Rewriting the grant *and* narrowing it in one step would make the narrowing
-    invisible in review — the diff would look like formatting.
+
+def test_a_platform_operator_holds_no_tenant_data_permission():
+    """Operating the deployment does not include reading what customers stored in it.
+
+    The two authorities are disjoint on purpose: an operator sees process-wide
+    telemetry and spends platform compute, and never memory, audit or governance.
     """
-    assert permissions_for(frozenset({Role.TENANT_ADMIN})) == frozenset(set(Permission))
+    operator = permissions_for(frozenset({Role.PLATFORM_OPERATOR}))
+    assert operator, "the role must grant something"
+    assert operator.isdisjoint(_TENANT_ADMIN), (
+        f"overlaps tenant authority: {sorted(p.value for p in operator & _TENANT_ADMIN)}"
+    )
+    assert all(p.value.startswith("ops:") for p in operator)
+
+
+def test_no_tenant_role_can_reach_a_deployment_permission():
+    """The escalation this whole commit exists to prevent."""
+    for role in (
+        Role.MEMORY_VIEWER,
+        Role.MEMORY_USER,
+        Role.MEMORY_ADMIN,
+        Role.AUDITOR,
+        Role.TENANT_ADMIN,
+        Role.SERVICE_WORKER,
+    ):
+        granted = permissions_for(frozenset({role}))
+        leaked = {p for p in granted if p.value.startswith("ops:")}
+        assert not leaked, f"{role.value} holds {sorted(p.value for p in leaked)}"
 
 
 def test_tenant_admin_still_holds_every_tenant_capability():

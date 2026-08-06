@@ -27,7 +27,8 @@
     "auditor",
     "memory_admin",
     "tenant_admin",
-    "service_worker"
+    "service_worker",
+    "platform_operator"
   ],
   "aliases": {
     "$comment": [
@@ -39,5 +40,18 @@
   },
   "never_assignable_to_humans": [
     "service_worker"
-  ]
+  ],
+  "never_web_assignable": {
+    "$comment": [
+      "Roles the web BFF must never mint from a UI persona.",
+      "service_worker is a machine identity for the worker fleet.",
+      "platform_operator runs the deployment: process-wide observability and",
+      "platform compute. It is assignable to a person, but never *as a tenant's*",
+      "web persona - no customer's UI session may become deployment authority."
+    ],
+    "roles": [
+      "service_worker",
+      "platform_operator"
+    ]
+  }
 }

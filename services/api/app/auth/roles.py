@@ -70,6 +70,15 @@ class Permission(str, Enum):
     EVALS_READ = "evals:read"
     #: Executing an evaluation. Cost-bearing — a denial-of-wallet vector.
     EVALS_RUN = "evals:run"
+    # Deployment operations. These act on the process or the whole installation, not
+    # on one tenant's data, so no tenant role holds them however senior it is —
+    # "administrator of tenant A" and "operator of this deployment" are different
+    # authorities, and conflating them lets one customer act for all of them.
+    OPS_EVALS_READ = "ops:evals:read"
+    OPS_EVALS_RUN = "ops:evals:run"
+    OPS_TRACES_READ = "ops:traces:read"
+    OPS_METRICS = "ops:metrics"
+    OPS_READINESS = "ops:readiness"
 
 
 class Role(str, Enum):
@@ -88,6 +97,10 @@ class Role(str, Enum):
     MEMORY_ADMIN = "memory_admin"
     TENANT_ADMIN = "tenant_admin"
     SERVICE_WORKER = "service_worker"
+    #: Runs the deployment. Not a tenant role and not reachable by escalation within
+    #: one — a platform operator sees process-wide state and spends platform compute,
+    #: neither of which belongs to any single customer.
+    PLATFORM_OPERATOR = "platform_operator"
 
 
 #: Accepted role names that are not `Role` values. `memory_reader` shipped in the
@@ -166,9 +179,17 @@ _TENANT_ADMIN: frozenset[Permission] = frozenset(
 )
 
 #: Permissions deliberately withheld from `_TENANT_ADMIN`, each with the reason, so an
-#: exclusion reads as a decision rather than an oversight. Empty while the bundle is a
-#: faithful restatement of the previous grants.
-_NOT_TENANT_SCOPED: dict[Permission, str] = {}
+#: exclusion reads as a decision rather than an oversight.
+_NOT_TENANT_SCOPED: dict[Permission, str] = {
+    _P.OPS_EVALS_READ: "evaluation results are deployment-wide; the harness runs "
+    "against its own fixtures and the result store has no tenant dimension",
+    _P.OPS_EVALS_RUN: "executing the harness is platform compute — one tenant must "
+    "not be able to spend it or replace the result every other tenant reads",
+    _P.OPS_TRACES_READ: "the span buffer is process-wide and carries no tenant "
+    "dimension, so reading it is deployment observability",
+    _P.OPS_METRICS: "process-wide Prometheus exposition, not per-tenant counts",
+    _P.OPS_READINESS: "dependency and configuration state for the installation",
+}
 
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
@@ -212,6 +233,19 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     # Machine identity for the worker fleet: operational reads and replay, never
     # memory content or governance mutation.
     Role.SERVICE_WORKER: frozenset({_P.WORKER_READ, _P.WORKER_REPLAY}),
+    # Deployment authority. Deliberately holds no memory, audit, or governance
+    # permission: operating the platform does not include reading what customers
+    # stored in it. Distinct from `service_worker`, which is the worker fleet's own
+    # machine identity and may replay jobs but never inspect the deployment at large.
+    Role.PLATFORM_OPERATOR: frozenset(
+        {
+            _P.OPS_EVALS_READ,
+            _P.OPS_EVALS_RUN,
+            _P.OPS_TRACES_READ,
+            _P.OPS_METRICS,
+            _P.OPS_READINESS,
+        }
+    ),
 }
 
 #: Applied only when a credential carries **no role claim at all** and the
