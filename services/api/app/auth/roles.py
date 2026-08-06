@@ -116,6 +116,61 @@ _SELF_MEMORY = frozenset(
     }
 )
 
+#: Everything a tenant administrator may do. Written out rather than computed.
+#:
+#: This was `frozenset(set(Permission))` — "whatever exists". That is a standing
+#: hazard rather than a shortcut: any permission added anywhere, for any reason,
+#: silently became tenant-admin authority the moment it was defined, with no decision
+#: and no diff at the grant site. A deployment capability introduced for operators
+#: would have been handed to every tenant admin without anyone choosing that.
+#:
+#: Listing it explicitly means a new permission is *not* granted until someone writes
+#: it down. `tests/test_tenant_admin_bundle.py` fails while a permission is neither
+#: granted here nor recorded in `_NOT_TENANT_SCOPED` with a reason.
+#:
+#: This bundle is currently the whole enum — the change is the *spelling*, not the
+#: grants, so no caller's authority moves. Capabilities leave it only when a route is
+#: deliberately reclassified as deployment-level.
+_TENANT_ADMIN: frozenset[Permission] = frozenset(
+    {
+        # Memory lifecycle, tenant-wide.
+        _P.MEMORY_READ_SELF,
+        _P.MEMORY_READ_TENANT,
+        _P.MEMORY_WRITE_SELF,
+        _P.MEMORY_WRITE_TENANT,
+        _P.MEMORY_ARCHIVE_SELF,
+        _P.MEMORY_ARCHIVE_TENANT,
+        _P.MEMORY_DELETE_SELF,
+        _P.MEMORY_DELETE_TENANT,
+        _P.MEMORY_APPROVE_TENANT,
+        _P.MEMORY_REJECT_TENANT,
+        # Governance + evidence.
+        _P.AUDIT_READ_SELF,
+        _P.AUDIT_READ_TENANT,
+        _P.METRICS_READ_TENANT,
+        _P.TRACES_READ_TENANT,
+        _P.EVIDENCE_READ,
+        _P.RETENTION_READ,
+        _P.RETENTION_MANAGE,
+        _P.CONSENT_MANAGE,
+        # Tenant configuration.
+        _P.SETTINGS_MANAGE,
+        # Operational + evaluation. Held today because the routes behind them are
+        # still classified tenant-scoped; both classifications are revisited when the
+        # deployment boundary lands, and these move out with them.
+        _P.WORKER_READ,
+        _P.WORKER_REPLAY,
+        _P.EVALS_READ,
+        _P.EVALS_RUN,
+    }
+)
+
+#: Permissions deliberately withheld from `_TENANT_ADMIN`, each with the reason, so an
+#: exclusion reads as a decision rather than an oversight. Empty while the bundle is a
+#: faithful restatement of the previous grants.
+_NOT_TENANT_SCOPED: dict[Permission, str] = {}
+
+
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     # Read-only persona.
     Role.MEMORY_VIEWER: frozenset({_P.MEMORY_READ_SELF, _P.AUDIT_READ_SELF}),
@@ -153,7 +208,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.EVALS_READ,
         }
     ),
-    Role.TENANT_ADMIN: frozenset(set(Permission)),
+    Role.TENANT_ADMIN: _TENANT_ADMIN,
     # Machine identity for the worker fleet: operational reads and replay, never
     # memory content or governance mutation.
     Role.SERVICE_WORKER: frozenset({_P.WORKER_READ, _P.WORKER_REPLAY}),
