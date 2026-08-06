@@ -21,8 +21,8 @@ enforced here or it is not enforced at all.
 
 Design
 ------
-Deliberately small. Five roles, a flat permission set, and a static mapping — no
-hierarchy engine, no per-resource ACLs, no policy DSL. Permissions are checked at
+Deliberately small: a fixed role set, a flat permission set, and a static mapping —
+no hierarchy engine, no per-resource ACLs, no policy DSL. Permissions are checked at
 the route; roles are only a way to name bundles of them.
 
 MemoryOps stays identity-neutral: roles arrive as claims from whatever issuer you
@@ -136,9 +136,9 @@ _SELF_MEMORY = frozenset(
 #: it down. `tests/test_tenant_admin_bundle.py` fails while a permission is neither
 #: granted here nor recorded in `_NOT_TENANT_SCOPED` with a reason.
 #:
-#: This bundle is currently the whole enum — the change is the *spelling*, not the
-#: grants, so no caller's authority moves. Capabilities leave it only when a route is
-#: deliberately reclassified as deployment-level.
+#: This bundle explicitly contains every tenant-scoped permission. Permissions
+#: excluded as deployment-level or machine-only authority are recorded in
+#: `_NOT_TENANT_SCOPED` with a reason.
 _TENANT_ADMIN: frozenset[Permission] = frozenset(
     {
         # Memory lifecycle, tenant-wide.

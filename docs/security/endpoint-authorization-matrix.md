@@ -142,7 +142,7 @@ Unauthenticated by design. These must expose no tenant or user identifiers.
 | `GET` | `/docs/oauth2-redirect` | public | — *(public)* |  |
 | `GET` | `/healthz` | public | — *(public)* | process liveness |
 | `GET` | `/healthz/workers` | public | — *(public)* | boolean health only; no counts, no scope keys |
-| `GET` | `/metrics` | public | — *(public)* | Prometheus exposition, content-free and low-cardinality (no tenant or user labels). Should be private-network-only or operator-gated; it sits outside the /api/* auth boundary today. |
+| `GET` | `/metrics` | public | — *(public)* | Public by default; conditionally operator-protected when MEMORYOPS_PROTECT_METRICS_ENDPOINT=true (requires ops:metrics). |
 | `GET` | `/openapi.json` | public | — *(public)* | deployment-configurable; describes the full surface |
 | `GET` | `/readyz` | public | — *(public)* | dependency states with reason codes, no secrets. Candidate for restriction: it discloses which providers and backends are configured. |
 | `GET` | `/redoc` | public | — *(public)* | deployment-configurable |

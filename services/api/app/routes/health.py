@@ -50,8 +50,15 @@ def workers_health_public() -> dict:
     # activity and operational condition to an unauthenticated caller, and this
     # endpoint sits outside the /api/* auth boundary. Counts, per-scope history and
     # failure reasons all live behind `worker:read` on /api/admin/workers/health.
-    detail = _worker_health_detail()
-    return {"healthy": detail.get("healthy")}
+    # Built by *selecting* one key rather than deleting others: `_worker_health_detail()`
+    # returns counts on success and a `detail` naming an exception type on failure, and
+    # none of that belongs to an unauthenticated caller. Selecting means a field added
+    # upstream later cannot leak here by default.
+    try:
+        healthy = bool(_worker_health_detail().get("healthy"))
+    except Exception:  # noqa: BLE001 — a liveness probe must not 500 (invariant #4)
+        healthy = False
+    return {"healthy": healthy}
 
 
 @admin_router.get("/readiness")

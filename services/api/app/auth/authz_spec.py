@@ -160,12 +160,16 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         ),
     ),
     ("GET", "/metrics"): AuthzSpec(
+        # Two runtime states, and the matrix must describe both. Public by default
+        # because the endpoint sits outside `/api/*` and is normally scraped over a
+        # private network; `MEMORYOPS_PROTECT_METRICS_ENDPOINT=true` authenticates it
+        # and requires `ops:metrics`. Classifying it as flatly public would publish
+        # half the contract — the half that happens to be the weaker one.
         _S.PUBLIC,
         _ST.PUBLIC,
         note=(
-            "Prometheus exposition, content-free and low-cardinality (no tenant or "
-            "user labels). Should be private-network-only or operator-gated; it sits "
-            "outside the /api/* auth boundary today."
+            "Public by default; conditionally operator-protected when "
+            "MEMORYOPS_PROTECT_METRICS_ENDPOINT=true (requires ops:metrics)."
         ),
     ),
     ("GET", "/docs"): AuthzSpec(_S.PUBLIC, _ST.PUBLIC, note="deployment-configurable"),

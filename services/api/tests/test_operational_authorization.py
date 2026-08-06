@@ -394,21 +394,67 @@ def test_metrics_stays_open_by_default(monkeypatch):
     assert client.get("/metrics", headers=_hdr(roles="memory_viewer")).status_code == 200
 
 
-def test_public_liveness_stays_minimal():
-    """`/healthz` and `/healthz/workers` are load-balancer probes: liveness and a
-    boolean, with no counts, scope keys, or failure reasons."""
+def _reloaded_client(monkeypatch):
     import importlib
 
     from fastapi.testclient import TestClient
 
     import app.main as main_module
+    from app.core import config
 
+    monkeypatch.setenv("MEMORYOPS_STORAGE", "memory")
+    config.get_settings.cache_clear()
     importlib.reload(main_module)
-    client = TestClient(main_module.app)
+    return TestClient(main_module.app)
 
+
+def test_public_liveness_stays_minimal(monkeypatch):
+    """`/healthz` is a load-balancer probe: liveness only, no operational detail."""
+    client = _reloaded_client(monkeypatch)
     health = client.get("/healthz").json()
-    assert set(health) <= {"status", "version", "uptime_seconds", "metrics_enabled"}
+    assert set(health) == {"status", "version", "uptime_seconds", "metrics_enabled"}
 
-    workers = client.get("/healthz/workers").json()
-    assert set(workers) <= {"healthy", "detail"}
-    assert "counts" not in workers and "scopes" not in workers
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ({"healthy": True, "runs": 12, "last_run_per_scope": {"acme:alice": "ok"}}, True),
+        ({"healthy": False, "detail": "unavailable: OperationalError", "runs": 3}, False),
+    ],
+    ids=["healthy", "unhealthy"],
+)
+def test_public_worker_health_is_exactly_one_boolean(monkeypatch, detail, expected):
+    """Exact equality, not a subset.
+
+    A subset assertion would still pass if a failure reason appeared beside the
+    boolean — and the unhealthy path is precisely where the tempting extra field is,
+    because whoever adds it will be trying to make an outage easier to diagnose. The
+    reason names an exception type and the scope keys name tenants and users; both
+    belong to `GET /api/admin/workers/health`, behind `worker:read`.
+    """
+    import app.routes.health as health_route
+
+    client = _reloaded_client(monkeypatch)
+    monkeypatch.setattr(health_route, "_worker_health_detail", lambda: detail)
+
+    body = client.get("/healthz/workers").json()
+    assert set(body) == {"healthy"}
+    assert isinstance(body["healthy"], bool)
+    assert body["healthy"] is expected
+
+
+def test_public_worker_health_survives_a_broken_backend(monkeypatch):
+    """A liveness probe must not 500 (invariant #4), and must not leak the failure."""
+    import app.routes.health as health_route
+
+    client = _reloaded_client(monkeypatch)
+
+    def _explode():
+        raise RuntimeError("connection refused to db-primary.internal:5432")
+
+    monkeypatch.setattr(health_route, "_worker_health_detail", _explode)
+
+    response = client.get("/healthz/workers")
+    assert response.status_code == 200
+    assert response.json() == {"healthy": False}
+    assert "db-primary" not in response.text
