@@ -233,6 +233,12 @@ def test_public_worker_health_never_exposes_tenant_or_user_identifiers(rbac_clie
 
 
 def test_detailed_worker_health_requires_worker_read(rbac_client):
+    """Fleet health is deployment state, so it is *not* a tenant capability.
+
+    `tenant_admin` used to receive it — not by decision, but because the role held
+    `frozenset(set(Permission))`. A customer's administrator has no business reading
+    the worker fleet of the installation they happen to be hosted on.
+    """
     reader = rbac_client.get("/api/admin/workers/health", headers=_hdr("alice"))
     assert reader.status_code == 403
     assert (
@@ -243,10 +249,16 @@ def test_detailed_worker_health_requires_worker_read(rbac_client):
     )
     assert (
         rbac_client.get(
-            "/api/admin/workers/health", headers=_hdr("alice", "tenant_admin")
+            "/api/admin/workers/health", headers=_hdr("ops", "platform_operator")
         ).status_code
         == 200
     )
+    assert (
+        rbac_client.get(
+            "/api/admin/workers/health", headers=_hdr("alice", "tenant_admin")
+        ).status_code
+        == 403
+    ), "a tenant administrator is not a deployment operator"
 
 
 def test_detailed_worker_health_is_inside_the_auth_boundary(rbac_client):

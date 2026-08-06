@@ -29,7 +29,17 @@ from .providers import build_provider
 _PUBLIC_API_PATHS: frozenset[str] = frozenset()
 
 
-def _guarded(path: str) -> bool:
+def _guarded(path: str, settings) -> bool:
+    """Whether this path needs an authenticated principal attached.
+
+    `/metrics` is deliberately outside `/api/*` — it is the Prometheus scrape target,
+    and most deployments reach it over a private network. When
+    `protect_metrics_endpoint` is set it must be authenticated like anything else:
+    without a principal the route's permission check has nothing to check and
+    silently no-ops, which would make the setting look enforced while doing nothing.
+    """
+    if path == "/metrics":
+        return bool(getattr(settings, "protect_metrics_endpoint", False))
     return path.startswith("/api/") and path not in _PUBLIC_API_PATHS
 
 
@@ -40,7 +50,7 @@ def install_auth_middleware(app: FastAPI) -> None:
 
         settings = get_settings()
         provider = build_provider(settings)
-        if provider is None or not _guarded(request.url.path):
+        if provider is None or not _guarded(request.url.path, settings):
             return await call_next(request)
 
         principal = provider.resolve(request.headers)

@@ -270,19 +270,15 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.TENANT, _ST.ENFORCED, permission=_P.METRICS_READ_TENANT
     ),
     ("GET", "/api/traces"): AuthzSpec(
-        # Permission-gated today, but **not** tenant-isolated: the in-process span
-        # buffer carries no tenant dimension, so a permitted caller observes the
-        # timing, volume and decisions of every tenant sharing the process. Spans hold
-        # no tenant id, user id or memory content, which limits the disclosure — but
-        # "enforced" under a `:tenant` permission would claim a scope the runtime does
-        # not provide, and this registry exists to stop exactly that. The check stays
-        # as defence in depth; the status stays honest until spans carry a tenant and
-        # are filtered by it, or the route is reclassified as deployment-level
-        # telemetry under a future `ops:traces` permission.
-        _S.TENANT,
-        _ST.PLANNED,
-        permission=_P.TRACES_READ_TENANT,
-        note="permission-gated but not tenant-isolated; span buffer is process-wide",
+        # Deployment observability, not tenant audit. The in-process span buffer has
+        # no tenant dimension, so a `:tenant` permission would have claimed a scope
+        # the runtime cannot provide — the mismatch this registry exists to catch.
+        # Rather than redesign tracing storage, the route is classified for what it
+        # actually serves: process-wide telemetry, for whoever operates the process.
+        # A tenant-scoped tracing route can be added later, once spans carry a tenant.
+        _S.OPERATOR,
+        _ST.ENFORCED,
+        permission=_P.OPS_TRACES_READ,
     ),
     ("GET", "/api/evidence/response/{trace_id}"): AuthzSpec(
         _S.TENANT, _ST.ENFORCED, permission=_P.EVIDENCE_READ
@@ -330,23 +326,31 @@ ROUTE_AUTHZ: dict[tuple[str, str], AuthzSpec] = {
         _S.AUTHENTICATED, _ST.ENFORCED, note="static loop definition"
     ),
     ("GET", "/api/loops/runs"): AuthzSpec(
-        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.AUDIT_READ_TENANT
     ),
     ("GET", "/api/loops/events"): AuthzSpec(
-        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.AUDIT_READ_TENANT
     ),
     ("GET", "/api/loops/trace/{trace_id}"): AuthzSpec(
-        _S.TENANT, _ST.ENFORCED, permission=_P.TRACES_READ_TENANT
+        _S.TENANT, _ST.ENFORCED, permission=_P.AUDIT_READ_TENANT
     ),
     # ── evals (cost-bearing) ────────────────────────────────────────────────
     ("POST", "/api/evals/run"): AuthzSpec(
-        _S.TENANT, _ST.PLANNED, permission=_P.EVALS_RUN, note="denial-of-wallet vector"
+        _S.OPERATOR, _ST.ENFORCED, permission=_P.OPS_EVALS_RUN, note="denial-of-wallet vector"
     ),
     ("GET", "/api/evals/latest"): AuthzSpec(
         # Reading a stored result is not cost-bearing; running one is.
-        _S.TENANT, _ST.ENFORCED, permission=_P.EVALS_READ
+        _S.OPERATOR, _ST.ENFORCED, permission=_P.OPS_EVALS_READ
     ),
     # ── operator ────────────────────────────────────────────────────────────
+    ("GET", "/api/admin/readiness"): AuthzSpec(
+        # The detailed dependency report. `/readyz` stays public but narrows to a
+        # boolean in production; naming the configured providers and backends to an
+        # unauthenticated caller is reconnaissance, not health.
+        _S.OPERATOR,
+        _ST.ENFORCED,
+        permission=_P.OPS_READINESS,
+    ),
     ("GET", "/api/admin/workers/health"): AuthzSpec(
         _S.OPERATOR, _ST.ENFORCED, permission=_P.WORKER_READ
     ),

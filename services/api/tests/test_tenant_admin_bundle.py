@@ -87,10 +87,22 @@ def test_a_platform_operator_holds_no_tenant_data_permission():
     """
     operator = permissions_for(frozenset({Role.PLATFORM_OPERATOR}))
     assert operator, "the role must grant something"
+
+    # Disjoint from tenant authority: nothing an operator holds is a tenant capability.
     assert operator.isdisjoint(_TENANT_ADMIN), (
         f"overlaps tenant authority: {sorted(p.value for p in operator & _TENANT_ADMIN)}"
     )
-    assert all(p.value.startswith("ops:") for p in operator)
+
+    # Nothing touching customer data, by prefix — the categories are memory, audit,
+    # evidence, retention, consent and tenant settings.
+    forbidden = ("memory:", "audit:", "evidence:", "retention:", "consent:", "settings:")
+    leaked = {p for p in operator if p.value.startswith(forbidden)}
+    assert not leaked, f"operator holds tenant-data permissions: {sorted(p.value for p in leaked)}"
+
+    # Everything it does hold is either a deployment capability or fleet visibility.
+    assert all(
+        p.value.startswith("ops:") or p is Permission.WORKER_READ for p in operator
+    ), sorted(p.value for p in operator)
 
 
 def test_no_tenant_role_can_reach_a_deployment_permission():

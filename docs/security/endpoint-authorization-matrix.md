@@ -87,23 +87,25 @@ cannot get ahead of the runtime again.
 
 ### Enforced
 
-The handler checks the permission. 28 of 39 routes.
+The handler checks the permission. 31 of 40 routes.
 
 | Method | Path | Scope | Permission | Note |
 | --- | --- | --- | --- | --- |
+| `GET` | `/api/admin/readiness` | operator | `ops:readiness` |  |
 | `GET` | `/api/admin/workers/health` | operator | `worker:read` |  |
 | `GET` | `/api/audit` | subject | `audit:read:self` (own) / `audit:read:tenant` (tenant) | tenant-wide requires audit:read:tenant; otherwise forced to own user |
 | `POST` | `/api/chat` | self | `memory:write:self` | chat writes memory |
-| `GET` | `/api/evals/latest` | tenant | `evals:read` |  |
+| `GET` | `/api/evals/latest` | operator | `ops:evals:read` |  |
+| `POST` | `/api/evals/run` | operator | `ops:evals:run` | denial-of-wallet vector |
 | `GET` | `/api/evidence/audit/verify` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/deletion/{memory_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/lifecycle/{memory_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/policy` | tenant | `evidence:read` |  |
 | `GET` | `/api/evidence/response/{trace_id}` | tenant | `evidence:read` |  |
 | `GET` | `/api/loops` | authenticated | — *(any authenticated principal)* | static loop definitions; no tenant data |
-| `GET` | `/api/loops/events` | tenant | `traces:read:tenant` |  |
-| `GET` | `/api/loops/runs` | tenant | `traces:read:tenant` |  |
-| `GET` | `/api/loops/trace/{trace_id}` | tenant | `traces:read:tenant` |  |
+| `GET` | `/api/loops/events` | tenant | `audit:read:tenant` |  |
+| `GET` | `/api/loops/runs` | tenant | `audit:read:tenant` |  |
+| `GET` | `/api/loops/trace/{trace_id}` | tenant | `audit:read:tenant` |  |
 | `GET` | `/api/loops/{loop_id}` | authenticated | — *(any authenticated principal)* | static loop definition |
 | `GET` | `/api/memories` | subject | `memory:read:self` (own) / `memory:read:tenant` (tenant) |  |
 | `DELETE` | `/api/memories/{memory_id}` | resource | `memory:delete:self` (own) / `memory:delete:tenant` (tenant) | a user may delete their own pending memory; legal hold still overrides |
@@ -119,6 +121,7 @@ The handler checks the permission. 28 of 39 routes.
 | `POST` | `/api/retention/pin` | tenant | `retention:manage` |  |
 | `GET` | `/api/retention/policies` | tenant | `retention:read` |  |
 | `POST` | `/api/retention/protect` | tenant | `retention:manage` |  |
+| `GET` | `/api/traces` | operator | `ops:traces:read` |  |
 
 ### Planned — declared, **not yet enforced**
 
@@ -126,10 +129,7 @@ The contract is agreed and the enumeration guard holds these routes to it, but t
 handler does not check the permission yet. **Do not rely on this section as a
 control.**
 
-| Method | Path | Scope | Permission | Note |
-| --- | --- | --- | --- | --- |
-| `POST` | `/api/evals/run` | tenant | `evals:run` | denial-of-wallet vector |
-| `GET` | `/api/traces` | tenant | `traces:read:tenant` | permission-gated but not tenant-isolated; span buffer is process-wide |
+_(none)_
 
 ### Public
 

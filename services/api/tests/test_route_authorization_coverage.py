@@ -207,6 +207,7 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
     )
     assert enforced == [
         "DELETE /api/memories/{memory_id}",
+        "GET /api/admin/readiness",
         "GET /api/admin/workers/health",
         "GET /api/audit",
         "GET /api/evals/latest",
@@ -228,8 +229,10 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
         "GET /api/retention/decisions",
         "GET /api/retention/memory/{memory_id}",
         "GET /api/retention/policies",
+        "GET /api/traces",
         "PATCH /api/memories/{memory_id}",
         "POST /api/chat",
+        "POST /api/evals/run",
         "POST /api/retention/consent",
         "POST /api/retention/legal-hold",
         "POST /api/retention/pin",
@@ -238,8 +241,12 @@ def test_the_currently_enforced_set_is_exactly_what_ships():
 
 
 def test_a_planned_route_is_not_described_as_enforced():
+    """Every remaining `planned` route must still name the permission it intends.
+
+    The list is empty now — every classified route is enforced or public — so this
+    guards the *next* route added in a planned state rather than a current one.
+    """
     planned = [spec for spec in ROUTE_AUTHZ.values() if spec.status is Status.PLANNED]
-    assert planned, "nothing planned — did the registry lose its remaining work?"
     for spec in planned:
         if spec.scope is Scope.AUTHENTICATED:
             # "any authenticated principal" is the contract; there is no narrower

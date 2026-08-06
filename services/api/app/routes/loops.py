@@ -17,11 +17,15 @@ def _tenant_of(request: Request, requested: str) -> str:
 
     Loop runs and events are governance evidence — who did what, when — so reading
     them tenant-wide is an auditor capability, not something an ordinary user's own
-    memory access implies. The tenant comes back from the principal: validating the
-    requested value and then querying with it would leave caller-controlled input in
-    the query after authorization had settled the question.
+    memory access implies. Uses `audit:read:tenant` — the same capability that governs
+    the audit trail, because both answer "who acted in this tenant" and splitting them
+    would let one be granted without the other while exposing the same facts.
+
+    The tenant comes back from the principal: validating the requested value and then
+    querying with it would leave caller-controlled input in the query after
+    authorization had settled the question.
     """
-    principal = require_permission(request, Permission.TRACES_READ_TENANT)
+    principal = require_permission(request, Permission.AUDIT_READ_TENANT)
     return principal.tenant_id if principal is not None else requested
 
 

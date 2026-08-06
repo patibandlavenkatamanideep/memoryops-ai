@@ -51,10 +51,17 @@ if _prod_errors:
         + "\n  - ".join(_prod_errors)
     )
 
+# The OpenAPI schema enumerates every route, parameter and model — a map of the
+# attack surface, served unauthenticated. Off in production unless an operator opts
+# back in (`MEMORYOPS_EXPOSE_API_DOCS=true`).
+_docs = settings.docs_enabled()
 app = FastAPI(
     title="MemoryOps AI API",
     version=__version__,
     description="Enterprise memory governance layer — write path, governance, audit.",
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
 )
 
 app.add_middleware(

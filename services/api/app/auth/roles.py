@@ -57,7 +57,6 @@ class Permission(str, Enum):
     AUDIT_READ_SELF = "audit:read:self"
     AUDIT_READ_TENANT = "audit:read:tenant"
     METRICS_READ_TENANT = "metrics:read:tenant"
-    TRACES_READ_TENANT = "traces:read:tenant"
     EVIDENCE_READ = "evidence:read"
     RETENTION_READ = "retention:read"
     RETENTION_MANAGE = "retention:manage"
@@ -66,10 +65,6 @@ class Permission(str, Enum):
     WORKER_READ = "worker:read"
     WORKER_REPLAY = "worker:replay"
     SETTINGS_MANAGE = "settings:manage"
-    #: Reading a stored evaluation result. Not cost-bearing.
-    EVALS_READ = "evals:read"
-    #: Executing an evaluation. Cost-bearing — a denial-of-wallet vector.
-    EVALS_RUN = "evals:run"
     # Deployment operations. These act on the process or the whole installation, not
     # on one tenant's data, so no tenant role holds them however senior it is —
     # "administrator of tenant A" and "operator of this deployment" are different
@@ -161,26 +156,20 @@ _TENANT_ADMIN: frozenset[Permission] = frozenset(
         _P.AUDIT_READ_SELF,
         _P.AUDIT_READ_TENANT,
         _P.METRICS_READ_TENANT,
-        _P.TRACES_READ_TENANT,
         _P.EVIDENCE_READ,
         _P.RETENTION_READ,
         _P.RETENTION_MANAGE,
         _P.CONSENT_MANAGE,
         # Tenant configuration.
         _P.SETTINGS_MANAGE,
-        # Operational + evaluation. Held today because the routes behind them are
-        # still classified tenant-scoped; both classifications are revisited when the
-        # deployment boundary lands, and these move out with them.
-        _P.WORKER_READ,
-        _P.WORKER_REPLAY,
-        _P.EVALS_READ,
-        _P.EVALS_RUN,
     }
 )
 
 #: Permissions deliberately withheld from `_TENANT_ADMIN`, each with the reason, so an
 #: exclusion reads as a decision rather than an oversight.
 _NOT_TENANT_SCOPED: dict[Permission, str] = {
+    _P.WORKER_READ: "worker fleet health is deployment state, not one tenant's data",
+    _P.WORKER_REPLAY: "replaying a job affects the deployment, not one tenant",
     _P.OPS_EVALS_READ: "evaluation results are deployment-wide; the harness runs "
     "against its own fixtures and the result store has no tenant dimension",
     _P.OPS_EVALS_RUN: "executing the harness is platform compute — one tenant must "
@@ -221,12 +210,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.AUDIT_READ_SELF,
             _P.AUDIT_READ_TENANT,
             _P.METRICS_READ_TENANT,
-            _P.TRACES_READ_TENANT,
             _P.EVIDENCE_READ,
             _P.RETENTION_READ,
-            # Results are tenant-wide governance evidence, so this is an auditor
-            # capability. memory_admin manages lifecycle and does not receive it.
-            _P.EVALS_READ,
         }
     ),
     Role.TENANT_ADMIN: _TENANT_ADMIN,
@@ -244,6 +229,9 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             _P.OPS_TRACES_READ,
             _P.OPS_METRICS,
             _P.OPS_READINESS,
+            # Fleet health is deployment state. `service_worker` also holds this for
+            # its own self-reporting; an operator needs it to run the installation.
+            _P.WORKER_READ,
         }
     ),
 }
