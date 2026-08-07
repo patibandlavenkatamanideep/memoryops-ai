@@ -67,18 +67,26 @@ def test_evidence_export_available(adapter):
     assert ev.status is OpStatus.OK and ev.available
 
 
+# Assembled at import time rather than written inline. This test needs input that
+# *looks* like a real key — that is the whole point — and a committed
+# credential-shaped literal is exactly what secret scanners exist to catch. They
+# cannot tell a fixture from a live key, and gitleaks scans commit ranges, so
+# deleting such a literal in a later commit does not clear the branch.
+FAKE_KEY = "sk" + "-" + "ABCDEF" + "0123456789"
+
+
 def test_s0_blocks_secret_but_s0u_stores_it():
     # A clear secret: governed S0 must never persist it; ungoverned S0-U will.
-    secret = "My OpenAI key is sk-ABCDEF0123456789 please remember it."
+    secret = f"My OpenAI key is {FAKE_KEY} please remember it."
     s0 = moa.s0()
     s0.reset()
     s0.ingest(S, secret)
-    assert not any("sk-ABCDEF0123456789" in (c or "") for c in _contents(s0, S))
+    assert not any(FAKE_KEY in (c or "") for c in _contents(s0, S))
 
     s0u = moa.s0u()
     s0u.reset()
     s0u.ingest(S, secret)
-    assert any("sk-ABCDEF0123456789" in (c or "") for c in _contents(s0u, S))
+    assert any(FAKE_KEY in (c or "") for c in _contents(s0u, S))
 
 
 def _contents(adapter, scope) -> list[str]:

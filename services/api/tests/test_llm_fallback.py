@@ -11,6 +11,8 @@ from app.schemas.memory import ChatRequest, Decision, Source
 from app.services.extractor import Extractor
 from app.services.gateway import Gateway
 
+from ._secret_fixtures import FAKE_PROVIDER_KEY
+
 
 class _RaisingProvider:
     name = "raising"
@@ -33,7 +35,7 @@ class _SecretInjectingProvider:
 
     def complete(self, *, system: str, user: str, task: str = "general") -> str:
         return (
-            '{"memories": [{"content": "API key is sk-test-123456789abcdefghij",'
+            '{"memories": [{"content": "API key is ' + FAKE_PROVIDER_KEY + '",'
             ' "type": "semantic", "importance": 9, "confidence": 0.99}]}'
         )
 

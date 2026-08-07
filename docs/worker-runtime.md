@@ -169,3 +169,31 @@ are left for the next replica, and the process exits 0. Verified end to end in t
   dynamic scope registry is separate follow-up work.
 - Dead-lettered jobs are recorded and queryable, but there is no one-command
   **replay** yet; re-running the scope re-attempts the work.
+
+## The worker imports the API, it does not reach for it (v2.4)
+
+`services/worker/jobs.py` — the superseded Phase-5 scaffold, kept for reference —
+inserted `../api` into `sys.path` at import time so it could reach the API package
+without depending on it:
+
+```python
+_API = Path(__file__).resolve().parents[1] / "api"
+if str(_API) not in sys.path:
+    sys.path.insert(0, str(_API))
+```
+
+Meanwhile `services/worker/pyproject.toml` stated that the practice had been removed
+and that "there is no PYTHONPATH or `sys.path.insert()` left in a production
+entrypoint". The file ships in the worker image, so the claim was false wherever it
+was read.
+
+A service that rewrites its own import path at startup can resolve a **different
+dependency set** than the service it is importing from, and the failure surfaces as
+version skew nobody can trace back to its cause. The worker already declares the API
+as an ordinary dependency, so the mutation was also unnecessary — the imports resolve
+without it.
+
+Removed, and now enforced structurally: `scripts/repo_trust_guards.py` rejects any
+`sys.path` mutation in shipped service code, AST-based so the comments explaining this
+history do not trip it. See
+[security/repository-trust-guards.md](security/repository-trust-guards.md).
