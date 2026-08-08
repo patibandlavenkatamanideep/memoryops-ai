@@ -145,6 +145,14 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python scripts/generate_web_capabilities.py --check
 
+      # Structural guards for regressions this repository has actually had — a shipped
+      # service rewriting its own import path, a committed credential-shaped literal,
+      # demo identity in server code, a retired dependency returning as config. Run
+      # here rather than in `packaging` because the guard tests import the app.
+      - name: Repository trust guards
+        working-directory: .
+        run: python scripts/repo_trust_guards.py
+
       - name: Eval harness (invariants)
         env:
           MEMORYOPS_STORAGE: memory

@@ -12,6 +12,8 @@ import pytest
 
 from app.core.config import get_settings
 
+from ._secret_fixtures import secret_sentence
+
 
 def _scrape(client) -> str:
     resp = client.get("/metrics")
@@ -75,7 +77,7 @@ def test_chat_increments_http_and_retrieval_counters(api_client):
 def test_blocked_secret_increments_block_decision(api_client):
     client, _ = api_client
     before = _sample(_scrape(client), "memoryops_policy_decisions_total", {"decision": "BLOCK"})
-    _chat(client, "Remember that my API key is sk-test-123456789abcdefghij.")
+    _chat(client, secret_sentence())
     after = _sample(_scrape(client), "memoryops_policy_decisions_total", {"decision": "BLOCK"})
     assert after > before
 

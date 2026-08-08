@@ -20,6 +20,7 @@ from app.workers.decay import DecayWorker
 from app.workers.lifecycle import WorkerContext
 from app.workers.schemas import MEMORY_DECAY_APPLIED, WorkerRunStatus
 
+from ._secret_fixtures import FAKE_PROVIDER_KEY
 from ._worker_helpers import NOW, seed_memory
 from .test_worker_atomicity import _CrashOnAction
 
@@ -72,7 +73,7 @@ def test_policy_broker_blocks_secret_when_full_but_saves_when_disabled(load_sett
     repo = InMemoryRepository()
     broker = PolicyBroker(repo)
     stored = repo.get_settings("t1", "u1")
-    secret = CandidateMemory(content="my key is sk-ABCDEF012345678 keep it safe")
+    secret = CandidateMemory(content=f"my key is {FAKE_PROVIDER_KEY} keep it safe")
 
     load_settings()  # full
     assert broker.evaluate(

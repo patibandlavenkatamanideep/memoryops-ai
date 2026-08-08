@@ -11,6 +11,8 @@ from __future__ import annotations
 from app.compression.headroom_adapter import HeadroomCompressor
 from app.schemas.memory import ChatRequest, Decision
 
+from ._secret_fixtures import secret_sentence
+
 
 def _chat(gateway, message, tenant="t1", user="u1", **kw):
     return gateway.handle_chat(
@@ -53,5 +55,5 @@ def test_temporary_chat_has_no_memory_compression(gateway):
 def test_policy_still_blocks_secret_with_compression_enabled(gateway):
     # Compression enabled must not stop the policy broker from seeing raw content.
     _spy_gateway(gateway)
-    resp = _chat(gateway, "Remember that my API key is sk-test-123456789abcdefghij.")
+    resp = _chat(gateway, secret_sentence())
     assert any(c.decision == Decision.BLOCK for c in resp.candidate_memories)

@@ -11,23 +11,21 @@ logic so the lifecycle is demonstrable end-to-end.
 
 from __future__ import annotations
 
-import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
-# Reuse the API's repository + schemas without packaging the API.
-_API = Path(__file__).resolve().parents[1] / "api"
-if str(_API) not in sys.path:
-    sys.path.insert(0, str(_API))
-
-from app.db.repository import Repository  # noqa: E402
-from app.loops.events import (  # noqa: E402
+# The API is an ordinary dependency of this package (see pyproject), so these are
+# plain imports. This module used to insert ../api into sys.path at import time,
+# which the pyproject comment already claimed had been removed — a production image
+# that rewrites its own import path can resolve a different dependency set than the
+# service it is importing from, and nothing said so at the point it happened.
+from app.db.repository import Repository
+from app.loops.events import (
     complete_loop_run_sync,
     emit_loop_event_sync,
     start_loop_run_sync,
 )
-from app.loops.types import LoopId, LoopState  # noqa: E402
-from app.schemas.memory import Status  # noqa: E402
+from app.loops.types import LoopId, LoopState
+from app.schemas.memory import Status
 
 _ARCHIVE_WEIGHT_FLOOR = 0.25
 _DECAY_HALFLIFE_DAYS = 30.0

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from app.schemas.memory import ChatRequest, Decision, Status
 
-from ._secret_fixtures import FAKE_INJECTION, FAKE_PROVIDER_KEY
+from ._secret_fixtures import (
+    FAKE_AWS_KEY,
+    FAKE_INJECTION,
+    FAKE_PROVIDER_KEY,
+    secret_sentence,
+)
 
 
 def _chat(gateway, message):
@@ -14,7 +19,7 @@ def _chat(gateway, message):
 
 
 def test_api_key_is_blocked_and_not_stored(gateway, repo):
-    resp = _chat(gateway, "Remember that my API key is sk-test-123456789abcdefghij.")
+    resp = _chat(gateway, secret_sentence())
     assert any(c.decision == Decision.BLOCK for c in resp.candidate_memories)
     # Nothing active was stored.
     assert all(
@@ -25,7 +30,7 @@ def test_api_key_is_blocked_and_not_stored(gateway, repo):
 
 
 def test_aws_key_is_blocked(gateway):
-    resp = _chat(gateway, "Save this: AKIAIOSFODNN7EXAMPLE is my key.")
+    resp = _chat(gateway, f"Save this: {FAKE_AWS_KEY} is my key.")
     assert any(c.decision == Decision.BLOCK for c in resp.candidate_memories)
 
 

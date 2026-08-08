@@ -36,13 +36,22 @@ def test_settings_has_no_unused_redis_url():
 
 
 def test_no_redis_client_is_imported_anywhere():
-    """If this ever fails, Redis is genuinely in use and the tests above should change."""
-    offenders = []
-    for path in API_APP.rglob("*.py"):
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if "import redis" in text or "from redis" in text:
-            offenders.append(str(path.relative_to(REPO_ROOT)))
-    assert not offenders, f"a Redis client is imported in: {offenders}"
+    """If this ever fails, Redis is genuinely in use and the tests above should change.
+
+    Import detection moved from substring matching to the AST guard: the previous form
+    matched `import redis` inside this module's own docstring, and would have matched
+    any comment explaining the removal. It also matched `import redis_notes`. The
+    guard resolves the imported module name instead.
+    """
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from repo_trust_guards import check_no_retired_infrastructure
+
+    findings = [
+        f for f in check_no_retired_infrastructure(REPO_ROOT) if "redis" in f.detail
+    ]
+    assert not findings, "\n".join(str(f) for f in findings)
 
 
 @pytest.mark.parametrize(
