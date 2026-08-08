@@ -37,10 +37,12 @@ def render(contract: dict) -> str:
     web_to_api = contract["web_to_api"]
     api_roles = contract["api_roles"]
     never_human = contract.get("never_assignable_to_humans", [])
+    never_web = contract.get("never_web_assignable", {}).get("roles", [])
 
     entries = "\n".join(f'  {k}: "{v}",' for k, v in web_to_api.items())
     roles = "\n".join(f'  "{r}",' for r in api_roles)
     machine = "\n".join(f'  "{r}",' for r in never_human)
+    web_forbidden = "\n".join(f'  "{r}",' for r in never_web)
 
     return f"""// GENERATED FILE — DO NOT EDIT BY HAND.
 //
@@ -61,6 +63,13 @@ export const API_ROLES = [
 
 export const NEVER_ASSIGNABLE_TO_HUMANS = [
 {machine}
+] as const;
+
+// Roles the BFF must never mint from a UI persona. Broader than the list above:
+// `platform_operator` *is* assignable to a person, but never as a tenant's web
+// session — no customer's UI may become deployment authority.
+export const NEVER_WEB_ASSIGNABLE = [
+{web_forbidden}
 ] as const;
 
 export const ROLE_CONTRACT_VERSION = {contract.get("version", 1)};

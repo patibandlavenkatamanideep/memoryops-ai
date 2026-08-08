@@ -6,7 +6,7 @@ import {
   UnmappedWebRoleError,
   WEB_TO_API_ROLES,
 } from "../apiRoles";
-import { ROLES } from "../roles";
+import { ROLES } from "../webRoles";
 
 /**
  * The web and the API had independent role vocabularies, and the BFF minted the

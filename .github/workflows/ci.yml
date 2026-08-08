@@ -136,6 +136,15 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python scripts/generate_authz_matrix.py --check
 
+      # Same reason, and the same job: the web's capability contract is generated
+      # from the API's authorization objects, so a new permission, route, or PATCH
+      # variant must regenerate it or the BFF silently keeps enforcing the old shape.
+      - name: Web capability contract matches the API
+        working-directory: .
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: python scripts/generate_web_capabilities.py --check
+
       - name: Eval harness (invariants)
         env:
           MEMORYOPS_STORAGE: memory

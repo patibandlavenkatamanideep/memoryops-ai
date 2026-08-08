@@ -29,4 +29,12 @@ export const NEVER_ASSIGNABLE_TO_HUMANS = [
   "service_worker",
 ] as const;
 
+// Roles the BFF must never mint from a UI persona. Broader than the list above:
+// `platform_operator` *is* assignable to a person, but never as a tenant's web
+// session — no customer's UI may become deployment authority.
+export const NEVER_WEB_ASSIGNABLE = [
+  "service_worker",
+  "platform_operator",
+] as const;
+
 export const ROLE_CONTRACT_VERSION = 1;
