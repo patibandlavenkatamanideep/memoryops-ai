@@ -35,6 +35,42 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
+## Unreleased — repository trust guards
+
+Structural checks for regressions this repository has actually had, in
+`scripts/repo_trust_guards.py`. Not general linting — each guard was written from a
+mistake that reached `main` here and was found by reading rather than by a check.
+
+They parse rather than search. Every one was first attempted as a string match and
+every one fired on prose *about* the problem: `sys.path.insert` matched the worker's
+own documentation saying the call was removed, `DEMO_TENANT` matched `lib/api.ts`
+documenting the constants it no longer exports, and `import redis` matched
+`test_no_unused_infrastructure`'s docstring. A guard that fires on its own
+documentation trains people to ignore it.
+
+### Fixed
+- **`services/worker/jobs.py` mutated `sys.path` at import time** — inserting
+  `../api` so it could reach the API package — while `services/worker/pyproject.toml`
+  stated that no such call remained in a production entrypoint. The file ships in the
+  worker image, so the claim was false wherever it was read. A service that rewrites
+  its own import path can resolve a *different* dependency set than the service it
+  imports from. The worker already declares the API as an ordinary dependency, so the
+  mutation was unnecessary.
+- **Seven committed credential-shaped literals**, six of them embedded in sentences
+  (`"Remember that my API key is sk-… please"`) — the shape a fixture actually takes,
+  and one that a whole-value match misses entirely. All now build their input from
+  `tests/_secret_fixtures.py`, which gained an AWS-shaped key and a `secret_sentence()`
+  helper.
+- The Redis import check moved from substring matching to the AST guard, which also
+  stops confusing `redis_notes` for `redis`.
+
+### Guards
+`sys-path-mutation` · `committed-secret-literal` · `demo-identity-in-server-code` ·
+`retired-infrastructure`. Documented in
+[docs/security/repository-trust-guards.md](docs/security/repository-trust-guards.md),
+enforced in CI, and each with negative tests proving a representative bad edit is
+rejected — plus the false-positive cases it must *not* fire on.
+
 ## Unreleased — web capabilities replace the role ladder
 
 - **`hasAtLeast()`, `ROLE_RANK` and `requiredRole()` are gone.** The web ranked
