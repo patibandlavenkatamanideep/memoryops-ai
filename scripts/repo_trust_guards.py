@@ -446,11 +446,228 @@ def check_no_retired_infrastructure(root: Path = REPO) -> list[Finding]:
     return findings
 
 
+# ── guard 5: Railway deployment configuration ────────────────────────────────
+#
+# v2.4 shipped a release candidate that passed every code gate and could not be
+# deployed. Two deployment-only defects caused it, and neither was expressible as a
+# unit test:
+#
+#   * `railway/api.railway.json` declared `startCommand` with `--port $PORT`. A
+#     config-as-code start command on a Dockerfile service runs in **exec form
+#     without shell expansion**, so uvicorn received the four characters `$PORT`.
+#     The repository already documented this exact failure for the playground
+#     service; the API hit it independently anyway.
+#   * `railway/web.railway.json` used `/` as the health check path. In authenticated
+#     mode `/` answers 307 to `/signin`, so the health check never succeeds.
+#
+# Both were fixed in the dashboard, which meant the repository no longer described
+# the deployment. This guard makes the repository the source of truth again.
+
+#: Service name -> canonical config file. `railway/*.railway.json` is the canonical
+#: form because Railway auto-detects `railway.toml` at a service's *root directory*,
+#: and both the worker and the playground are rooted at the repository root — they
+#: would collide on a single top-level file. Explicit per-service config paths are
+#: the only scheme that works for all four services.
+CANONICAL_RAILWAY_CONFIGS = {
+    "api": "railway/api.railway.json",
+    "web": "railway/web.railway.json",
+    "worker": "railway/worker.railway.json",
+    "playground": "railway/playground.railway.json",
+}
+
+#: Services whose Dockerfile `CMD` is authoritative, so their config must not set a
+#: `startCommand` at all. Declaring it in two places is how the two drift.
+#:
+#: The playground is deliberately absent: its Dockerfile `CMD` is
+#: `sh -c "streamlit run … --server.port ${PORT:-8501} …"`, which *does* expand
+#: `$PORT` because it runs through a shell. It is the reference implementation for
+#: dynamic port binding, not an exception to the rule.
+DOCKERFILE_OWNS_START = ("api", "web", "worker")
+
+#: TRANSITIONAL — remove in Phase B.
+#:
+#: Railway production currently reads the API service's configuration from
+#: `services/api/railway.toml`, because that is what the dashboard's Config File
+#: setting points at. Deleting it before the switchover would leave the platform
+#: reading a file the repository no longer contains, so it stays until:
+#:
+#:   1. the API service's Config File is pointed at `railway/api.railway.json`,
+#:   2. the service is redeployed and `release_smoke_v24.py` passes, then
+#:   3. `services/api/railway.toml` is deleted and this exception is removed.
+#:
+#: Until then this is the *only* permitted duplicate. Any other service gaining a
+#: second config source is a finding.
+TRANSITIONAL_DUPLICATE_CONFIGS = {"api": "services/api/railway.toml"}
+
+#: Where a non-canonical Railway config file implies its service lives.
+_CONFIG_DIR_TO_SERVICE = {
+    "services/api": "api",
+    "apps/web": "web",
+    "services/worker": "worker",
+    "apps/playground": "playground",
+    "": "worker",  # repo root is the worker's root directory
+}
+
+_START_COMMAND = re.compile(r"startCommand")
+_LITERAL_PORT = re.compile(r"\$\{?PORT\}?")
+
+
+def _line_of(text: str, needle: str) -> int:
+    for number, line in enumerate(text.splitlines(), start=1):
+        if needle in line:
+            return number
+    return 1
+
+
+def _load_railway_config(path: Path) -> tuple[dict, str]:
+    """Return (parsed, raw_text). Unparseable files yield an empty mapping."""
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        if path.suffix == ".json":
+            import json
+
+            return json.loads(raw), raw
+        import tomllib
+
+        return tomllib.loads(raw), raw
+    except Exception:  # noqa: BLE001 — a malformed config is reported, not raised
+        return {}, raw
+
+
+def _discover_railway_configs(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for path in root.rglob("railway.toml"):
+        if not any(part in _SKIP_DIRS for part in path.parts):
+            found.append(path)
+    for path in (root / "railway").glob("*.railway.json"):
+        found.append(path)
+    return sorted(found)
+
+
+def check_railway_deployment_config(root: Path = REPO) -> list[Finding]:
+    """Railway config-as-code must describe the deployment that actually runs.
+
+    Asserts, for the canonical `railway/*.railway.json` files:
+
+    * every expected service has one,
+    * no ``startCommand`` anywhere contains a literal ``$PORT``,
+    * api / web / worker declare no ``startCommand`` (their Dockerfile owns it),
+    * the web health check is not ``/`` — authenticated mode redirects it,
+    * no service except the documented transitional API exception has two config
+      sources.
+
+    Parsed rather than grepped, so prose about ``$PORT`` in a doc or a comment is
+    not a finding — the same reason every other guard here parses.
+    """
+    findings: list[Finding] = []
+
+    for service, relative in CANONICAL_RAILWAY_CONFIGS.items():
+        path = root / relative
+        if not path.exists():
+            findings.append(
+                Finding(
+                    "railway-deployment-config",
+                    relative,
+                    1,
+                    f"canonical Railway config for `{service}` is missing; Railway "
+                    "would fall back to auto-detection and the repository would stop "
+                    "describing the deployment",
+                )
+            )
+            continue
+
+        config, raw = _load_railway_config(path)
+        deploy = config.get("deploy") or {}
+
+        start = deploy.get("startCommand")
+        if start is not None and service in DOCKERFILE_OWNS_START:
+            findings.append(
+                Finding(
+                    "railway-deployment-config",
+                    relative,
+                    _line_of(raw, "startCommand"),
+                    f"`{service}` declares a startCommand; its Dockerfile CMD is "
+                    "authoritative. Declaring the launch in two places is how they "
+                    "drift — remove it here",
+                )
+            )
+
+        if service == "web":
+            health = deploy.get("healthcheckPath")
+            if health == "/":
+                findings.append(
+                    Finding(
+                        "railway-deployment-config",
+                        relative,
+                        _line_of(raw, "healthcheckPath"),
+                        "web health check is `/`, which answers 307 -> /signin in "
+                        "authenticated mode, so the check can never pass. Use "
+                        "`/architecture`",
+                    )
+                )
+
+    # A literal $PORT must not appear in *any* Railway config's startCommand, not
+    # only the canonical ones — the transitional TOML is deployed today.
+    for path in _discover_railway_configs(root):
+        config, raw = _load_railway_config(path)
+        start = (config.get("deploy") or {}).get("startCommand")
+        if isinstance(start, str) and _LITERAL_PORT.search(start):
+            findings.append(
+                Finding(
+                    "railway-deployment-config",
+                    _rel(path, root),
+                    _line_of(raw, "startCommand"),
+                    "startCommand contains a literal `$PORT`. Config-as-code start "
+                    "commands on Dockerfile services run in exec form without shell "
+                    "expansion, so the process receives the characters `$PORT`. Let "
+                    "the Dockerfile CMD own the port, or expand it via `sh -c`",
+                )
+            )
+
+    # Exactly one config source per service, except the documented API transition.
+    by_service: dict[str, list[str]] = {}
+    canonical_paths = {v for v in CANONICAL_RAILWAY_CONFIGS.values()}
+    for path in _discover_railway_configs(root):
+        relative = _rel(path, root)
+        if relative in canonical_paths:
+            service = next(
+                s for s, v in CANONICAL_RAILWAY_CONFIGS.items() if v == relative
+            )
+        else:
+            parent = _rel(path.parent, root)
+            service = _CONFIG_DIR_TO_SERVICE.get(parent, parent or "<root>")
+        by_service.setdefault(service, []).append(relative)
+
+    for service, paths in sorted(by_service.items()):
+        if len(paths) < 2:
+            continue
+        permitted = {CANONICAL_RAILWAY_CONFIGS.get(service)}
+        allowed_duplicate = TRANSITIONAL_DUPLICATE_CONFIGS.get(service)
+        if allowed_duplicate:
+            permitted.add(allowed_duplicate)
+        unexpected = [p for p in paths if p not in permitted]
+        if unexpected or not allowed_duplicate:
+            findings.append(
+                Finding(
+                    "railway-deployment-config",
+                    sorted(paths)[0],
+                    1,
+                    f"`{service}` has {len(paths)} competing Railway config sources "
+                    f"({', '.join(sorted(paths))}). Exactly one must be canonical; "
+                    "two sources silently diverge, which is how the API shipped a "
+                    "`$PORT` start command it never ran",
+                )
+            )
+
+    return findings
+
+
 GUARDS = {
     "sys-path-mutation": check_no_sys_path_mutation,
     "committed-secret-literal": check_no_committed_secret_literals,
     "demo-identity-in-server-code": check_no_demo_identity_in_server_code,
     "retired-infrastructure": check_no_retired_infrastructure,
+    "railway-deployment-config": check_railway_deployment_config,
 }
 
 

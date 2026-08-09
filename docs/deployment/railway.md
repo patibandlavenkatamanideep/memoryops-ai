@@ -34,34 +34,74 @@ See [railway-env.md](railway-env.md) for the full variable matrix.
 
 ## Config-as-code
 
-Each service ships a checked-in config file under [`railway/`](../../railway/):
+`railway/*.railway.json` is the **canonical** configuration source:
 
 - `railway/api.railway.json`
 - `railway/web.railway.json`
 - `railway/worker.railway.json`
+- `railway/playground.railway.json`
 
 Point each Railway service at its config file via **Service → Settings → Config
-File** (config-as-code). Builder is `DOCKERFILE` for all three.
+File**. Builder is `DOCKERFILE` for all of them.
+
+Explicit per-service config paths are used rather than a `railway.toml` at each
+service root because Railway auto-detects `railway.toml` relative to a service's
+**Root Directory**, and both the worker and the playground are rooted at the
+repository root — they would collide on a single top-level file.
+
+### The Dockerfile owns the start command
+
+None of `api`, `web`, or `worker` sets `deploy.startCommand`. Their Dockerfile `CMD`
+is authoritative. Declaring the launch in two places is how the two drift, and it is
+what broke the v2.4 deployment (below). `scripts/repo_trust_guards.py` enforces this.
+
+### ⚠️ Transitional: the API has two config sources
+
+`services/api/railway.toml` **still exists** and is what the Railway API service
+currently reads. It is a temporary production-compatibility file, not a second
+opinion.
+
+**Migration checkpoint — Phase B, not yet done:**
+
+1. Point the API service's **Config File** at `railway/api.railway.json`
+2. Redeploy the API; confirm `/healthz` and `/readyz`
+3. Run `scripts/release_smoke_v24.py` and require `FAILED 0 / SKIPPED 0`
+4. **Then** delete `services/api/railway.toml`
+5. Remove `TRANSITIONAL_DUPLICATE_CONFIGS` from `scripts/repo_trust_guards.py`, which
+   tightens the guard to "exactly one config source per service" automatically
+
+Until step 5, the guard permits this one duplicate **by name**. Any other service
+gaining a second config source is a finding today.
 
 ## Per-service settings
 
 Set these in **Service → Settings** for each service. `dockerfilePath` in the
 config files is resolved relative to the service **Root Directory**.
 
+> **Root Directory** and **Config File** are Railway *service-level* settings. They
+> cannot be expressed in config-as-code — a config file cannot say where it lives.
+> They must be set deliberately in the dashboard, and they are the two settings most
+> likely to be wrong on a rebuilt project. Record them here whenever they change.
+
 ### 1. `memoryops-api`
 - **Root Directory:** `services/api`
-- **Config File:** `railway/api.railway.json`
+- **Config File:** `railway/api.railway.json` *(currently `services/api/railway.toml`; see the transitional note above)*
 - **Dockerfile path:** `Dockerfile` (relative to root)
-- **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (from config)
+- **Start command:** owned by the **Dockerfile `CMD`** —
+  `uvicorn app.main:app --host 0.0.0.0 --port 8000`. Not set in config.
 - **Health check path:** `/healthz`
-- Bind to `$PORT` — Railway injects it. Do **not** hardcode `8000` in production.
+- **Port 8000 is deliberate.** The image declares `EXPOSE 8000` and binds it, and
+  Railway routes to the detected listening port. Do **not** "fix" this by putting
+  `$PORT` in a config `startCommand` — see the rule below.
 
 ### 2. `memoryops-web`
 - **Root Directory:** `apps/web`
 - **Config File:** `railway/web.railway.json`
 - **Dockerfile path:** `Dockerfile` (relative to root)
-- **Start command:** `npm run start -- --port $PORT --hostname 0.0.0.0` (from config)
-- **Health check path:** `/`
+- **Start command:** owned by the **Dockerfile `CMD`** — `npm run start`. Not set in config.
+- **Health check path:** `/architecture`
+- **Not `/`.** In `authenticated` mode `/` answers **307 → `/signin`**, so a health
+  check pointed at it can never succeed. `/architecture` renders without a session.
 - `NEXT_PUBLIC_API_URL` must be set at **build time** to the public `memoryops-api`
   URL (Next.js inlines `NEXT_PUBLIC_*` at build).
 
@@ -70,14 +110,21 @@ config files is resolved relative to the service **Root Directory**.
   into the build, so its build context must be the repository root.
 - **Config File:** `railway/worker.railway.json`
 - **Dockerfile path:** `services/worker/Dockerfile` (relative to repo root)
-- **Start command:** `python main.py` (from config)
-- **No HTTP health check on the worker itself** — it is an interval scheduler, not
-  a web server. As of v0.8 it runs the orchestrator + scheduler over the real
-  lifecycle workers (leased, retried, dead-lettered); set
-  `MEMORYOPS_WORKER_SCOPES="tenant:user,…"` and optionally
-  `MEMORYOPS_WORKER_INTERVAL_SECONDS`. **Worker health is observable via the API**
-  at `GET /healthz/workers` (run history, dead-letter / failure counts, last run
-  per scope). See [worker-runtime.md](../worker-runtime.md).
+- **Start command:** owned by the **Dockerfile `CMD`** — `memoryops-worker` (the
+  packaged console script). Not set in config.
+- **No HTTP health check, deliberately.** The worker is an interval scheduler, not a
+  web server — it binds no port, so there is nothing for Railway to probe. Adding a
+  health check would require inventing an HTTP surface purely to satisfy the
+  platform, and a fake endpoint that returns 200 while the scheduler is wedged is
+  worse than no endpoint. Railway restarts on process exit
+  (`restartPolicyType: ON_FAILURE`); liveness is process liveness.
+- Set `MEMORYOPS_WORKER_SCOPES="tenant:user,…"` and optionally
+  `MEMORYOPS_WORKER_INTERVAL_SECONDS`. **Without scopes the worker starts, reports
+  healthy, and processes nothing.**
+- **Worker health is observable via the API** at `GET /healthz/workers` — which
+  requires `OPERATIONAL_DATABASE_URL` on the *API* service, not on the worker. See
+  [railway-env.md](railway-env.md#operational-monitoring-role) and
+  [worker-runtime.md](../worker-runtime.md).
 
 ## Deployment order
 
@@ -160,12 +207,16 @@ host. Its Dockerfile copies `services/api`, so the Docker build context must be 
 
 ## Health checks
 
-- `memoryops-api`: Railway hits `healthcheckPath=/healthz` on the assigned `$PORT`.
-  `/readyz` additionally touches the repository so a misconfigured DB surfaces as
-  not-ready (useful for manual verification).
-- `memoryops-web`: `/` returns 200 once Next.js is serving.
+- `memoryops-api`: Railway hits `healthcheckPath=/healthz` on the detected listening
+  port. `/readyz` additionally touches the repository so a misconfigured DB surfaces
+  as not-ready (useful for manual verification).
+- `memoryops-web`: `healthcheckPath=/architecture`. **Not `/`** — in `authenticated`
+  mode the root answers 307 to `/signin`, so a check pointed there never passes. It
+  works in demo mode, which is exactly why the mistake survives review.
 - `memoryops-worker`: no HTTP probe; Railway restarts on process exit
-  (`restartPolicyType: ON_FAILURE`).
+  (`restartPolicyType: ON_FAILURE`). Health is read from the API's
+  `GET /healthz/workers`, which needs `OPERATIONAL_DATABASE_URL` and must report
+  `{"healthy": true}` — the release smoke gate requires exactly that.
 
 ## Rollback
 
@@ -179,9 +230,31 @@ host. Its Dockerfile copies `services/api`, so the Docker build context must be 
 
 ## Known limitations
 
-- The API `Dockerfile` `HEALTHCHECK` hardcodes port `8000`; on Railway the
-  platform health check uses `healthcheckPath` against `$PORT`, so the in-image
-  `HEALTHCHECK` is cosmetic in production.
+- The API binds a fixed port `8000` (Dockerfile `CMD` + `EXPOSE 8000`) and relies on
+  Railway detecting it, rather than binding the injected `$PORT`. This is a
+  deliberate, working arrangement, not an oversight. Making the API bind `$PORT`
+  would require a Dockerfile change (`sh -c` so the variable expands) plus a deploy
+  window, and is out of scope for v2.4.1. The in-image `HEALTHCHECK` is cosmetic in
+  production; Railway uses `healthcheckPath`.
+
+### The `$PORT` rule
+
+**Never place an unexpanded literal `$PORT` inside a Railway config-as-code
+`startCommand` for a Dockerfile service.**
+
+A config `startCommand` on a Dockerfile service runs in **exec form, without shell
+expansion** — the process receives the four characters `$PORT`, not a port number.
+This broke the v2.4 API deployment. The playground had already hit and documented the
+same failure; that precedent did not prevent the second occurrence, so it is now a
+guard (`railway-deployment-config` in `scripts/repo_trust_guards.py`) rather than a
+paragraph.
+
+If a service genuinely needs dynamic port binding, expand it in the **Dockerfile
+`CMD` through a shell**, the way the playground does:
+
+```dockerfile
+CMD ["sh", "-c", "streamlit run streamlit_app.py --server.port ${PORT:-8501} ..."]
+```
 - `NEXT_PUBLIC_API_URL` is build-time; changing the API domain requires a **web
   rebuild**, not just a restart.
 - The worker is an interval scheduler (no Celery/Temporal yet); it is idempotent

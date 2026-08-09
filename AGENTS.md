@@ -87,18 +87,33 @@ One project (`memoryops-ai`), four services: `memoryops-web`, `memoryops-api`,
 `memoryops-worker`, Railway Postgres (+pgvector). Redis was removed — it was
 declared and health-gated but no runtime code ever read `REDIS_URL`.
 
-- Config-as-code lives in `railway/{api,web,worker}.railway.json`; point each
-  Railway service at its file. Builder is `DOCKERFILE`.
+- Config-as-code lives in `railway/{api,web,worker,playground}.railway.json` —
+  **canonical**; point each Railway service at its file. Builder is `DOCKERFILE`.
+  The Dockerfile `CMD` owns the start command; configs must **not** set
+  `startCommand`, and must never contain a literal `$PORT` (it does not expand in
+  exec form — this broke the v2.4 API deploy). Enforced by the
+  `railway-deployment-config` trust guard.
+  ⚠️ `services/api/railway.toml` still exists as a **temporary** production
+  compatibility file; see the Phase B checkpoint in `docs/deployment/railway.md`.
 - Per-service Root Directory: api → `services/api`, web → `apps/web`, worker →
-  repo root. Full settings + deploy order: `docs/deployment/railway.md`.
+  repo root. Root Directory and Config File are dashboard-only settings.
+  Web health check is `/architecture`, **not** `/` (authenticated `/` 307s to
+  `/signin`). Full settings + deploy order: `docs/deployment/railway.md`.
 - Env var contract per service: `docs/deployment/railway-env.md`. The system runs
   with **no provider keys** (heuristic LLM + stub embeddings); set
   `MEMORYOPS_PROFILE=production`, `MEMORYOPS_STORAGE=postgres`, `DATABASE_URL`,
-  `MEMORYOPS_AUTH_MODE`, `MEMORYOPS_CORS_ALLOW_ORIGINS` for production, and
+  `MEMORYOPS_AUTH_MODE`, `MEMORYOPS_AUTH_JWT_KEY` (**same value on api and web**),
+  `MEMORYOPS_AUTH_REQUIRE_ROLE_CLAIM=true`, `MEMORYOPS_PROTECT_METRICS_ENDPOINT=true`,
+  `MEMORYOPS_CORS_ALLOW_ORIGINS`, `OPERATIONAL_DATABASE_URL` for production, plus
+  `MEMORYOPS_WORKER_SCOPES` for the worker and `AUTH_SECRET` / `AUTH_TRUST_HOST` /
   build-time `NEXT_PUBLIC_API_URL` for web. The production profile is fail-closed:
   missing/unsafe values stop startup rather than degrading silently.
-- After deploy, run `scripts/railway_smoke_test.py` (see
-  `docs/deployment/railway-smoke-test.md`).
+- **Release gate after deploy: `scripts/release_smoke_v24.py`** (`FAILED 0`,
+  `SKIPPED 0`, `RESULT: PASS`). `scripts/railway_smoke_test.py` is a quick
+  liveness-only smoke — it predates authenticated route enforcement and is **not**
+  proof of authorization correctness. See `docs/deployment/railway-smoke-test.md`.
+- Release evidence/tagging rules — including why post-deployment results go in the
+  GitHub Release body rather than the tagged tree: `docs/releases/RELEASE-PROCESS.md`.
 - When changing deployment, update `railway/`, the three `docs/deployment/*`
   files, and `docs/phase-gates/phase-13-infrastructure.md` together.
 

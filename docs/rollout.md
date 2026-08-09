@@ -158,7 +158,8 @@ changes vs v0.12**.
 - Observability: OpenTelemetry traces → Tempo/Jaeger; metrics → Prometheus/Grafana; LLM traces →
   Langfuse.
 - Workers on Celery/Temporal with retries + dead-letter queues.
-- Deploy: **Railway only** — one project, five services (web, api, worker,
-  managed Postgres+pgvector, Redis). No Vercel. See
+- Deploy: **Railway only** — one project, four services (web, api, worker,
+  managed Postgres+pgvector). Redis was removed: declared and health-gated, but no
+  runtime code ever read `REDIS_URL`. No Vercel. See
   [docs/deployment/railway.md](deployment/railway.md). (Aligned in v0.3.2.)
 - Cost controls: cache embeddings, batch extraction, track cost per write/retrieval.
