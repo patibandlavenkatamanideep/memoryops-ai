@@ -3,6 +3,8 @@ import "./globals.css";
 import ModeBanner from "@/components/ModeBanner";
 import Nav from "@/components/Nav";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "MemoryOps AI — Enterprise memory governance",
   description:
