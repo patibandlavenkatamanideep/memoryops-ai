@@ -1,7 +1,46 @@
-# Railway smoke test
+# Railway smoke tests
 
-Post-deploy verification for a live MemoryOps AI stack on Railway. Run it after
-all five services are up (see [railway.md](railway.md)).
+There are **two** smoke tests, and they answer different questions. Using the wrong
+one as release evidence is the mistake this page exists to prevent.
+
+| Script | Question it answers | Release gate? |
+|--------|---------------------|---------------|
+| [`scripts/railway_smoke_test.py`](../../scripts/railway_smoke_test.py) | Is the stack up and serving? | **No** |
+| [`scripts/release_smoke_v24.py`](../../scripts/release_smoke_v24.py) | Does the deployed authorization boundary match the release claim? | **Yes** |
+
+## Release gate — `release_smoke_v24.py`
+
+The production release gate since v2.4. It drives seven principals, the four JWT
+role-claim states, cross-tenant isolation, a full write→delete→evidence lifecycle,
+and the web/BFF boundary against a live deployment. See
+[`docs/releases/RELEASE-PROCESS.md`](../releases/RELEASE-PROCESS.md).
+
+```bash
+python scripts/release_smoke_v24.py \
+  --api-url https://<api>.up.railway.app \
+  --web-url https://<web>.up.railway.app \
+  --jwt-key "$MEMORYOPS_AUTH_JWT_KEY" \
+  --production
+```
+
+Gate: `FAILED 0`, `SKIPPED 0`, `RESULT: PASS`. Exit codes are `0` pass, `1` fail,
+`2` incomplete (something was skipped), `3` environment fault (e.g. no local CA
+bundle — see below).
+
+## Quick deployment / liveness smoke — `railway_smoke_test.py`
+
+**This is not the release gate.** It predates authenticated route enforcement: it
+makes unauthenticated `POST /api/chat` calls and cannot exercise the authorization
+boundary at all. Treat a green run as *"the stack is up"* and nothing more.
+
+In particular, **do not cite it as evidence of authorization correctness.** Against
+a production-profile deployment (`MEMORYOPS_AUTH_MODE=jwt`) its write/read checks
+will fail on 401 — which is the API behaving correctly, not a defect.
+
+It is kept because a dependency-free liveness check that runs from any shell is
+genuinely useful during a deploy, before there is any reason to reach for the gate.
+
+Run it after the four services are up (see [railway.md](railway.md)).
 
 ## Automated
 

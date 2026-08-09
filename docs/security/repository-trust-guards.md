@@ -133,6 +133,48 @@ consumer — not to allowlist the config.
 Import matching resolves the module name, so `import redis_notes` and `from redisx
 import …` are not confused for `redis`.
 
+### `railway-deployment-config`
+
+**Claim:** the Railway configuration in the repository describes the deployment that
+actually runs.
+
+v2.4 shipped a release candidate that passed every code gate and could not be
+deployed. Two defects caused it, and neither was expressible as a unit test:
+
+- `railway/api.railway.json` declared `startCommand` with `--port $PORT`. A
+  config-as-code start command on a Dockerfile service runs in **exec form without
+  shell expansion**, so uvicorn received the four characters `$PORT`. This repository
+  had *already documented* that exact failure for the playground service; the API hit
+  it independently anyway, which is why it is now a guard rather than a paragraph.
+- `railway/web.railway.json` health-checked `/`, which answers `307 → /signin` in
+  authenticated mode. It works in demo mode, which is precisely why the mistake
+  survives review.
+
+Both were fixed in the Railway dashboard. That restored production and left the
+repository describing a deployment that no longer existed — so anything built from the
+checked-in config reproduced the outage.
+
+The guard asserts that every canonical `railway/*.railway.json` exists, that no
+`startCommand` anywhere contains a literal `$PORT`, that `api`/`web`/`worker` declare
+no `startCommand` at all (their Dockerfile `CMD` is authoritative), that the web
+health check is not `/`, and that no service has two competing config sources.
+
+**Parsed, not grepped** — for the usual reason. `docs/deployment/railway.md` explains
+the `$PORT` failure at length, and a substring search would fail the check that exists
+to prevent it.
+
+**One transitional exception**, named in `TRANSITIONAL_DUPLICATE_CONFIGS`:
+`services/api/railway.toml` coexists with `railway/api.railway.json` because Railway
+currently reads the TOML. It is permitted *by name*, not by shape, so deleting the
+exception after the Phase B switchover tightens enforcement to "exactly one config
+source per service" with no further code change. Any other service gaining a second
+source is a finding today.
+
+The playground is deliberately outside `DOCKERFILE_OWNS_START`: its Dockerfile `CMD`
+is `sh -c "streamlit run … --server.port ${PORT:-8501} …"`, which *does* expand
+`$PORT` because it runs through a shell. It is the reference implementation for
+dynamic port binding, not an exception to the rule.
+
 ## Adding a guard
 
 Add the function to `scripts/repo_trust_guards.py`, register it in `GUARDS`, and add

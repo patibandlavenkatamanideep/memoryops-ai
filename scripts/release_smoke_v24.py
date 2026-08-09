@@ -39,6 +39,7 @@ import base64
 import hashlib
 import hmac
 import json
+import ssl
 import sys
 import time
 import urllib.error
@@ -54,6 +55,19 @@ TIMEOUT_SECONDS = 20
 #: treats an omitted ``roles`` claim and a JSON ``null`` one as different states,
 #: so ``None`` cannot double as the default here.
 _OMITTED = object()
+
+#: Pseudo-statuses for conditions that are not HTTP answers. Kept negative so they
+#: can never collide with a real status code.
+STATUS_CONNECTION_ERROR = 0
+STATUS_TLS_ERROR = -1
+
+#: Exit codes. Distinct so a caller (or CI) can tell "the boundary is wrong" from
+#: "this machine cannot make an HTTPS request" — conflating them is what made a
+#: missing CA bundle look like a dozen authorization failures.
+EXIT_PASS = 0
+EXIT_FAIL = 1
+EXIT_INCOMPLETE = 2
+EXIT_ENVIRONMENT = 3
 
 # ── Result recording ─────────────────────────────────────────────────────────
 
@@ -135,7 +149,14 @@ def request(
         raw = exc.read().decode("utf-8", "replace")
         status, resp_headers = exc.code, dict(exc.headers or {})
     except urllib.error.URLError as exc:
-        return 0, f"connection error: {exc.reason}", {}
+        # A TLS trust-store problem is a property of *this machine*, not of the
+        # deployment. Reported as its own status so it can never be counted as a
+        # failed boundary check: during the v2.4 release a missing CA bundle
+        # produced twelve "failures" that read as a breached trust boundary, while
+        # curl reached the same URLs successfully.
+        if isinstance(exc.reason, ssl.SSLCertVerificationError):
+            return STATUS_TLS_ERROR, f"TLS certificate verification failed: {exc.reason}", {}
+        return STATUS_CONNECTION_ERROR, f"connection error: {exc.reason}", {}
 
     try:
         return status, json.loads(raw), resp_headers
@@ -262,8 +283,22 @@ PRINCIPAL_MATRIX: list[tuple[str, str, str, str, dict | None, str]] = [
 ]
 
 
+def tls_preflight(api: str) -> str | None:
+    """One request to prove HTTPS works from here. Returns an error message or None.
+
+    Run before the matrix so a trust-store problem is reported once, as an
+    environment fault, instead of as ~68 boundary failures.
+    """
+    status, body, _ = request("GET", f"{api}/healthz")
+    if status == STATUS_TLS_ERROR:
+        return str(body)
+    return None
+
+
 def _classify(status: int, expect: str) -> tuple[bool, str]:
-    if status == 0:
+    if status == STATUS_TLS_ERROR:
+        return False, "TLS verification failed — environment fault, not a boundary result"
+    if status == STATUS_CONNECTION_ERROR:
         return False, "connection failed"
     if status == 401:
         return False, "401 — auth not configured as this smoke assumes (check --jwt-key/aud/iss)"
@@ -304,11 +339,18 @@ def section_infrastructure(api: str, r: Results) -> None:
         f"got {status}: {body}",
     )
 
+    # Asserting only `status == 200` was too weak: without OPERATIONAL_DATABASE_URL
+    # the endpoint answers 200 with `{"healthy": false}` — a worker whose health is
+    # not observable at all — and the check passed anyway. v2.4 caught that only
+    # because the body was read by hand. The gate now requires the body to say so.
     status, body, _ = request("GET", f"{api}/healthz/workers")
+    healthy = isinstance(body, dict) and body.get("healthy") is True
     r.check(
-        "worker heartbeat GET /healthz/workers is 200",
-        status == 200,
-        f"got {status}: {body}",
+        'worker heartbeat GET /healthz/workers reports {"healthy": true}',
+        status == 200 and healthy,
+        f"got {status}: {body} — `healthy` must be exactly true. A false/null/absent "
+        "value usually means OPERATIONAL_DATABASE_URL is unset, so global worker "
+        "health cannot be observed",
     )
 
 
@@ -809,6 +851,24 @@ def main() -> int:
     if web:
         print(f"                     web {web}")
 
+    tls_error = tls_preflight(api)
+    if tls_error:
+        print(
+            "\nRESULT: ENVIRONMENT — cannot verify TLS from this machine; no boundary\n"
+            "checks were run.\n"
+            f"\n  {tls_error}\n"
+            "\nThis is a local trust-store problem, not a finding about the deployment.\n"
+            "Fix it and re-run:\n"
+            "\n  pip install certifi\n"
+            "  export SSL_CERT_FILE=$(python -m certifi)\n"
+            "\nOn macOS, a python.org interpreter also ships "
+            '"Install Certificates.command".\n'
+            "\nDo NOT disable certificate verification to get past this — the smoke "
+            "test\nasserts a production security boundary, and an unverified "
+            "connection cannot\nsupport that claim."
+        )
+        return EXIT_ENVIRONMENT
+
     section_infrastructure(api, r)
     section_public_surface(
         api, r, expect_docs_closed=not args.allow_docs, production=args.production
@@ -842,12 +902,12 @@ def main() -> int:
 
     if r.failed:
         print("\nRESULT: FAIL — the deployed trust boundary does not match the release claim.")
-        return 1
+        return EXIT_FAIL
     if r.skipped:
         print("\nRESULT: INCOMPLETE — everything run passed, but sections were skipped.")
-        return 2
+        return EXIT_INCOMPLETE
     print("\nRESULT: PASS — deployed trust boundary matches the v2.4 claim.")
-    return 0
+    return EXIT_PASS
 
 
 if __name__ == "__main__":

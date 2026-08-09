@@ -119,8 +119,8 @@ scheduling, locking, retries, and durable history around it. See
 
 ## How this fits the Railway worker service
 
-Deployment is Railway-only (one project, five services: web/api/worker + Postgres
-+ Redis — see [deployment/railway.md](deployment/railway.md)). The `worker`
+Deployment is Railway-only (one project, four services: web/api/worker + Postgres —
+Redis was removed, see [deployment/railway.md](deployment/railway.md)). The `worker`
 service runs the v0.8 scheduler (`services/worker/main.py`), which calls the
 orchestrator once per interval for each configured `"tenant:user"` scope.
 **Scope enumeration stays explicit** (`worker_scopes`), and workers are

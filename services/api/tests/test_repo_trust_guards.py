@@ -11,6 +11,7 @@ rather than editing the repository.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -20,11 +21,14 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from repo_trust_guards import (  # noqa: E402
+    CANONICAL_RAILWAY_CONFIGS,
     GUARDS,
+    TRANSITIONAL_DUPLICATE_CONFIGS,
     check_no_committed_secret_literals,
     check_no_demo_identity_in_server_code,
     check_no_retired_infrastructure,
     check_no_sys_path_mutation,
+    check_railway_deployment_config,
     run_all,
 )
 
@@ -49,6 +53,7 @@ def test_every_guard_is_registered_and_callable():
         "committed-secret-literal",
         "demo-identity-in-server-code",
         "retired-infrastructure",
+        "railway-deployment-config",
     }
     for name, guard in GUARDS.items():
         assert callable(guard), name
@@ -343,3 +348,121 @@ def test_a_similarly_named_module_is_not_confused_for_the_retired_one(tmp_path):
     """`redis_notes` is not `redis`; import matching is on the module, not a substring."""
     _write(tmp_path, "services/api/app/thing.py", "import redis_notes\nfrom redisx import y\n")
     assert check_no_retired_infrastructure(tmp_path) == []
+
+
+# ── guard 5: Railway deployment configuration ───────────────────────────────
+#
+# The two defects below both reached production in v2.4 and were invisible to every
+# other gate: a `$PORT` that never expanded, and a health check pointed at a route
+# that redirects. Each negative test reproduces one of them exactly.
+
+_VALID_DEPLOY = {
+    "api": '{"deploy": {"healthcheckPath": "/healthz", "numReplicas": 1}}',
+    "web": '{"deploy": {"healthcheckPath": "/architecture", "numReplicas": 1}}',
+    "worker": '{"deploy": {"numReplicas": 1}}',
+    "playground": '{"deploy": {"healthcheckPath": "/_stcore/health"}}',
+}
+
+
+def _railway_tree(root: Path, **overrides: str) -> Path:
+    """A tree with every canonical config present and valid, minus any overrides."""
+    for service, relative in CANONICAL_RAILWAY_CONFIGS.items():
+        _write(root, relative, overrides.get(service, _VALID_DEPLOY[service]))
+    return root
+
+
+def test_a_valid_railway_tree_is_clean(tmp_path):
+    assert check_railway_deployment_config(_railway_tree(tmp_path)) == []
+
+
+def test_the_repository_railway_config_is_clean():
+    assert check_railway_deployment_config(REPO_ROOT) == []
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        "uvicorn app.main:app --host 0.0.0.0 --port $PORT",
+        "npm run start -- --port ${PORT} --hostname 0.0.0.0",
+    ],
+)
+def test_a_literal_port_in_a_start_command_is_rejected(tmp_path, start):
+    """The exact v2.4 defect: exec form does not expand `$PORT`."""
+    tree = _railway_tree(
+        tmp_path, playground=json.dumps({"deploy": {"startCommand": start}})
+    )
+    findings = check_railway_deployment_config(tree)
+    assert any("literal `$PORT`" in f.detail for f in findings)
+
+
+def test_a_shell_expanded_port_in_the_dockerfile_is_not_a_finding(tmp_path):
+    """The playground expands `${PORT:-8501}` via `sh -c` in its Dockerfile CMD.
+
+    The guard inspects Railway configs, not Dockerfiles, so the reference
+    implementation for dynamic ports must not trip it.
+    """
+    tree = _railway_tree(tmp_path)
+    _write(
+        tree,
+        "apps/playground/Dockerfile",
+        'CMD ["sh", "-c", "streamlit run app.py --server.port ${PORT:-8501}"]\n',
+    )
+    assert check_railway_deployment_config(tree) == []
+
+
+def test_a_root_healthcheck_on_web_is_rejected(tmp_path):
+    """`/` answers 307 -> /signin in authenticated mode, so it can never pass."""
+    tree = _railway_tree(tmp_path, web='{"deploy": {"healthcheckPath": "/"}}')
+    findings = check_railway_deployment_config(tree)
+    assert any("307" in f.detail for f in findings)
+
+
+def test_the_architecture_healthcheck_is_accepted(tmp_path):
+    tree = _railway_tree(tmp_path, web='{"deploy": {"healthcheckPath": "/architecture"}}')
+    assert check_railway_deployment_config(tree) == []
+
+
+@pytest.mark.parametrize("service", ["api", "web", "worker"])
+def test_a_start_command_override_is_rejected(tmp_path, service):
+    """Declaring the launch in both the Dockerfile and the config is how they drift."""
+    tree = _railway_tree(tmp_path, **{service: '{"deploy": {"startCommand": "run it"}}'})
+    findings = check_railway_deployment_config(tree)
+    assert any("Dockerfile CMD is" in f.detail for f in findings)
+
+
+def test_a_missing_canonical_config_is_rejected(tmp_path):
+    tree = _railway_tree(tmp_path)
+    (tree / CANONICAL_RAILWAY_CONFIGS["worker"]).unlink()
+    findings = check_railway_deployment_config(tree)
+    assert any("is missing" in f.detail for f in findings)
+
+
+def test_the_transitional_api_duplicate_is_accepted(tmp_path):
+    """Production still reads services/api/railway.toml; Phase B removes it.
+
+    This is the one permitted duplicate, and it is permitted by name rather than by
+    shape so Phase B can delete the exception and get enforcement for free.
+    """
+    tree = _railway_tree(tmp_path)
+    _write(tree, TRANSITIONAL_DUPLICATE_CONFIGS["api"], '[deploy]\nhealthcheckPath = "/healthz"\n')
+    assert check_railway_deployment_config(tree) == []
+
+
+def test_a_duplicate_config_for_any_other_service_is_rejected(tmp_path):
+    """The exception is for the API only — web gaining a second source is a finding."""
+    tree = _railway_tree(tmp_path)
+    _write(tree, "apps/web/railway.toml", '[deploy]\nhealthcheckPath = "/architecture"\n')
+    findings = check_railway_deployment_config(tree)
+    assert any("competing Railway config sources" in f.detail for f in findings)
+
+
+def test_the_transitional_toml_is_still_checked_for_a_literal_port(tmp_path):
+    """Being a permitted duplicate does not exempt it — it is what production runs."""
+    tree = _railway_tree(tmp_path)
+    _write(
+        tree,
+        TRANSITIONAL_DUPLICATE_CONFIGS["api"],
+        '[deploy]\nstartCommand = "uvicorn app.main:app --port $PORT"\n',
+    )
+    findings = check_railway_deployment_config(tree)
+    assert any("literal `$PORT`" in f.detail for f in findings)
