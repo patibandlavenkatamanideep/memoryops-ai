@@ -158,6 +158,53 @@ jobs:
           MEMORYOPS_STORAGE: memory
         run: python evals/run_evals.py
 
+      # ── Recorded real-provider Gemini evidence ────────────────────────────────
+      # benchmark/EXTRACTION_QUALITY.md publishes a real gemini-2.5-flash score. This
+      # replays the committed cassette so that number is regenerated rather than
+      # remembered — with no Gemini credential and no network.
+      #
+      # The optional extra is installed HERE and not in requirements-dev.txt on
+      # purpose: the base suite must keep running without any provider SDK, which is
+      # what caught an earlier module-level collection error.
+      #
+      # `--block-network` makes an unrecorded request a failure rather than a silent
+      # live call. `-p no:randomly`-style ordering is irrelevant because the cassette
+      # matches on request body, not sequence.
+      - name: Install the Gemini extra (for replay only)
+        working-directory: services/api
+        run: python -m pip install ".[gemini]"
+
+      # A skip here is a failure. Without this the step could pass while proving
+      # nothing — exactly how the evidence gap arose in the first place.
+      - name: Recorded Gemini extraction evidence (no key, no network)
+        working-directory: services/api
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: |
+          set -euo pipefail
+          # Guarantee no real credential is visible to the test.
+          unset GEMINI_API_KEY GOOGLE_API_KEY || true
+          python -m pytest tests/test_extraction_evidence_gemini.py \
+            --record-mode=none --block-network \
+            -p no:cacheprovider -rs --strict-markers \
+            --junitxml=/tmp/gemini-evidence.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          suite = ET.parse("/tmp/gemini-evidence.xml").getroot()
+          case = next(
+              (c for c in suite.iter("testcase")
+               if c.get("name") == "test_extraction_quality_real_gemini"),
+              None,
+          )
+          assert case is not None, "the evidence test did not run at all"
+          skipped = case.find("skipped")
+          assert skipped is None, (
+              "the recorded Gemini evidence test SKIPPED — it must execute here. "
+              f"reason: {skipped.get('message') if skipped is not None else ''}"
+          )
+          print("recorded Gemini evidence executed (not skipped)")
+          PY
+
   api-postgres:
     name: API — full suite + evals + benchmark + enforced RLS on Postgres + pgvector
     runs-on: ubuntu-latest

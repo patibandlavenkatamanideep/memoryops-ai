@@ -1,0 +1,2224 @@
+interactions:
+- request:
+    body: '{"contents": [{"parts": [{"text": "Remember I prefer dark mode in all my
+      apps."}], "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory
+      Extraction Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps
+      AI, a governed memory\nlifecycle system. Given a single user message, identify
+      durable facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1820'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User prefers dark mode in all applications.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 9,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a durable UI preference.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 388,\n    \"candidatesTokenCount\":
+        87,\n    \"totalTokenCount\": 610,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 388\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 135,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"q_p5at_4L5b3jrEPyKuH-A0\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '896'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:05 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1466
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I always take the window seat on flights."}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1818'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User prefers window seats on flights.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 8,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a consistent travel preference.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 387,\n    \"candidatesTokenCount\":
+        86,\n    \"totalTokenCount\": 591,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 387\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 118,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"rfp5araMEc7-jrEPp6vMCA\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '896'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:06 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1319
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I''m building a Next.js analytics dashboard
+      for my startup."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1835'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"The user is building a Next.js analytics
+        dashboard for their startup.\\\",\\n      \\\"type\\\": \\\"project\\\",\\n
+        \     \\\"importance\\\": 7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\":
+        \\\"low\\\",\\n      \\\"rationale\\\": \\\"User stated they are building
+        a specific project, which is important context.\\\"\\n    }\\n  ]\\n}\\n```\"\n
+        \         }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        392,\n    \"candidatesTokenCount\": 99,\n    \"totalTokenCount\": 619,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 392\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 128,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"rvp5arXrMeyOjMcPkZOnuQ4\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '949'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:08 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1339
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Never use emojis when you answer me."}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1813'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"The user prefers that I never use emojis
+        in my responses.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        9,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a preference for interaction
+        style.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 386,\n    \"candidatesTokenCount\":
+        92,\n    \"totalTokenCount\": 630,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 386\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 152,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"sPp5arrODdbj-sAPsODtyAc\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '921'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:09 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1536
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I''m vegetarian and my sister Mia is
+      allergic to peanuts."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1833'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User is vegetarian.\\\",\\n      \\\"type\\\":
+        \\\"preference\\\",\\n      \\\"importance\\\": 7,\\n      \\\"confidence\\\":
+        1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n      \\\"rationale\\\":
+        \\\"User stated a personal dietary preference.\\\"\\n    },\\n    {\\n      \\\"content\\\":
+        \\\"User's sister Mia is allergic to peanuts.\\\",\\n      \\\"type\\\": \\\"constraint\\\",\\n
+        \     \\\"importance\\\": 8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\":
+        \\\"medium\\\",\\n      \\\"rationale\\\": \\\"User stated a health constraint
+        for a family member.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n
+        \       \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n
+        \     \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        391,\n    \"candidatesTokenCount\": 155,\n    \"totalTokenCount\": 812,\n
+        \   \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 391\n      }\n    ],\n    \"thoughtsTokenCount\":
+        266,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"sfp5aoWANp3f_uMP3_K0yAU\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1152'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:11 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=2158
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Remember I live in Boston, I''m allergic
+      to shellfish, and my anniversary is May 3."}], "role": "user"}], "systemInstruction":
+      {"parts": [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory
+      extraction component of MemoryOps AI, a governed memory\nlifecycle system. Given
+      a single user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1859'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User lives in Boston.\\\",\\n      \\\"type\\\":
+        \\\"preference\\\",\\n      \\\"importance\\\": 9,\\n      \\\"confidence\\\":
+        1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n      \\\"rationale\\\":
+        \\\"User explicitly stated their current city of residence.\\\"\\n    },\\n
+        \   {\\n      \\\"content\\\": \\\"User is allergic to shellfish.\\\",\\n
+        \     \\\"type\\\": \\\"constraint\\\",\\n      \\\"importance\\\": 10,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"medium\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a critical health constraint.\\\"\\n
+        \   },\\n    {\\n      \\\"content\\\": \\\"User's anniversary is May 3.\\\",\\n
+        \     \\\"type\\\": \\\"episodic\\\",\\n      \\\"importance\\\": 9,\\n      \\\"confidence\\\":
+        1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n      \\\"rationale\\\":
+        \\\"User explicitly stated an important personal date.\\\"\\n    }\\n  ]\\n}\\n```\"\n
+        \         }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        399,\n    \"candidatesTokenCount\": 224,\n    \"totalTokenCount\": 677,\n
+        \   \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 399\n      }\n    ],\n    \"thoughtsTokenCount\":
+        54,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"tPp5apPTBbrrjrEPj5umiAY\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1420'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:13 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1484
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I usually work late on weekdays and
+      I prefer async standups."}], "role": "user"}], "systemInstruction": {"parts":
+      [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction
+      component of MemoryOps AI, a governed memory\nlifecycle system. Given a single
+      user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1837'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User usually works late on weekdays.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 7,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User stated a preference regarding their work
+        schedule.\\\"\\n    },\\n    {\\n      \\\"content\\\": \\\"User prefers async
+        standups.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User stated a preference for async standups.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 391,\n    \"candidatesTokenCount\":
+        155,\n    \"totalTokenCount\": 801,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 391\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 255,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"tfp5av6ULf-h_uMP4MKHkA4\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1158'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:15 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=2046
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Remember I fly out of SFO, I hate red-eye
+      flights, and I always pack carry-on only."}], "role": "user"}], "systemInstruction":
+      {"parts": [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory
+      extraction component of MemoryOps AI, a governed memory\nlifecycle system. Given
+      a single user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1860'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User's preferred departure airport
+        is SFO.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated their preferred departure
+        airport.\\\"\\n    },\\n    {\\n      \\\"content\\\": \\\"User dislikes red-eye
+        flights.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a strong travel preference.\\\"\\n
+        \   },\\n    {\\n      \\\"content\\\": \\\"User always packs carry-on only.\\\",\\n
+        \     \\\"type\\\": \\\"constraint\\\",\\n      \\\"importance\\\": 8,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a consistent travel habit/constraint.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 402,\n    \"candidatesTokenCount\":
+        228,\n    \"totalTokenCount\": 1030,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 402\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 400,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"t_p5apa2NpLN_uMP9pXcmAw\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1455'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:18 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=3037
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Please answer me in a concise, formal
+      tone."}], "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory
+      Extraction Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps
+      AI, a governed memory\nlifecycle system. Given a single user message, identify
+      durable facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1820'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User prefers a concise, formal tone
+        for responses.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a preference for response
+        tone.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 388,\n    \"candidatesTokenCount\":
+        90,\n    \"totalTokenCount\": 606,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 388\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 128,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"u_p5apWTApSm1MkP0rHumQI\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '910'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:20 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1378
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "For context, I''m a staff data engineer
+      at a fintech company."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1837'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User is a staff data engineer at a
+        fintech company.\\\",\\n      \\\"type\\\": \\\"system\\\",\\n      \\\"importance\\\":
+        6,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"Establishes user's professional role and industry
+        context.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 393,\n    \"candidatesTokenCount\":
+        94,\n    \"totalTokenCount\": 695,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 393\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 208,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"vPp5aqi1HuaUjrEPnafB-A8\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '911'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:22 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1769
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I no longer use Postgres; I switched
+      to Snowflake for the warehouse."}], "role": "user"}], "systemInstruction": {"parts":
+      [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction
+      component of MemoryOps AI, a governed memory\nlifecycle system. Given a single
+      user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1845'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"The user uses Snowflake as their data
+        warehouse instead of Postgres.\\\",\\n      \\\"type\\\": \\\"project\\\",\\n
+        \     \\\"importance\\\": 7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\":
+        \\\"low\\\",\\n      \\\"rationale\\\": \\\"User explicitly stated a change
+        in their data warehouse technology.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n
+        \       ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        392,\n    \"candidatesTokenCount\": 94,\n    \"totalTokenCount\": 718,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 392\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 232,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"vvp5aq7xE7K8_uMP2pmDiQc\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '938'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:24 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1901
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "My editor is Neovim and I deploy everything
+      on Railway."}], "role": "user"}], "systemInstruction": {"parts": [{"text": "#
+      Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component of
+      MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1832'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User's preferred editor is Neovim.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 7,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly states their preferred editor.\\\"\\n
+        \   },\\n    {\\n      \\\"content\\\": \\\"User deploys all projects on Railway.\\\",\\n
+        \     \\\"type\\\": \\\"constraint\\\",\\n      \\\"importance\\\": 7,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly states their deployment platform.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 391,\n    \"candidatesTokenCount\":
+        156,\n    \"totalTokenCount\": 775,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 391\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 228,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"wPp5avDuEuCZ_uMP6PKriQc\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1161'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:26 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1928
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I want all code examples in TypeScript,
+      not JavaScript."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1832'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"Code examples should be provided in
+        TypeScript.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        8,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a preference for TypeScript
+        over JavaScript for code examples.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n
+        \       ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        389,\n    \"candidatesTokenCount\": 92,\n    \"totalTokenCount\": 602,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 389\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 121,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"wvp5ar2SE8bg_uMPt7n5mAc\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '938'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:27 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1401
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "My daughter''s name is Ada and she turns
+      5 in October."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1830'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User's daughter's name is Ada.\\\",\\n
+        \     \\\"type\\\": \\\"semantic\\\",\\n      \\\"importance\\\": 7,\\n      \\\"confidence\\\":
+        1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n      \\\"rationale\\\":
+        \\\"User explicitly stated their daughter's name.\\\"\\n    },\\n    {\\n
+        \     \\\"content\\\": \\\"User's daughter turns 5 in October.\\\",\\n      \\\"type\\\":
+        \\\"episodic\\\",\\n      \\\"importance\\\": 6,\\n      \\\"confidence\\\":
+        1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n      \\\"rationale\\\":
+        \\\"User explicitly stated their daughter's age and birth month.\\\"\\n    }\\n
+        \ ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n
+        \     \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\":
+        {\n    \"promptTokenCount\": 393,\n    \"candidatesTokenCount\": 166,\n    \"totalTokenCount\":
+        827,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 393\n      }\n    ],\n    \"thoughtsTokenCount\":
+        268,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"w_p5aumhNaqZ-8YP5YLAyAY\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1161'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:29 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=2136
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Don''t include external links in your
+      answers."}], "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory
+      Extraction Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps
+      AI, a governed memory\nlifecycle system. Given a single user message, identify
+      durable facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1822'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"Do not include external links in answers.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 8,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a preference for how answers
+        should be formatted.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n
+        \       \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n
+        \     \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        388,\n    \"candidatesTokenCount\": 91,\n    \"totalTokenCount\": 630,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 388\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 151,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"xvp5atmsB932jrEP4NXH2A8\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '919'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:31 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1451
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "What did I say my favorite food was?"}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1813'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        []\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n
+        \     \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\":
+        {\n    \"promptTokenCount\": 387,\n    \"candidatesTokenCount\": 15,\n    \"totalTokenCount\":
+        440,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 387\n      }\n    ],\n    \"thoughtsTokenCount\":
+        38,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"x_p5au2GKbCU_uMPpM-7-AY\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '614'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:32 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=600
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Can you summarize the last quarter''s
+      revenue?"}], "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory
+      Extraction Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps
+      AI, a governed memory\nlifecycle system. Given a single user message, identify
+      durable facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1822'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        []\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n
+        \     \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\":
+        {\n    \"promptTokenCount\": 388,\n    \"candidatesTokenCount\": 15,\n    \"totalTokenCount\":
+        456,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 388\n      }\n    ],\n    \"thoughtsTokenCount\":
+        53,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"yPp5atD1F5ic-8YPwenkuAY\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '614'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:32 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=650
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Good morning! How are you doing today?"}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1815'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"{\\\"memories\\\": []}\"\n          }\n
+        \       ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        387,\n    \"candidatesTokenCount\": 6,\n    \"totalTokenCount\": 439,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 387\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 46,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"yfp5avfpB9OC-8YP3oHv4Q8\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '593'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:33 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=697
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I prefer metric units for everything."}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1814'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User prefers metric units for all measurements.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 8,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a general preference for
+        metric units.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 385,\n    \"candidatesTokenCount\":
+        89,\n    \"totalTokenCount\": 576,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 385\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 102,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"yvp5atOfBaLN1MkPyOm94QM\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '914'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:35 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1341
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Remember I''m lactose intolerant, I
+      don''t drink alcohol, and I love spicy food."}], "role": "user"}], "systemInstruction":
+      {"parts": [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory
+      extraction component of MemoryOps AI, a governed memory\nlifecycle system. Given
+      a single user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1855'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"The user is lactose intolerant.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 9,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a dietary constraint.\\\"\\n
+        \   },\\n    {\\n      \\\"content\\\": \\\"The user does not drink alcohol.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 9,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a beverage preference.\\\"\\n
+        \   },\\n    {\\n      \\\"content\\\": \\\"The user loves spicy food.\\\",\\n
+        \     \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\": 9,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a food preference.\\\"\\n
+        \   }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n
+        \     },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n
+        \ \"usageMetadata\": {\n    \"promptTokenCount\": 398,\n    \"candidatesTokenCount\":
+        217,\n    \"totalTokenCount\": 732,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 398\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 117,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"y_p5aojeFZ-ljMcPn66XuAc\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '1402'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:36 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1742
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "We''re building MemoryOps, a governed
+      memory layer for AI assistants."}], "role": "user"}], "systemInstruction": {"parts":
+      [{"text": "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction
+      component of MemoryOps AI, a governed memory\nlifecycle system. Given a single
+      user message, identify durable facts worth\nremembering: stable preferences,
+      constraints, project context, and explicit\n\"remember this\" requests. Ignore
+      questions, chit-chat, and ephemeral details.\n\nYou do not make storage or safety
+      decisions. A deterministic policy broker runs\nafter you and is authoritative
+      \u2014 never assume your output will be stored as-is,\nand never attempt to
+      bypass safety rules. Do not invent facts the user did not\nstate. Do not extract
+      secrets (API keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1845'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"The user is building MemoryOps, a governed
+        memory layer for AI assistants.\\\",\\n      \\\"type\\\": \\\"project\\\",\\n
+        \     \\\"importance\\\": 7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\":
+        \\\"low\\\",\\n      \\\"rationale\\\": \\\"Establishes the user's current
+        project context.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n
+        \       \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n
+        \     \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        393,\n    \"candidatesTokenCount\": 97,\n    \"totalTokenCount\": 628,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 393\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 138,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"zfp5aqqUC_OS-8YP4YDH8A8\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '924'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:38 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1479
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I like meetings scheduled in the morning,
+      before 11am."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1831'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"Meetings should be scheduled in the
+        morning, before 11am.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        7,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly stated a scheduling preference
+        for meetings.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 392,\n    \"candidatesTokenCount\":
+        94,\n    \"totalTokenCount\": 593,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 392\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 107,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"zvp5avyyM4Wa_uMPkvGy4Q8\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '923'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:40 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1319
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "I split my time between Austin and Denver."}],
+      "role": "user"}], "systemInstruction": {"parts": [{"text": "# Memory Extraction
+      Prompt (v0.4)\n\nYou are the memory extraction component of MemoryOps AI, a
+      governed memory\nlifecycle system. Given a single user message, identify durable
+      facts worth\nremembering: stable preferences, constraints, project context,
+      and explicit\n\"remember this\" requests. Ignore questions, chit-chat, and ephemeral
+      details.\n\nYou do not make storage or safety decisions. A deterministic policy
+      broker runs\nafter you and is authoritative \u2014 never assume your output
+      will be stored as-is,\nand never attempt to bypass safety rules. Do not invent
+      facts the user did not\nstate. Do not extract secrets (API keys, passwords,
+      tokens); the policy broker\nblocks them regardless.\n\nReturn ONLY a JSON object
+      matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1819'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"User splits time between Austin and
+        Denver.\\\",\\n      \\\"type\\\": \\\"preference\\\",\\n      \\\"importance\\\":
+        6,\\n      \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"low\\\",\\n
+        \     \\\"rationale\\\": \\\"User's primary locations.\\\"\\n    }\\n  ]\\n}\\n```\"\n
+        \         }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\":
+        \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\":
+        387,\n    \"candidatesTokenCount\": 85,\n    \"totalTokenCount\": 597,\n    \"promptTokensDetails\":
+        [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 387\n
+        \     }\n    ],\n    \"thoughtsTokenCount\": 125,\n    \"serviceTier\": \"standard\"\n
+        \ },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"0Pp5aq3kEe-njMcP6OGN2A4\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '874'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:41 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1336
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Always redact my home address if it
+      ever comes up."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1827'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        [\\n    {\\n      \\\"content\\\": \\\"Always redact my home address.\\\",\\n
+        \     \\\"type\\\": \\\"constraint\\\",\\n      \\\"importance\\\": 9,\\n
+        \     \\\"confidence\\\": 1.0,\\n      \\\"sensitivity\\\": \\\"high\\\",\\n
+        \     \\\"rationale\\\": \\\"User explicitly requested redaction of home address
+        for privacy.\\\"\\n    }\\n  ]\\n}\\n```\"\n          }\n        ],\n        \"role\":
+        \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n
+        \   }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 389,\n    \"candidatesTokenCount\":
+        88,\n    \"totalTokenCount\": 652,\n    \"promptTokensDetails\": [\n      {\n
+        \       \"modality\": \"TEXT\",\n        \"tokenCount\": 389\n      }\n    ],\n
+        \   \"thoughtsTokenCount\": 175,\n    \"serviceTier\": \"standard\"\n  },\n
+        \ \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"0fp5aueyK7vK_uMP0-riiQw\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '901'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:43 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=1726
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"contents": [{"parts": [{"text": "Ugh, my commute on the 101 was brutal
+      again this morning."}], "role": "user"}], "systemInstruction": {"parts": [{"text":
+      "# Memory Extraction Prompt (v0.4)\n\nYou are the memory extraction component
+      of MemoryOps AI, a governed memory\nlifecycle system. Given a single user message,
+      identify durable facts worth\nremembering: stable preferences, constraints,
+      project context, and explicit\n\"remember this\" requests. Ignore questions,
+      chit-chat, and ephemeral details.\n\nYou do not make storage or safety decisions.
+      A deterministic policy broker runs\nafter you and is authoritative \u2014 never
+      assume your output will be stored as-is,\nand never attempt to bypass safety
+      rules. Do not invent facts the user did not\nstate. Do not extract secrets (API
+      keys, passwords, tokens); the policy broker\nblocks them regardless.\n\nReturn
+      ONLY a JSON object matching this schema, with no prose or markdown fences:\n\n```json\n{\n  \"memories\":
+      [\n    {\n      \"content\": \"<concise, self-contained statement of the fact>\",\n      \"type\":
+      \"preference | constraint | project | procedural | semantic | episodic | knowledge
+      | workflow | system\",\n      \"importance\": 0,\n      \"confidence\": 0.0,\n      \"sensitivity\":
+      \"low | medium | high\",\n      \"rationale\": \"<short reason this is worth
+      remembering>\"\n    }\n  ]\n}\n```\n\nRules:\n- Return an empty `memories` array
+      when nothing is worth remembering.\n- `importance` is 0\u201310; explicit \"remember\"
+      requests rank higher than inferred ones.\n- `confidence` is 0.0\u20131.0.\n-
+      Set `sensitivity` to your best estimate; the policy broker makes the final call.\n-
+      One fact per memory; keep `content` short and free of the user''s exact phrasing\n  when
+      it contains noise.\n"}], "role": "user"}, "generationConfig": {"temperature":
+      0.0}}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '1834'
+      content-type:
+      - application/json
+      host:
+      - generativelanguage.googleapis.com
+      user-agent:
+      - google-genai-sdk/2.17.0 gl-python/3.13.2
+      x-server-timeout:
+      - '10'
+    method: POST
+    uri: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  response:
+    body:
+      string: "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\":
+        [\n          {\n            \"text\": \"```json\\n{\\n  \\\"memories\\\":
+        []\\n}\\n```\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n
+        \     \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\":
+        {\n    \"promptTokenCount\": 395,\n    \"candidatesTokenCount\": 15,\n    \"totalTokenCount\":
+        471,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n
+        \       \"tokenCount\": 395\n      }\n    ],\n    \"thoughtsTokenCount\":
+        61,\n    \"serviceTier\": \"standard\"\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n
+        \ \"responseId\": \"0_p5aum9HrCU_uMPpM-7-AY\"\n}\n"
+    headers:
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      content-length:
+      - '614'
+      content-type:
+      - application/json; charset=UTF-8
+      date:
+      - Mon, 10 Aug 2026 16:22:44 GMT
+      server:
+      - scaffolding on HTTPServer2
+      server-timing:
+      - gfet4t7; dur=707
+      transfer-encoding:
+      - chunked
+      vary:
+      - Origin
+      - X-Origin
+      - Referer
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-gemini-service-tier:
+      - standard
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1
