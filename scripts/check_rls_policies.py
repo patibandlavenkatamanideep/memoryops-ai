@@ -7,9 +7,20 @@ Proves the database-level tenant isolation guarantee (ADR-006, invariant #1):
   2. A tenant-isolation policy exists on each.
   3. With app.tenant_id set to tenant A, a query never returns tenant B's rows.
 
-Designed to be CI-safe: if no database is reachable (or the driver isn't
-installed) it prints SKIP and exits 0, so it never blocks a no-infra pipeline.
-A genuine policy gap (DB reachable but RLS missing/leaking) exits 1.
+Two modes, deliberately different:
+
+**No-infra mode** — SQLAlchemy missing, or no database reachable. Prints SKIP and
+exits 0 so a laptop or a no-infra pipeline is never blocked.
+
+**Real-DB mode** — the database answered. The behavioral probe is then *mandatory*:
+if it cannot be provisioned, cannot authenticate, or cannot run, that is a FAIL, not
+a warning. A job that reaches a real Postgres and prints PASS must have actually
+proven cross-tenant isolation.
+
+That distinction was previously missing. The probe raised, the script printed
+``[WARN] behavioral probe skipped`` and returned 0, and the Postgres CI job went
+green while proving only that the *structural* policies exist — the leak test itself
+never ran. Structure without behaviour is not the guarantee this file claims to make.
 
 Usage:
     python scripts/check_rls_policies.py
@@ -45,12 +56,24 @@ def _probe_url(admin_url: str) -> str:
     RLS is bypassed by superusers/BYPASSRLS roles, so probing on the admin
     connection would be meaningless. Prefer an explicit MEMORYOPS_RLS_PROBE_URL;
     otherwise derive a non-superuser role on the same database.
+
+    ``render_as_string(hide_password=False)`` is required. ``str(URL)`` and the
+    default ``render_as_string()`` mask the password as ``***``, so the DSN carries
+    the literal three characters and the probe authenticates with them. Under
+    ``trust`` auth that silently works; under ``scram``/``md5`` — i.e. CI — it fails
+    with ``password authentication failed for user "rls_probe_role"``, which is
+    exactly what the Postgres job was reporting while still passing.
+    ``tests/test_rls.py`` had already hit this and documented it; this script had not.
     """
     if (override := os.getenv("MEMORYOPS_RLS_PROBE_URL")):
         return override
     from sqlalchemy.engine import make_url
 
-    return str(make_url(admin_url).set(username=_PROBE_ROLE, password=_PROBE_PW))
+    return (
+        make_url(admin_url)
+        .set(username=_PROBE_ROLE, password=_PROBE_PW)
+        .render_as_string(hide_password=False)
+    )
 
 
 def _is_superuser(engine) -> bool:
@@ -75,10 +98,42 @@ def _ensure_probe_engine(engine, url: str, is_super: bool):
         ).scalar()
         if not exists:
             conn.execute(text(f"create role {_PROBE_ROLE} login password '{_PROBE_PW}'"))
+        else:
+            # Existing is not the same as correct. A role left over from an earlier
+            # run may have a different password, or no LOGIN, and the probe would
+            # fail to authenticate for a reason that looks like an RLS problem.
+            conn.execute(text(f"alter role {_PROBE_ROLE} login password '{_PROBE_PW}'"))
+        # Never grant BYPASSRLS or superuser: the probe is only meaningful as a role
+        # that RLS actually applies to.
+        conn.execute(text(f"alter role {_PROBE_ROLE} nosuperuser nobypassrls"))
         conn.execute(text(f"grant usage on schema public to {_PROBE_ROLE}"))
         for table in _PROTECTED:
             conn.execute(text(f"grant select, insert on {table} to {_PROBE_ROLE}"))
     return create_engine(_probe_url(url), future=True)
+
+
+def _assert_probe_is_unprivileged(probe_engine) -> None:
+    """The probe must run as a role RLS applies to, or it proves nothing.
+
+    A superuser or BYPASSRLS role would read across tenants and be reported as a
+    leak — so this cannot mask a real failure. It exists to make the *reason*
+    explicit rather than surfacing as a confusing cross-tenant leak.
+    """
+    from sqlalchemy import text
+
+    with probe_engine.connect() as conn:
+        is_super = conn.execute(
+            text("select current_setting('is_superuser')")
+        ).scalar_one() == "on"
+        bypass = conn.execute(
+            text("select coalesce(bool_or(rolbypassrls), false) from pg_roles "
+                 "where rolname = current_user")
+        ).scalar_one()
+    if is_super or bypass:
+        raise RuntimeError(
+            "probe role is privileged (superuser or BYPASSRLS); RLS would be bypassed "
+            "and the behavioral proof would be meaningless"
+        )
 
 
 def _seed_probe_row(engine) -> None:
@@ -193,9 +248,11 @@ def main() -> int:
     #    Seed a foreign-tenant row as admin, then confirm a probe role scoped to a
     #    different tenant cannot see it.
     is_super = _is_superuser(engine)
+    probe_ran = False
     try:
         _seed_probe_row(engine)
         probe_engine = _ensure_probe_engine(engine, url, is_super)
+        _assert_probe_is_unprivileged(probe_engine)
         with probe_engine.connect() as pconn:
             pconn.execute(text("select set_config('app.tenant_id', 'rls_probe_a', true)"))
             leak_checks = {
@@ -212,15 +269,26 @@ def main() -> int:
                     text("select count(*) from worker_runs where tenant_id = 'rls_probe_b'")
                 ).scalar_one(),
             }
+        probe_ran = True
         leaked = {table: count for table, count in leak_checks.items() if count}
         if leaked:
             failures.append(f"cross-tenant leak under RLS: {leaked}")
         else:
             print("[OK]   behavioral probe: no cross-tenant rows visible (non-superuser role)")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[WARN] behavioral probe skipped ({type(exc).__name__}: {exc})")
+    except Exception as exc:  # noqa: BLE001 — reachable DB: inability to probe IS a failure
+        # Fail closed. The database answered, so "could not prove isolation" is a
+        # result, not an excuse — this is the branch that used to print a warning and
+        # return 0 while the leak test never executed.
+        failures.append(
+            f"behavioral probe did not execute ({type(exc).__name__}: {exc})"
+        )
     finally:
         _cleanup_probe_row(engine)
+
+    if not probe_ran and not failures:
+        # Defensive: a future edit must not be able to reach a green result without
+        # the probe having run.
+        failures.append("behavioral probe did not execute (no result recorded)")
 
     print()
     if failures:
