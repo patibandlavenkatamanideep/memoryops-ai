@@ -87,16 +87,17 @@ One project (`memoryops-ai`), four services: `memoryops-web`, `memoryops-api`,
 `memoryops-worker`, Railway Postgres (+pgvector). Redis was removed — it was
 declared and health-gated but no runtime code ever read `REDIS_URL`.
 
-- Config-as-code lives in `railway/{api,web,worker,playground}.railway.json` —
-  **canonical**; point each Railway service at its file. Builder is `DOCKERFILE`.
-  The Dockerfile `CMD` owns the start command; configs must **not** set
+- Config-as-code lives in `railway/{api,web,worker,playground}.railway.json` — the
+  **sole** config source per service, enforced by the `railway-deployment-config`
+  trust guard (no exceptions). Point each service at its file; builder is
+  `DOCKERFILE`. The Dockerfile `CMD` owns the start command; configs must **not** set
   `startCommand`, and must never contain a literal `$PORT` (it does not expand in
-  exec form — this broke the v2.4 API deploy). Enforced by the
-  `railway-deployment-config` trust guard.
-  ⚠️ `services/api/railway.toml` still exists as a **temporary** production
-  compatibility file; see the Phase B checkpoint in `docs/deployment/railway.md`.
+  exec form — this broke the v2.4 API deploy).
 - Per-service Root Directory: api → `services/api`, web → `apps/web`, worker →
-  repo root. Root Directory and Config File are dashboard-only settings.
+  repo root. Root Directory and Config File are dashboard-only settings. The Config
+  File path is **absolute from the repo root** (`/railway/api.railway.json`) and does
+  not inherit Root Directory; `dockerfilePath` inside the config is the opposite —
+  relative to Root Directory.
   Web health check is `/architecture`, **not** `/` (authenticated `/` 307s to
   `/signin`). Full settings + deploy order: `docs/deployment/railway.md`.
 - Env var contract per service: `docs/deployment/railway-env.md`. The system runs

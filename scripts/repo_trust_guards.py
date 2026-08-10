@@ -484,21 +484,6 @@ CANONICAL_RAILWAY_CONFIGS = {
 #: dynamic port binding, not an exception to the rule.
 DOCKERFILE_OWNS_START = ("api", "web", "worker")
 
-#: TRANSITIONAL — remove in Phase B.
-#:
-#: Railway production currently reads the API service's configuration from
-#: `services/api/railway.toml`, because that is what the dashboard's Config File
-#: setting points at. Deleting it before the switchover would leave the platform
-#: reading a file the repository no longer contains, so it stays until:
-#:
-#:   1. the API service's Config File is pointed at `railway/api.railway.json`,
-#:   2. the service is redeployed and `release_smoke_v24.py` passes, then
-#:   3. `services/api/railway.toml` is deleted and this exception is removed.
-#:
-#: Until then this is the *only* permitted duplicate. Any other service gaining a
-#: second config source is a finding.
-TRANSITIONAL_DUPLICATE_CONFIGS = {"api": "services/api/railway.toml"}
-
 #: Where a non-canonical Railway config file implies its service lives.
 _CONFIG_DIR_TO_SERVICE = {
     "services/api": "api",
@@ -553,8 +538,7 @@ def check_railway_deployment_config(root: Path = REPO) -> list[Finding]:
     * no ``startCommand`` anywhere contains a literal ``$PORT``,
     * api / web / worker declare no ``startCommand`` (their Dockerfile owns it),
     * the web health check is not ``/`` — authenticated mode redirects it,
-    * no service except the documented transitional API exception has two config
-      sources.
+    * no service has more than one config source.
 
     Parsed rather than grepped, so prose about ``$PORT`` in a doc or a comment is
     not a finding — the same reason every other guard here parses.
@@ -607,7 +591,9 @@ def check_railway_deployment_config(root: Path = REPO) -> list[Finding]:
                 )
 
     # A literal $PORT must not appear in *any* Railway config's startCommand, not
-    # only the canonical ones — the transitional TOML is deployed today.
+    # only the canonical ones. Scanning every discovered config keeps the check
+    # honest if a stray `railway.toml` ever reappears: it is reported both as a
+    # duplicate source and, if it carries the bad value, as a `$PORT` finding.
     for path in _discover_railway_configs(root):
         config, raw = _load_railway_config(path)
         start = (config.get("deploy") or {}).get("startCommand")
@@ -624,7 +610,10 @@ def check_railway_deployment_config(root: Path = REPO) -> list[Finding]:
                 )
             )
 
-    # Exactly one config source per service, except the documented API transition.
+    # Exactly one config source per service. No exceptions: the API's transitional
+    # `services/api/railway.toml` was removed once the Railway Config File settings
+    # were switched to the canonical JSON and the production smoke passed, so a
+    # second source for any service is now unambiguously a mistake.
     by_service: dict[str, list[str]] = {}
     canonical_paths = {v for v in CANONICAL_RAILWAY_CONFIGS.values()}
     for path in _discover_railway_configs(root):
@@ -634,19 +623,17 @@ def check_railway_deployment_config(root: Path = REPO) -> list[Finding]:
                 s for s, v in CANONICAL_RAILWAY_CONFIGS.items() if v == relative
             )
         else:
+            # `_rel(root, root)` is ".", not "" — so a stray `railway.toml` at the
+            # repository root (the worker's Root Directory) must be normalised, or it
+            # is filed under its own pseudo-service and never reported as a duplicate.
             parent = _rel(path.parent, root)
+            if parent == ".":
+                parent = ""
             service = _CONFIG_DIR_TO_SERVICE.get(parent, parent or "<root>")
         by_service.setdefault(service, []).append(relative)
 
     for service, paths in sorted(by_service.items()):
-        if len(paths) < 2:
-            continue
-        permitted = {CANONICAL_RAILWAY_CONFIGS.get(service)}
-        allowed_duplicate = TRANSITIONAL_DUPLICATE_CONFIGS.get(service)
-        if allowed_duplicate:
-            permitted.add(allowed_duplicate)
-        unexpected = [p for p in paths if p not in permitted]
-        if unexpected or not allowed_duplicate:
+        if len(paths) > 1:
             findings.append(
                 Finding(
                     "railway-deployment-config",
