@@ -65,6 +65,13 @@ class Score:
     multi_ok: int = 0      # compound turns where >=2 memories were extracted
     multi_total: int = 0
     errors: list[str] = field(default_factory=list)
+    #: ExtractionOutcome.mode -> count ("structured" | "heuristic" | "strict_empty").
+    #: A real-provider score is only real-provider evidence if every turn was
+    #: structured: the heuristic fallback (invariant #4) silently rescues a failed
+    #: provider call, so a headline number can otherwise be part stub. Counting the
+    #: runtime's own signal is the only way to tell — 25 HTTP requests do not imply
+    #: 25 structured extractions.
+    modes: dict[str, int] = field(default_factory=dict)
 
     @property
     def precision(self) -> float:
@@ -88,11 +95,11 @@ def _build_provider(provider_name: str):
     return build_llm_provider(Settings(llm_provider=provider_name))
 
 
-def _extract(provider, settings, message: str) -> list[str]:
+def _extract(provider, settings, message: str):
+    """Return the full ``ExtractionOutcome`` so callers can see ``mode``/``provider``."""
     from app.llm import extract_memories
 
-    outcome = extract_memories(provider, message, settings=settings)
-    return [m.content for m in outcome.memories]
+    return extract_memories(provider, message, settings=settings)
 
 
 def score_provider(provider_name: str, cases: list[dict]) -> Score:
@@ -104,10 +111,12 @@ def score_provider(provider_name: str, cases: list[dict]) -> Score:
     for case in cases:
         facts = case.get("expected_facts", [])
         try:
-            contents = _extract(provider, settings, case["message"])
+            outcome = _extract(provider, settings, case["message"])
         except Exception as exc:  # noqa: BLE001 — record, keep scoring
             s.errors.append(f"{case['id']}: {type(exc).__name__}")
             continue
+        contents = [m.content for m in outcome.memories]
+        s.modes[outcome.mode] = s.modes.get(outcome.mode, 0) + 1
         s.extracted += len(contents)
         s.expected += len(facts)
         s.covered += sum(1 for f in facts if _covers(f, contents))
