@@ -82,7 +82,7 @@ def test_gemini_probe_uses_the_module_the_adapter_imports(monkeypatch):
     seen: list[str] = []
     monkeypatch.setattr(health, "_module_missing", lambda m: seen.append(m) or False)
     health._check_llm_provider(_settings(llm_provider="gemini", gemini_api_key="k"))
-    assert seen == ["google.generativeai"]
+    assert seen == ["google.genai"]
 
 
 # ── embedding provider ───────────────────────────────────────────────────────

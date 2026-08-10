@@ -83,7 +83,7 @@ jobs:
           # extra:module — module names must match the adapter imports exactly.
           for pair in "openai:openai" \
                       "anthropic:anthropic" \
-                      "gemini:google.generativeai" \
+                      "gemini:google.genai" \
                       "qdrant:qdrant_client" \
                       "lancedb:lancedb" \
                       "weaviate:weaviate"; do

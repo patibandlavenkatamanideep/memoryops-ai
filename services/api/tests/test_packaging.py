@@ -116,8 +116,8 @@ def test_requirements_files_match_pyproject():
 def test_provider_extras_pin_the_module_each_adapter_imports(pyproject):
     """An extra must install the SDK its adapter actually imports.
 
-    `app/llm/gemini_provider.py` imports `google.generativeai` (the legacy
-    `google-generativeai` distribution), not `google.genai` (`google-genai`).
+    `app/llm/gemini_provider.py` imports `google.genai` (the `google-genai`
+    distribution), not the retired `google.generativeai` (`google-generativeai`).
     Pinning the wrong one installs an SDK the adapter cannot use — a broken extra
     that looks correct.
     """
@@ -125,7 +125,7 @@ def test_provider_extras_pin_the_module_each_adapter_imports(pyproject):
     expected_distribution = {
         "openai": "openai",
         "anthropic": "anthropic",
-        "gemini": "google-generativeai",
+        "gemini": "google-genai",
         "qdrant": "qdrant-client",
         "lancedb": "lancedb",
         "weaviate": "weaviate-client",
@@ -149,7 +149,7 @@ def test_production_extra_covers_postgres_and_all_providers(pyproject):
         "pgvector",
         "openai",
         "anthropic",
-        "google-generativeai",
+        "google-genai",
     ):
         assert any(name.startswith(required) for name in production), (
             f"production extra is missing {required}: {sorted(production)}"

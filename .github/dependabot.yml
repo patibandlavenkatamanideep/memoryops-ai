@@ -33,7 +33,7 @@ updates:
         patterns:
           - "openai"
           - "anthropic"
-          - "google-generativeai"
+          - "google-genai"
     # These change behaviour, not just versions, so they are upgraded deliberately
     # in their own PRs with a compatibility review — not proposed automatically.
     #   pgvector : vector semantics and index behaviour

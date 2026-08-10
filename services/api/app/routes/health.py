@@ -195,8 +195,8 @@ _LLM_SDK_MODULES = {
     # provider -> (module the adapter imports, install extra)
     "openai": ("openai", "openai"),
     "anthropic": ("anthropic", "anthropic"),
-    # Legacy SDK: app/llm/gemini_provider.py imports google.generativeai.
-    "gemini": ("google.generativeai", "gemini"),
+    # app/llm/gemini_provider.py imports `from google import genai` (google-genai).
+    "gemini": ("google.genai", "gemini"),
 }
 
 

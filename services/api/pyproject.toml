@@ -55,17 +55,17 @@ postgres = [
 # production extra below carries all three.
 openai = ["openai==2.52.0"]
 anthropic = ["anthropic==0.120.2"]
-# NOTE: this is the legacy `google-generativeai` SDK (module `google.generativeai`),
-# not the newer `google-genai` (module `google.genai`). It is pinned to match what
-# app/llm/gemini_provider.py actually imports — pinning the newer package here would
-# install an SDK the adapter cannot use, which is precisely the failure mode this
-# dependency unification exists to prevent. Migrating the adapter to `google-genai`
-# is tracked as follow-up work and needs a live-key test to land safely.
-gemini = ["google-generativeai==0.8.6"]
+# `google-genai` (module `google.genai`) — the supported SDK. The retired
+# `google-generativeai` was replaced once its import began announcing that support
+# had ended; it also spoke gRPC, which the VCR/pytest-recording stack cannot record,
+# so real-provider evidence could not be reproduced in CI. This pin must keep
+# matching what app/llm/gemini_provider.py actually imports: pinning a package the
+# adapter cannot use is the exact failure mode the dependency unification prevents.
+gemini = ["google-genai==2.17.0"]
 providers = [
   "openai==2.52.0",
   "anthropic==0.120.2",
-  "google-generativeai==0.8.6",
+  "google-genai==2.17.0",
 ]
 
 # ── Optional vector backends (ADR-021) ───────────────────────────────────────
@@ -86,7 +86,7 @@ production = [
   "pgvector==0.3.6",
   "openai==2.52.0",
   "anthropic==0.120.2",
-  "google-generativeai==0.8.6",
+  "google-genai==2.17.0",
 ]
 
 dev = [

@@ -109,7 +109,7 @@ def test_production_rejects_llm_provider_without_sdk(monkeypatch):
 
 
 def test_production_gemini_checks_the_module_the_adapter_imports(monkeypatch):
-    """The adapter imports `google.generativeai` (legacy SDK), not `google.genai`.
+    """The adapter imports `google.genai`, not the retired `google.generativeai`.
 
     Guards against the extras pinning a package whose module the adapter can't use.
     """
@@ -122,7 +122,7 @@ def test_production_gemini_checks_the_module_the_adapter_imports(monkeypatch):
 
     monkeypatch.setattr(importlib.util, "find_spec", fake)
     _hardened(llm_provider="gemini", gemini_api_key="k").production_readiness_errors()
-    assert "google.generativeai" in seen
+    assert "google.genai" in seen
 
 
 def test_production_rejects_openai_embeddings_without_key_or_sdk(monkeypatch):
