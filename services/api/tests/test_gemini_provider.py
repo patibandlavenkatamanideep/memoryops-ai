@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from app.llm.base import LLMUnavailableError
-from app.llm.gemini_provider import GeminiProvider
+from app.llm.gemini_provider import GEMINI_MIN_DEADLINE_SECONDS, GeminiProvider
 
 _PROVIDER_SRC = Path(__file__).resolve().parents[1] / "app" / "llm" / "gemini_provider.py"
 
@@ -145,16 +145,78 @@ def test_api_key_is_passed_to_the_client(gemini_sdk):
 
 
 # ── the millisecond trap ────────────────────────────────────────────────────
-@pytest.mark.parametrize(("seconds", "expected_ms"), [(8.0, 8000), (1.5, 1500), (30.0, 30000)])
+@pytest.mark.parametrize(("seconds", "expected_ms"), [(12.5, 12500), (30.0, 30000), (60.0, 60000)])
 def test_timeout_is_converted_from_seconds_to_milliseconds(gemini_sdk, seconds, expected_ms):
     """`HttpOptions.timeout` is milliseconds; the settings value is seconds.
 
-    Forwarding seconds unchanged would make an 8-second budget an 8-millisecond one
+    Forwarding seconds unchanged would make a 30-second budget a 30-millisecond one
     and fail every call — a silent, total provider outage that degrades to the
     heuristic while looking like a provider problem.
+
+    Values here are all above `GEMINI_MIN_DEADLINE_SECONDS` so this asserts the
+    conversion alone; the floor is covered separately below.
     """
     _provider(timeout=seconds).complete(system="S", user="U")
     assert gemini_sdk["http_options"]["timeout"] == expected_ms
+
+
+# ── Gemini's server-side minimum deadline ───────────────────────────────────
+@pytest.mark.parametrize(
+    ("configured_seconds", "expected_ms"),
+    [
+        (8.0, 10_000),      # the repository default — rejected by Gemini before the floor
+        (1.5, 10_000),
+        (9.999, 10_000),    # just under
+        (10.0, 10_000),     # exactly at
+        (12.5, 12_500),     # above: must NOT be reduced
+        (30.0, 30_000),
+    ],
+)
+def test_deadline_is_raised_to_geminis_minimum_but_never_lowered(
+    gemini_sdk, configured_seconds, expected_ms
+):
+    """Gemini REST rejects deadlines under 10s; the provider raises them to the floor.
+
+    This is the regression the `google-genai` migration introduced. The retired gRPC
+    SDK applied the deadline client-side, so `llm_timeout_seconds = 8.0` worked. Over
+    REST the deadline is sent to the server, which answers
+    `400 INVALID_ARGUMENT: Manually set deadline 8s is too short`. Every call then
+    failed and degraded to the heuristic — silently, because invariant #4 means a
+    provider outage never crashes the chat path.
+
+    Found by a live recording attempt in which all 25 turns returned
+    `mode="heuristic"` and zero structured extractions.
+    """
+    _provider(timeout=configured_seconds).complete(system="S", user="U")
+    assert gemini_sdk["http_options"]["timeout"] == expected_ms
+
+
+def test_the_repository_default_timeout_clears_geminis_floor(gemini_sdk):
+    """Guards the specific value that broke: `Settings.llm_timeout_seconds` is 8.0."""
+    from app.core.config import Settings
+
+    default_seconds = Settings().llm_timeout_seconds
+    assert default_seconds < GEMINI_MIN_DEADLINE_SECONDS, (
+        "this test exists because the default is below Gemini's floor; if the default "
+        "is raised, keep the floor but retire this guard"
+    )
+    _provider(timeout=default_seconds).complete(system="S", user="U")
+    sent_ms = gemini_sdk["http_options"]["timeout"]
+    assert sent_ms == int(GEMINI_MIN_DEADLINE_SECONDS * 1000)
+    assert sent_ms >= 10_000, "Gemini rejects any deadline below 10s"
+
+
+def test_the_floor_is_gemini_local_and_not_a_global_policy():
+    """The floor must not leak into the shared timeout contract.
+
+    `llm_timeout_seconds` keeps its meaning for OpenAI and Anthropic; this is a
+    Gemini API rule, not a MemoryOps one.
+    """
+    from app.core.config import Settings
+
+    assert Settings().llm_timeout_seconds == 8.0, (
+        "global default changed — the Gemini floor was meant to avoid exactly that"
+    )
 
 
 # ── response parsing ────────────────────────────────────────────────────────
