@@ -1,0 +1,38 @@
+# gitleaks — verified historical false positives.
+#
+# Scope: exact fingerprints only. Each entry pins one commit, one file, one rule and
+# one line, so it can never suppress a finding in any other commit, file, rule or
+# line — including a real credential added to the same file tomorrow.
+#
+# What is deliberately NOT done here: the `generic-api-key` rule is not disabled, no
+# file or directory is excluded, no commit range is blanket-ignored, and the weekly
+# full-history scheduled scan is unchanged. A narrower tool than an ignore file does
+# not exist; a broader one would silently cover future mistakes.
+#
+# Both entries were inspected against the historical blob before being added, and
+# both are documented in docs/releases/v2.4-release-truth.md §3.3. Neither literal
+# exists in the current tree.
+#
+# Adding an entry requires: read the blob at that commit, confirm it is not a
+# credential, record why below. An unexplained fingerprint is not acceptable.
+
+# `heartbeat = LeaseHeartbeat(self._leases, key, ...)`
+#
+# The rule matched the local variable `key` sitting next to a value. Line 120 of the
+# same blob defines it: `key = scope_key(scope.tenant_id, scope.user_id)` — a worker
+# *lease* key identifying a tenant/user scope, used to prevent two replicas
+# processing the same scope concurrently. It is an identifier, never a secret, and
+# no credential is involved anywhere in that code path.
+a17f2c16e57a1bdb70e85f4a2afda642e1a3d34f:services/api/app/workers/orchestrator.py:generic-api-key:134
+
+# `metadata={"raw": "api_key=sk-…"}` — a synthetic fixture.
+#
+# The enclosing test is `test_loop_events_do_not_store_raw_secret`: the fixture is
+# secret-*shaped* on purpose, because the test asserts that such content is not
+# persisted raw in loop events. Suppressing the finding does not weaken that test —
+# the test is the thing proving secrets are not stored.
+#
+# It has since been refactored into `services/api/tests/_secret_fixtures.py`, which
+# assembles the value from parts at import time so no literal is committed. This
+# entry covers only the historical commit that still carries the inline form.
+b5b5684b45b36e3bcf061158b096713d317153a2:services/api/tests/test_loop_events.py:generic-api-key:17
