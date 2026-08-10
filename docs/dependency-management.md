@@ -96,10 +96,11 @@ how the SDKs went missing from every runtime image: selecting
 `MEMORYOPS_LLM_PROVIDER=openai` in an image without `openai` installed silently
 degraded to the deterministic stub, with only a log line to show for it.
 
-> The `gemini` extra pins **`google-generativeai`** (module `google.generativeai`),
-> the legacy SDK that `app/llm/gemini_provider.py` actually imports — *not* the newer
-> `google-genai` (module `google.genai`). Migrating the adapter is tracked follow-up
-> work and needs a live-key test to land safely. `test_provider_extras_pin_the_module_each_adapter_imports`
+> The `gemini` extra pins **`google-genai`** (module `google.genai`), the supported
+> SDK that `app/llm/gemini_provider.py` imports. It replaced the retired
+> `google-generativeai`, whose import announced that support had ended and which
+> spoke gRPC — unrecordable by the VCR/pytest-recording stack, so real-provider
+> evidence could not be reproduced in CI. `test_provider_extras_pin_the_module_each_adapter_imports`
 > pins this correspondence so an extra can never install an SDK its adapter cannot use.
 
 ### Fail-closed under `MEMORYOPS_PROFILE=production`

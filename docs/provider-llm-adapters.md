@@ -31,7 +31,7 @@ raw text; turning that into a validated structured object is the job of
 The registry (`registry.py`) selects from settings and **falls back to the stub**
 whenever a networked provider is unconfigured (missing key) — so the app always
 starts and CI never needs a secret. Networked SDKs are imported lazily, so the
-package imports cleanly without `openai` / `anthropic` / `google-generativeai`
+package imports cleanly without `openai` / `anthropic` / `google-genai`
 installed.
 
 ## Configuration

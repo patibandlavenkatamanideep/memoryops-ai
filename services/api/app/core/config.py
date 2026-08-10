@@ -464,8 +464,9 @@ class Settings(BaseSettings):
         llm_requirements = {
             "openai": ("openai", "openai", self.openai_api_key, "OPENAI_API_KEY"),
             "anthropic": ("anthropic", "anthropic", self.anthropic_api_key, "ANTHROPIC_API_KEY"),
-            # Legacy SDK module — matches app/llm/gemini_provider.py's actual import.
-            "gemini": ("google.generativeai", "gemini", self.gemini_api_key, "GEMINI_API_KEY"),
+            # Must match app/llm/gemini_provider.py's actual import (`from google import
+            # genai`), not the retired `google.generativeai`.
+            "gemini": ("google.genai", "gemini", self.gemini_api_key, "GEMINI_API_KEY"),
         }
         if self.llm_provider in llm_requirements:
             module, extra, key, key_env = llm_requirements[self.llm_provider]
