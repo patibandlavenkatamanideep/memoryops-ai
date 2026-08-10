@@ -30,8 +30,23 @@ from app.llm.gemini_provider import GeminiProvider
 
 _PROVIDER_SRC = Path(__file__).resolve().parents[1] / "app" / "llm" / "gemini_provider.py"
 
+def _real_sdk_installed() -> bool:
+    """Whether the optional `google-genai` extra is present.
+
+    `find_spec("google.genai")` **raises** ModuleNotFoundError when the parent
+    package `google` is absent — it only returns None when the parent exists and the
+    leaf does not. CI installs `requirements-dev.txt`, which carries no provider SDK,
+    so the parent is genuinely missing there and the unguarded call was a collection
+    error that took down the whole suite.
+    """
+    try:
+        return importlib.util.find_spec("google.genai") is not None
+    except ModuleNotFoundError:
+        return False
+
+
 #: Resolved at import time, before any fixture can shadow `google.genai`.
-_HAS_REAL_SDK = importlib.util.find_spec("google.genai") is not None
+_HAS_REAL_SDK = _real_sdk_installed()
 
 
 class _Recorder(dict):
