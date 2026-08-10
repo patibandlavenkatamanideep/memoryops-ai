@@ -1,8 +1,8 @@
 # Deploying MemoryOps AI on Railway
 
 MemoryOps AI deploys to **Railway only**. There is no Vercel target and no
-split-host topology — the frontend, backend, worker, database, and cache all live
-in **one Railway project** as separate services. This keeps env wiring, private
+split-host topology — the frontend, backend, worker, and database all live in
+**one Railway project** as separate services. This keeps env wiring, private
 networking, and the deploy story in a single place.
 
 > Vercel is **not** a supported or recommended deployment path. If you see Vercel
@@ -14,10 +14,14 @@ networking, and the deploy story in a single place.
 
 | # | Service | Role | Source | Health |
 |---|---------|------|--------|--------|
-| 1 | `memoryops-web` | Next.js frontend | `apps/web/Dockerfile` | `GET /` |
+| 1 | `memoryops-web` | Next.js frontend | `apps/web/Dockerfile` | `GET /architecture` |
 | 2 | `memoryops-api` | FastAPI backend | `services/api/Dockerfile` | `GET /healthz`, `GET /readyz` |
 | 3 | `memoryops-worker` | Background jobs (decay/reflection/learning loop) | `services/worker/Dockerfile` | process liveness (no HTTP) |
 | 4 | Railway **Postgres** | Primary store + pgvector | Railway plugin | managed |
+
+`memoryops-playground` is an **optional** demo service, not part of the production
+topology. Its config is checked in and ready, but the four rows above are what a
+production deployment requires.
 
 All four run inside the same project so they share Railway's private network and
 reference each other through Railway-provided variables (e.g. `DATABASE_URL`).
@@ -36,13 +40,21 @@ See [railway-env.md](railway-env.md) for the full variable matrix.
 
 `railway/*.railway.json` is the **canonical** configuration source:
 
-- `railway/api.railway.json`
-- `railway/web.railway.json`
-- `railway/worker.railway.json`
-- `railway/playground.railway.json`
+| Service | Config File |
+|---------|-------------|
+| `memoryops-api` | `/railway/api.railway.json` |
+| `memoryops-web` | `/railway/web.railway.json` |
+| `memoryops-worker` | `/railway/worker.railway.json` |
+| `memoryops-playground` *(optional)* | `/railway/playground.railway.json` |
 
 Point each Railway service at its config file via **Service → Settings → Config
 File**. Builder is `DOCKERFILE` for all of them.
+
+The **leading `/` matters**: a Railway Config File path is absolute from the
+repository root and does *not* inherit the service's Root Directory. `dockerfilePath`
+*inside* the config follows the opposite rule — it is relative to Root Directory.
+Those two are easy to get backwards, and "Dockerfile not found" is what it looks like
+when you do.
 
 Explicit per-service config paths are used rather than a `railway.toml` at each
 service root because Railway auto-detects `railway.toml` relative to a service's
@@ -55,23 +67,17 @@ None of `api`, `web`, or `worker` sets `deploy.startCommand`. Their Dockerfile `
 is authoritative. Declaring the launch in two places is how the two drift, and it is
 what broke the v2.4 deployment (below). `scripts/repo_trust_guards.py` enforces this.
 
-### ⚠️ Transitional: the API has two config sources
+### Exactly one config source per service
 
-`services/api/railway.toml` **still exists** and is what the Railway API service
-currently reads. It is a temporary production-compatibility file, not a second
-opinion.
+Every production service reads its configuration from the canonical file above, and
+from nothing else. `scripts/repo_trust_guards.py` enforces this: a second config
+source for any service is a finding.
 
-**Migration checkpoint — Phase B, not yet done:**
-
-1. Point the API service's **Config File** at `railway/api.railway.json`
-2. Redeploy the API; confirm `/healthz` and `/readyz`
-3. Run `scripts/release_smoke_v24.py` and require `FAILED 0 / SKIPPED 0`
-4. **Then** delete `services/api/railway.toml`
-5. Remove `TRANSITIONAL_DUPLICATE_CONFIGS` from `scripts/repo_trust_guards.py`, which
-   tightens the guard to "exactly one config source per service" automatically
-
-Until step 5, the guard permits this one duplicate **by name**. Any other service
-gaining a second config source is a finding today.
+The API briefly carried a transitional `services/api/railway.toml` while Railway's
+Config File setting still pointed at it. That migration completed in v2.4.1 — the
+three services were switched to their canonical JSON one at a time, production was
+re-verified after each, and the TOML was removed. Nothing in the repository describes
+a Railway service any more except `railway/*.railway.json`.
 
 ## Per-service settings
 
@@ -85,7 +91,7 @@ config files is resolved relative to the service **Root Directory**.
 
 ### 1. `memoryops-api`
 - **Root Directory:** `services/api`
-- **Config File:** `railway/api.railway.json` *(currently `services/api/railway.toml`; see the transitional note above)*
+- **Config File:** `/railway/api.railway.json`
 - **Dockerfile path:** `Dockerfile` (relative to root)
 - **Start command:** owned by the **Dockerfile `CMD`** —
   `uvicorn app.main:app --host 0.0.0.0 --port 8000`. Not set in config.
@@ -96,7 +102,7 @@ config files is resolved relative to the service **Root Directory**.
 
 ### 2. `memoryops-web`
 - **Root Directory:** `apps/web`
-- **Config File:** `railway/web.railway.json`
+- **Config File:** `/railway/web.railway.json`
 - **Dockerfile path:** `Dockerfile` (relative to root)
 - **Start command:** owned by the **Dockerfile `CMD`** — `npm run start`. Not set in config.
 - **Health check path:** `/architecture`
@@ -108,7 +114,7 @@ config files is resolved relative to the service **Root Directory**.
 ### 3. `memoryops-worker`
 - **Root Directory:** repo root (`/`) — the worker image copies `services/api`
   into the build, so its build context must be the repository root.
-- **Config File:** `railway/worker.railway.json`
+- **Config File:** `/railway/worker.railway.json`
 - **Dockerfile path:** `services/worker/Dockerfile` (relative to repo root)
 - **Start command:** owned by the **Dockerfile `CMD`** — `memoryops-worker` (the
   packaged console script). Not set in config.
@@ -189,7 +195,7 @@ host. Its Dockerfile copies `services/api`, so the Docker build context must be 
 **repository root**:
 
 - **Root Directory:** `/` (repo root) — **not** `apps/playground`.
-- **Config File (config-as-code):** `railway/playground.railway.json` — this is what
+- **Config File (config-as-code):** `/railway/playground.railway.json` — this is what
   forces the **Dockerfile** builder; without it Railway falls back to Railpack at the
   repo root and the build fails ("Railpack could not determine how to build" /
   missing `start.sh`).

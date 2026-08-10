@@ -163,12 +163,11 @@ health check is not `/`, and that no service has two competing config sources.
 the `$PORT` failure at length, and a substring search would fail the check that exists
 to prevent it.
 
-**One transitional exception**, named in `TRANSITIONAL_DUPLICATE_CONFIGS`:
-`services/api/railway.toml` coexists with `railway/api.railway.json` because Railway
-currently reads the TOML. It is permitted *by name*, not by shape, so deleting the
-exception after the Phase B switchover tightens enforcement to "exactly one config
-source per service" with no further code change. Any other service gaining a second
-source is a finding today.
+**No exceptions.** Every service must have exactly one config source. The API briefly
+carried a transitional `services/api/railway.toml` alongside its canonical JSON while
+Railway still read the TOML; that allowance was named rather than shape-based
+specifically so that finishing the migration removed it by deletion. It is gone, and
+a duplicate for any service — the API included — is now a finding.
 
 The playground is deliberately outside `DOCKERFILE_OWNS_START`: its Dockerfile `CMD`
 is `sh -c "streamlit run … --server.port ${PORT:-8501} …"`, which *does* expand

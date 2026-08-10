@@ -23,7 +23,6 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from repo_trust_guards import (  # noqa: E402
     CANONICAL_RAILWAY_CONFIGS,
     GUARDS,
-    TRANSITIONAL_DUPLICATE_CONFIGS,
     check_no_committed_secret_literals,
     check_no_demo_identity_in_server_code,
     check_no_retired_infrastructure,
@@ -430,39 +429,80 @@ def test_a_start_command_override_is_rejected(tmp_path, service):
     assert any("Dockerfile CMD is" in f.detail for f in findings)
 
 
-def test_a_missing_canonical_config_is_rejected(tmp_path):
+@pytest.mark.parametrize("service", ["api", "web", "worker", "playground"])
+def test_a_missing_canonical_config_is_rejected(tmp_path, service):
+    """Every service must have its canonical config; absence is not silence.
+
+    Without one, Railway falls back to auto-detection and the repository stops
+    describing the deployment — the state this guard exists to prevent.
+    """
     tree = _railway_tree(tmp_path)
-    (tree / CANONICAL_RAILWAY_CONFIGS["worker"]).unlink()
+    (tree / CANONICAL_RAILWAY_CONFIGS[service]).unlink()
     findings = check_railway_deployment_config(tree)
     assert any("is missing" in f.detail for f in findings)
 
 
-def test_the_transitional_api_duplicate_is_accepted(tmp_path):
-    """Production still reads services/api/railway.toml; Phase B removes it.
+# Exactly one config source per service — no exceptions.
+#
+# `services/api/railway.toml` was permitted while Railway still read it. That
+# transition is over: the Config File settings were switched to the canonical JSON,
+# production was re-verified, and the file was deleted. Enforcement is now uniform,
+# so a duplicate for *any* service — the API included — is a finding.
+@pytest.mark.parametrize(
+    ("service", "duplicate"),
+    [
+        ("api", "services/api/railway.toml"),
+        ("web", "apps/web/railway.toml"),
+        ("worker", "railway.toml"),
+        ("playground", "apps/playground/railway.toml"),
+    ],
+)
+def test_a_duplicate_config_source_is_rejected_for_every_service(
+    tmp_path, service, duplicate
+):
+    tree = _railway_tree(tmp_path)
+    _write(tree, duplicate, '[deploy]\nhealthcheckPath = "/healthz"\n')
+    findings = check_railway_deployment_config(tree)
+    assert any("competing Railway config sources" in f.detail for f in findings), (
+        f"a second config source for `{service}` at {duplicate} was not rejected"
+    )
 
-    This is the one permitted duplicate, and it is permitted by name rather than by
-    shape so Phase B can delete the exception and get enforcement for free.
+
+def test_the_api_duplicate_is_no_longer_permitted(tmp_path):
+    """The removed exception, asserted directly.
+
+    Named separately from the parametrised case above so the regression is explicit:
+    re-introducing an allowance for `services/api/railway.toml` fails here by name,
+    not merely as one row in a table.
     """
     tree = _railway_tree(tmp_path)
-    _write(tree, TRANSITIONAL_DUPLICATE_CONFIGS["api"], '[deploy]\nhealthcheckPath = "/healthz"\n')
-    assert check_railway_deployment_config(tree) == []
+    _write(tree, "services/api/railway.toml", '[deploy]\nhealthcheckPath = "/healthz"\n')
+    assert check_railway_deployment_config(tree) != []
 
 
-def test_a_duplicate_config_for_any_other_service_is_rejected(tmp_path):
-    """The exception is for the API only — web gaining a second source is a finding."""
-    tree = _railway_tree(tmp_path)
-    _write(tree, "apps/web/railway.toml", '[deploy]\nhealthcheckPath = "/architecture"\n')
-    findings = check_railway_deployment_config(tree)
-    assert any("competing Railway config sources" in f.detail for f in findings)
+def test_no_transitional_allowance_remains_in_the_guard_module():
+    """Guards against the exception being reinstated under any name."""
+    import repo_trust_guards
+
+    assert not hasattr(repo_trust_guards, "TRANSITIONAL_DUPLICATE_CONFIGS")
+    source = (REPO_ROOT / "scripts" / "repo_trust_guards.py").read_text(encoding="utf-8")
+    assert "TRANSITIONAL_DUPLICATE_CONFIGS" not in source
 
 
-def test_the_transitional_toml_is_still_checked_for_a_literal_port(tmp_path):
-    """Being a permitted duplicate does not exempt it — it is what production runs."""
+def test_the_repository_has_exactly_one_config_source_per_service():
+    """The live assertion: `services/api/railway.toml` is gone from the tree."""
+    assert not (REPO_ROOT / "services" / "api" / "railway.toml").exists()
+    assert check_railway_deployment_config(REPO_ROOT) == []
+
+
+def test_a_stray_toml_is_reported_for_a_literal_port_as_well_as_duplication(tmp_path):
+    """A reappearing config is caught on both counts, not just the first."""
     tree = _railway_tree(tmp_path)
     _write(
         tree,
-        TRANSITIONAL_DUPLICATE_CONFIGS["api"],
+        "services/api/railway.toml",
         '[deploy]\nstartCommand = "uvicorn app.main:app --port $PORT"\n',
     )
     findings = check_railway_deployment_config(tree)
     assert any("literal `$PORT`" in f.detail for f in findings)
+    assert any("competing Railway config sources" in f.detail for f in findings)

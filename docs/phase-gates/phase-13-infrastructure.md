@@ -53,21 +53,24 @@ config-as-code under `railway/`.
 - [services/api/app/routes/health.py](../../services/api/app/routes/health.py)
   (`/healthz`, `/readyz`, `/healthz/workers`).
 
-## Config-source migration status (v2.4.1)
-`railway/*.railway.json` is canonical. `services/api/railway.toml` **still exists**
-as a temporary production-compatibility file, because the Railway API service
-currently reads it. The trust guard permits this one duplicate by name
-(`TRANSITIONAL_DUPLICATE_CONFIGS`); any other service gaining a second source is a
-finding today.
+## Config-source migration — COMPLETE (v2.4.1)
+`railway/*.railway.json` is the sole configuration source for every service, and the
+trust guard enforces exactly one source per service with **no exceptions**.
 
-**Phase B — not yet done:** point the API service's Config File at
-`railway/api.railway.json` → redeploy → run the release gate → delete the TOML →
-remove the guard exception, which tightens enforcement to exactly one source per
-service. Checkpoint lives in
-[docs/deployment/railway.md](../deployment/railway.md#config-as-code).
+The migration ran one service at a time — worker → API → web — with production
+verified after each step, then a full trust-boundary smoke (`FAILED 0 / SKIPPED 0 /
+PASS`) before `services/api/railway.toml` was deleted and the guard's temporary
+allowance removed.
+
+Live production settings:
+
+| Service | Root Directory | Config File |
+|---------|----------------|-------------|
+| `memoryops-api` | `/services/api` | `/railway/api.railway.json` |
+| `memoryops-web` | `/apps/web` | `/railway/web.railway.json` |
+| `memoryops-worker` | `/` | `/railway/worker.railway.json` |
 
 ## Gaps to close (→ later)
-- Complete the Phase B config-source switchover (above).
 - CI auto-deploy hook on tag (currently manual redeploy on Railway).
 - API binds a fixed `8000` rather than the injected `$PORT`; making it dynamic needs
   a Dockerfile `sh -c` change plus a deploy window.
@@ -76,4 +79,4 @@ service. Checkpoint lives in
 - Multi-replica API + worker on Celery/Temporal with retries/DLQ.
 - Build-time `NEXT_PUBLIC_API_URL` requires a web rebuild on API domain change.
 
-## Status: ✅ Implemented (Railway-only; config-source consolidation in Phase B, CI auto-deploy is roadmap)
+## Status: ✅ Implemented (Railway-only; canonical config-source consolidation complete in v2.4.1; CI auto-deploy is roadmap)
