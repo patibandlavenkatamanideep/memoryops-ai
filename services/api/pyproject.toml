@@ -97,6 +97,30 @@ dev = [
   "pytest-recording==0.13.2",
 ]
 
+# ── External-baseline benchmark only (protocol §3, system S4) ────────────────
+# Mem0 is a *comparison subject*, not a MemoryOps dependency. It is deliberately
+# absent from `production`, `providers`, `postgres`, the base dependencies, and the
+# worker/web images: nothing MemoryOps ships at runtime may import it, and Railway
+# must never install it.
+#
+# `langchain` is here only because it is Mem0's sanctioned injection point for
+# supplying model objects. That is what lets the benchmark run Mem0 with a local
+# vector store, the repository's deterministic embedder, and a chat model that raises
+# if invoked — so the comparison costs nothing and needs no provider key. Without it
+# Mem0 constructs an OpenAI client in `Memory.__init__` and the benchmark could not
+# run offline at all.
+#
+# This extra pulls a materially larger transitive graph (~53 packages) than anything
+# else here. That is acceptable *because* it is quarantined to the benchmark; keeping
+# it out of the runtime images is the whole point of separating it.
+benchmark = [
+  "mem0ai==2.0.17",
+  "langchain==1.3.14",
+  # Imported directly by the adapter for `BaseChatModel`, so pinned explicitly rather
+  # than inherited as a transitive of `langchain`.
+  "langchain-core==1.5.3",
+]
+
 # ── Packaging ────────────────────────────────────────────────────────────────
 # Explicit, so `tests` can never be auto-discovered into the distribution.
 [tool.setuptools.packages.find]
@@ -146,3 +170,9 @@ extras = ["production"]
 include_base = false
 extras = ["dev"]
 requires = ["requirements.txt"]
+
+# External-baseline benchmark only. Deliberately standalone — no `requires` line, so
+# installing it never drags Mem0/LangChain into a runtime requirement set.
+[tool.memoryops.requirements."requirements-benchmark.txt"]
+include_base = false
+extras = ["benchmark"]
