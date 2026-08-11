@@ -6,6 +6,12 @@ into an ``LLMUnavailableError`` so the structured-intelligence orchestrator fall
 back to the deterministic heuristic instead of crashing the chat path
 (invariant #4). SDKs are imported lazily inside ``_invoke`` so the package
 imports cleanly without them installed.
+
+Retries are **classified**: only failures that could succeed on an identical retry
+are tried again (see ``app.llm.errors``). A deterministic rejection — a bad
+request, a bad key, an unknown local error — fails after a single attempt and
+degrades to the heuristic immediately, instead of spending the full retry budget
+to arrive at the same result.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from abc import ABC, abstractmethod
 from ..core.logging import get_logger
 from ..core.reliability import with_retry
 from .base import LLMUnavailableError
+from .errors import is_retryable_provider_error, status_code_of
 
 logger = get_logger("memoryops.llm")
 
@@ -39,11 +46,22 @@ class BaseNetworkProvider(ABC):
             return self._invoke(system=system, user=user, task=task)
 
         try:
-            return with_retry(_call, attempts=self._attempts)
+            return with_retry(
+                _call, attempts=self._attempts, retry_if=is_retryable_provider_error
+            )
         except Exception as exc:  # noqa: BLE001 — normalize to a fallback signal
             logger.warning(
                 "llm provider call failed",
-                extra={"event": "llm_provider_failure", "provider": self.name, "task": task},
+                extra={
+                    "event": "llm_provider_failure",
+                    "provider": self.name,
+                    "task": task,
+                    # Content-free: whether the failure was worth retrying, and the
+                    # status class if the SDK reported one. Never the request, the
+                    # prompt, the response body, or the key.
+                    "retryable": is_retryable_provider_error(exc),
+                    "status": status_code_of(exc),
+                },
             )
             raise LLMUnavailableError(f"{self.name} call failed: {exc}") from exc
 

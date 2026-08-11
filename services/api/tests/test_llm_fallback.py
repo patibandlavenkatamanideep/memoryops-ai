@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.db.memory_repo import InMemoryRepository
 from app.llm import extract_memories
 from app.llm.base import LLMUnavailableError
+from app.llm.providers import BaseNetworkProvider
 from app.schemas.memory import ChatRequest, Decision, Source
 from app.services.extractor import Extractor
 from app.services.gateway import Gateway
@@ -100,3 +101,75 @@ def test_extractor_keeps_provenance_on_fallback() -> None:
     src = Source(kind="chat", excerpt="orig")
     cands = ex.extract("Remember I prefer dark mode.", src)
     assert cands and cands[0].source.excerpt == "orig"
+
+
+# ── retry classification does not change what the orchestrator sees ──────────
+class _CountingNetworkProvider(BaseNetworkProvider):
+    """A real networked provider whose SDK call always fails with a scripted error.
+
+    Uses `BaseNetworkProvider` rather than a hand-rolled double so the retry
+    envelope under test is the one production actually runs.
+    """
+
+    name = "counting"
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(
+            api_key="unit" + "-test-" + "placeholder",
+            model="m",
+            timeout=1.0,
+            max_retries=2,
+        )
+        self._error = error
+        self.calls = 0
+
+    def _invoke(self, *, system: str, user: str, task: str) -> str:
+        self.calls += 1
+        raise self._error
+
+
+class _PermanentError(Exception):
+    """Provider-SDK shape for a deterministic rejection (HTTP 400)."""
+
+    status_code = 400
+
+
+class _TransientError(Exception):
+    """Provider-SDK shape for a retryable fault (HTTP 503)."""
+
+    status_code = 503
+
+
+def test_a_permanent_provider_failure_falls_back_after_a_single_attempt() -> None:
+    """Fail-fast changes the cost of the failure, not the outcome.
+
+    The heuristic still answers, exactly as it does for a transient outage — but a
+    deterministic rejection no longer spends the whole retry budget first.
+    """
+    provider = _CountingNetworkProvider(_PermanentError())
+    outcome = extract_memories(provider, "Remember that I prefer dark mode.")
+    assert outcome.mode == "heuristic"
+    assert "dark mode" in outcome.memories[0].content.lower()
+    assert provider.calls == 1
+
+
+def test_a_transient_provider_failure_still_uses_the_full_retry_budget() -> None:
+    provider = _CountingNetworkProvider(_TransientError())
+    outcome = extract_memories(provider, "Remember that I prefer dark mode.")
+    assert outcome.mode == "heuristic"
+    assert provider.calls == 3
+
+
+def test_a_permanent_provider_failure_never_blocks_chat() -> None:
+    """Invariant #4 end to end, with the fail-fast path in the chat request."""
+    repo = InMemoryRepository()
+    provider = _CountingNetworkProvider(_PermanentError())
+    gw = Gateway(repo)
+    gw._extractor = Extractor(provider=provider)
+    resp = gw.handle_chat(
+        ChatRequest(tenant_id="t", user_id="u", message="Remember I prefer dark mode."),
+        trace_id="test",
+    )
+    assert resp.assistant_message
+    assert any(c.decision == Decision.SAVE for c in resp.candidate_memories)
+    assert provider.calls == 1

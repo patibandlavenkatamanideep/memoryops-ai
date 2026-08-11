@@ -59,6 +59,39 @@ GEMINI_API_KEY=        GEMINI_MODEL=gemini-2.5-flash   # 1.5-flash retired
   extraction and stays authoritative — a model can never override policy, and
   secret-like content is still blocked (ADR-003/008).
 
+### Retries are classified
+
+`MEMORYOPS_LLM_MAX_RETRIES` is the budget for failures that could plausibly
+succeed on an **identical retry**. It is not spent on failures that cannot.
+
+| Outcome | Retried? | Attempts (`MAX_RETRIES=2`) |
+|---|---|---|
+| Connection / timeout (no response) | yes | up to 3 |
+| `408` request timeout, `409` lock timeout | yes | up to 3 |
+| `429` rate limit | yes | up to 3 |
+| `5xx` server error | yes | up to 3 |
+| `400` invalid request / `INVALID_ARGUMENT` | **no** | 1 |
+| `401` authentication, `403` authorization | **no** | 1 |
+| `404`, `413`, `422` | **no** | 1 |
+| Local `ValueError` / `TypeError` / unknown | **no** | 1 |
+
+The retryable status set is taken from the OpenAI and Anthropic SDKs' own
+`_should_retry`, which is also why `408` and `409` are on it — both SDKs document
+them as request timeout and lock timeout. `google-genai` retries a subset
+(`429/500/502/503/504`).
+
+Unknown exceptions **fail fast**. Retrying an unrecognised error is what this
+rule exists to prevent: a recorded Gemini run configured below the API's minimum
+deadline was rejected with a deterministic `400 INVALID_ARGUMENT`, and the old
+retry-everything envelope turned 25 logical calls into 75 identical rejections
+before degrading to the heuristic.
+
+Classification changes only **how many attempts a failure costs**. Every failure
+still normalises to `LLMUnavailableError` and still degrades to the deterministic
+heuristic, so fallback behaviour is unchanged (invariant #4). Rules live in
+`app/llm/errors.py`; `core.reliability.with_retry` takes the predicate and holds
+no provider-specific knowledge.
+
 ## Observability
 
 Events emitted through the redacting JSON logger (no secrets / keys / full user
@@ -70,4 +103,10 @@ messages): `llm_provider_call`, `llm_provider_failure`,
 
 `test_llm_provider_registry.py`, `test_stub_llm_provider.py`,
 `test_structured_memory_extraction.py`, `test_structured_output_validation.py`,
-`test_llm_fallback.py`, `test_conflict_detection.py` — none require an API key.
+`test_llm_fallback.py`, `test_conflict_detection.py`,
+`test_llm_provider_retry_classification.py` — none require an API key.
+
+The retry-classification suite reconstructs each SDK's exception *shape* so it
+runs with no provider extra installed, and additionally asserts the same
+classification against the real `openai` / `anthropic` / `google-genai` exception
+classes wherever those extras are present.
