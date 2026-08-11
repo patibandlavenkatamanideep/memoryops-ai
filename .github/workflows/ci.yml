@@ -308,6 +308,71 @@ jobs:
           print("recorded Gemini evidence executed (not skipped)")
           PY
 
+      # ── Provider retry classification against the REAL SDK exception shapes ───
+      # The classifier decides what may be retried by reading attributes the SDKs
+      # expose (`.status_code` for openai/anthropic, `.code` for google-genai). The
+      # suite reconstructs those shapes locally so it runs with no extra installed —
+      # which means that on its own it verifies the rules against *our model* of the
+      # SDKs, not the SDKs.
+      #
+      # This step closes that gap: install the pinned providers and assert the same
+      # classification against the genuine exception classes. Deliberately last in
+      # the job, after `pytest -q` has already proved the suite runs with no provider
+      # SDK at all — installing these earlier would destroy that evidence.
+      #
+      # A skip here is a failure. Without the guard the step would pass while proving
+      # nothing, since every real-SDK case is `importorskip`-gated.
+      - name: Install the provider SDK extras (real exception shapes)
+        working-directory: services/api
+        run: python -m pip install ".[providers]"
+
+      - name: Provider retry-classification runs against the real SDKs (must not skip)
+        working-directory: services/api
+        env:
+          MEMORYOPS_STORAGE: memory
+        run: |
+          set -euo pipefail
+          # No credential is needed or wanted: every case builds an exception object.
+          unset OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY GOOGLE_API_KEY || true
+          python - <<'PY'
+          import importlib.metadata as m
+          for pkg, want in (("openai", "2.52.0"), ("anthropic", "0.120.2"),
+                            ("google-genai", "2.17.0")):
+              got = m.version(pkg)
+              assert got == want, f"expected {pkg}=={want}, got {got}"
+              print(f"{pkg} {got}")
+          PY
+          python -m pytest tests/test_llm_provider_retry_classification.py \
+            -p no:cacheprovider -rs --strict-markers \
+            --junitxml=/tmp/retry-classification.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse("/tmp/retry-classification.xml").getroot().iter("testcase"))
+          assert cases, "no retry-classification tests ran at all"
+          skipped = [c.get("name") for c in cases if c.find("skipped") is not None]
+          assert not skipped, (
+              f"{len(skipped)} retry-classification test(s) SKIPPED — the providers extra "
+              f"must be installed here so the real SDK exception shapes are actually "
+              f"exercised: {skipped}"
+          )
+          real = [c.get("name", "") for c in cases if c.get("name", "").startswith("test_real_")]
+          assert len(real) >= 23, f"expected >= 23 real-SDK cases, saw {len(real)}"
+          # Each provider must contribute, so a missing SDK cannot hide behind the
+          # others. Parametrised ids end in `-openai]` / `-anthropic]`; the Gemini
+          # cases live in their own test because google-genai has no per-status
+          # exception subclasses.
+          for marker, label, least in (("openai]", "OpenAI", 8),
+                                       ("anthropic]", "Anthropic", 8),
+                                       ("genai", "Gemini", 7)):
+              hits = [n for n in real if marker in n]
+              assert len(hits) >= least, (
+                  f"expected >= {least} real-SDK cases for {label}, saw {len(hits)}"
+              )
+              print(f"{label} real-SDK retry cases: EXECUTED ({len(hits)})")
+          print(f"{len(cases)} retry-classification tests executed, 0 skipped "
+                f"({len(real)} against real provider SDKs)")
+          PY
+
   api-postgres:
     name: API — full suite + evals + benchmark + enforced RLS on Postgres + pgvector
     runs-on: ubuntu-latest
