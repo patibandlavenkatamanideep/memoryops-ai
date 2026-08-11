@@ -1,0 +1,13 @@
+# ─────────────────────────────────────────────────────────────────────────
+# GENERATED FILE — DO NOT EDIT BY HAND.
+#
+# Source of truth: services/api/pyproject.toml
+# Regenerate:      python scripts/sync_dependencies.py
+# Verify:          python scripts/sync_dependencies.py --check   (CI gate)
+#
+# Hand-edits are reverted by the next regeneration and fail the CI drift gate.
+# ─────────────────────────────────────────────────────────────────────────
+# [project.optional-dependencies].benchmark
+mem0ai==2.0.17
+langchain==1.3.14
+langchain-core==1.5.3

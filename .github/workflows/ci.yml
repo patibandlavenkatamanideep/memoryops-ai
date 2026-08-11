@@ -73,6 +73,21 @@ jobs:
           print("wheel import ok; prompt assets loaded:", available_tasks())
           PY
 
+      # The `benchmark` extra exists only for the external-baseline comparison (S4
+      # Mem0) and is deliberately absent from every runtime requirement set.
+      - name: Benchmark dependencies stay out of the runtime images
+        working-directory: services/api
+        run: |
+          set -euo pipefail
+          for f in requirements.txt requirements-postgres.txt \
+                   requirements-providers.txt requirements-production.txt \
+                   requirements-dev.txt; do
+            if grep -qiE '^(mem0ai|langchain)' "$f"; then
+              echo "::error::$f contains a benchmark-only dependency"; exit 1
+            fi
+          done
+          echo "no benchmark-only dependency in any runtime requirement set"
+
       # The provider adapters import their SDKs lazily, so a missing SDK shows up only
       # at call time (as a silent stub degradation). Prove each advertised extra
       # actually resolves and exposes the module its adapter imports.
@@ -176,6 +191,94 @@ jobs:
 
       # A skip here is a failure. Without this the step could pass while proving
       # nothing — exactly how the evidence gap arose in the first place.
+      - name: Install the benchmark extra (external baselines only)
+        run: python -m pip install -r services/api/requirements-benchmark.txt
+
+      # Installing and importing the extra proves nothing about the comparison. The
+      # adapter tests must *execute*: without the extra they skip, and a skipped
+      # suite would leave this job green while the external baseline was never run —
+      # the same false-evidence shape the recorded-provider step guards against.
+      - name: Mem0 adapter tests execute (no provider keys, must not skip)
+        env:
+          MEMORYOPS_STORAGE: memory
+          MEM0_TELEMETRY: "False"
+        run: |
+          set -euo pipefail
+          unset OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY GOOGLE_API_KEY || true
+          python -c "
+          import importlib.metadata as m
+          v = m.version('mem0ai')
+          assert v == '2.0.17', f'expected mem0ai==2.0.17, got {v}'
+          print('mem0ai', v, '| langchain', m.version('langchain'), '| langchain-core', m.version('langchain-core'))
+          "
+          PYTHONPATH=".:services/api" python -m pytest paper/harness/tests/test_mem0_adapter.py \
+            -rs -p no:cacheprovider --junitxml=/tmp/mem0-tests.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("/tmp/mem0-tests.xml").getroot()
+          cases = list(root.iter("testcase"))
+          skipped = [c.get("name") for c in cases if c.find("skipped") is not None]
+          assert cases, "no Mem0 adapter tests ran at all"
+          assert not skipped, (
+              f"{len(skipped)} Mem0 adapter test(s) SKIPPED — the benchmark extra must be "
+              f"installed here so the external baseline is actually exercised: {skipped}"
+          )
+          print(f"{len(cases)} Mem0 adapter tests executed, 0 skipped")
+          PY
+
+      # Run the real comparison and assert the published outcome, so COMPARISON.md
+      # cannot drift away from what the harness actually produces.
+      - name: External memory-system comparison executes with S4 present
+        env:
+          MEMORYOPS_STORAGE: memory
+          MEM0_TELEMETRY: "False"
+        run: |
+          set -euo pipefail
+          unset OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY GOOGLE_API_KEY || true
+          PYTHONPATH=".:services/api" python - <<'PY'
+          from collections import Counter
+
+          from paper.harness import baselines as bl
+          from paper.harness import mem0_adapter as m4
+          from paper.harness import memoryops_adapter as moa
+          from paper.harness.cases import default_cases
+          from paper.harness.runner import run_suite
+          from paper.harness.types import Outcome
+
+          assert m4.available(), "Mem0 benchmark extra is not importable in this job"
+
+          cases = default_cases()
+          results = run_suite([moa.s0, moa.s0u, bl.s2, m4.s4], cases)
+
+          tally = {}
+          for r in results:
+              tally.setdefault(r.system, Counter())[r.outcome] += 1
+
+          for system in ("S0", "S0-U", "S2", "S4"):
+              assert system in tally, f"{system} missing from the comparison"
+              c = tally[system]
+              print(f"{system:6} pass={c[Outcome.PASS]} fail={c[Outcome.FAIL]} "
+                    f"unsupported={c[Outcome.UNSUPPORTED]} error={c[Outcome.ERROR]}")
+
+          # MemoryOps must never fail or error on a capability it claims.
+          for system in ("S0", "S0-U"):
+              assert tally[system][Outcome.FAIL] == 0, f"{system} FAILED a case"
+              assert tally[system][Outcome.ERROR] == 0, f"{system} ERRORED"
+
+          # The published COMPARISON.md numbers, asserted rather than trusted.
+          for system in ("S0", "S0-U", "S2", "S4"):
+              c = tally[system]
+              assert (c[Outcome.PASS], c[Outcome.FAIL], c[Outcome.ERROR]) == (len(cases), 0, 0), (
+                  f"{system} no longer matches the published result: {dict(c)}"
+              )
+          print("comparison matches benchmark/COMPARISON.md")
+          PY
+
+      - name: Audit the benchmark dependency graph
+        run: |
+          python -m pip install --quiet pip-audit
+          pip-audit --strict --progress-spinner off -r services/api/requirements-benchmark.txt
+
       - name: Recorded Gemini extraction evidence (no key, no network)
         working-directory: services/api
         env:
