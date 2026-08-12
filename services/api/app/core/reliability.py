@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable
 from typing import TypeVar
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 T = TypeVar("T")
 
@@ -65,12 +65,31 @@ class CircuitBreaker:
         return result
 
 
-def with_retry(fn: Callable[[], T], attempts: int = 3) -> T:
-    """Retry a callable with exponential backoff on any exception."""
+def with_retry(
+    fn: Callable[[], T],
+    attempts: int = 3,
+    *,
+    retry_if: Callable[[BaseException], bool] | None = None,
+) -> T:
+    """Retry a callable with exponential backoff.
+
+    ``retry_if`` decides whether a raised exception is worth another identical
+    attempt. Callers wrapping a dependency that can fail *permanently* must supply
+    one: without it every exception is retried, so a deterministic error costs
+    ``attempts`` round trips and still fails. The classification itself belongs to
+    the caller — this module stays free of any dependency-specific knowledge (see
+    ``app.llm.errors.is_retryable_provider_error`` for the provider rules).
+
+    ``attempts`` is the total number of tries, not the number of retries. Whatever
+    the outcome, the original exception is re-raised — a non-retryable failure
+    surfaces immediately, after exactly one attempt.
+    """
+    predicate = retry_if if retry_if is not None else (lambda _exc: True)
 
     @retry(
         stop=stop_after_attempt(attempts),
         wait=wait_exponential(multiplier=0.1, max=2.0),
+        retry=retry_if_exception(predicate),
         reraise=True,
     )
     def _runner() -> T:

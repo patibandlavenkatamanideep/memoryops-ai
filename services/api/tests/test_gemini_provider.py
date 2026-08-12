@@ -55,16 +55,39 @@ class _Recorder(dict):
     calls: int = 0
 
 
+class _ApiError(Exception):
+    """Stands in for `google.genai.errors.APIError`.
+
+    Mirrors the real SDK's shape, which is what the retry classifier reads: an
+    integer `.code` and a string `.status`. `google-genai` raises no per-status
+    exception subclasses — a 400 and a 429 are both `ClientError` — so the numeric
+    code is the only thing distinguishing a permanent rejection from a rate limit.
+    """
+
+    def __init__(self, code: int, status: str) -> None:
+        super().__init__(f"{code} {status}.")
+        self.code = code
+        self.status = status
+
+
 @pytest.fixture
 def gemini_sdk(monkeypatch):
     """Install a fake `google.genai`; return the recorder.
 
     Behaviour is driven by attributes set on the returned recorder *before* the call:
-    ``text`` (response text), ``fail_times`` (raise N times, then succeed).
+    ``text`` (response text), ``fail_times`` (raise N times, then succeed), and
+    ``fail_error`` (the exception to raise, defaulting to a transient 503).
+
+    ``fail_error`` defaults to a *genuinely* transient error rather than a bare
+    ``RuntimeError``, because retries are now classified: a plain ``RuntimeError``
+    carries no status and no transport marker, so it is permanent by design and
+    would never be retried. A fixture raising one could not honestly test retry
+    behaviour.
     """
     rec = _Recorder()
     rec["text"] = "ok"
     rec["fail_times"] = 0
+    rec["fail_error"] = lambda: _ApiError(503, "UNAVAILABLE")
 
     class _Response:
         def __init__(self, text):
@@ -75,7 +98,7 @@ def gemini_sdk(monkeypatch):
             rec["generate_content"] = kwargs
             rec.calls += 1
             if rec.calls <= rec["fail_times"]:
-                raise RuntimeError("transient upstream failure")
+                raise rec["fail_error"]()
             return _Response(rec["text"])
 
     class _Client:
@@ -257,6 +280,41 @@ def test_retries_are_bounded(gemini_sdk):
     gemini_sdk["fail_times"] = 99
     with pytest.raises(LLMUnavailableError):
         _provider(max_retries=1).complete(system="S", user="U")
+    assert gemini_sdk.calls == 2
+
+
+# ── retry classification (regression) ───────────────────────────────────────
+def test_invalid_argument_is_not_retried(gemini_sdk):
+    """The observed defect, pinned.
+
+    A recorded evidence run configured Gemini with an 8-second deadline, below the
+    REST API's 10-second floor. Every call was rejected with a deterministic
+    `400 INVALID_ARGUMENT` — and the shared retry envelope, which retried on *any*
+    exception, tried each one three times. 25 logical calls became 75 HTTP
+    requests, all rejected identically, before degrading to the heuristic.
+
+    An identical request cannot stop being invalid, so it must be attempted once.
+    """
+    gemini_sdk["fail_times"] = 99
+    gemini_sdk["fail_error"] = lambda: _ApiError(400, "INVALID_ARGUMENT")
+
+    with pytest.raises(LLMUnavailableError):
+        _provider(max_retries=2).complete(system="S", user="U")
+
+    assert gemini_sdk.calls == 1, "a deterministic 400 must not be retried"
+
+
+def test_rate_limit_is_still_retried_despite_being_a_4xx(gemini_sdk):
+    """Gemini reports 429 through the same `APIError` type as 400.
+
+    Classifying by exception type would make these two indistinguishable; reading
+    the numeric code is what keeps a rate limit retryable while an invalid argument
+    fails fast.
+    """
+    gemini_sdk["fail_times"] = 1
+    gemini_sdk["fail_error"] = lambda: _ApiError(429, "RESOURCE_EXHAUSTED")
+
+    assert _provider(max_retries=2).complete(system="S", user="U") == "ok"
     assert gemini_sdk.calls == 2
 
 
