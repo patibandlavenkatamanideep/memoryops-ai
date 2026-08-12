@@ -10,11 +10,24 @@
 > fresh, unclosed `httpx.Client` per request and reused a single tenant/user across
 > the whole sweep — so client/connection setup cost and a monotonically growing store
 > were confounded with concurrency. The harness has since been corrected (reused
-> bounded clients, a **fresh scope per scenario**, a **fixed identical seed count**,
-> **≥3 repetitions**, **randomized scenario order**, and **actual before/after memory
-> counts** — see [`run_perf.py`](../benchmark/perf/run_perf.py)). Re-running the sweep
-> with the corrected harness is a tracked follow-up; until then, treat the specific
-> figures here as indicative only.
+> bounded clients, a **fresh scope per scenario**, a **fixed identical seed *request*
+> count**, **≥3 repetitions**, **randomized scenario order**, and **actual
+> before/after memory counts** — see [`run_perf.py`](../benchmark/perf/run_perf.py)).
+> Re-running the sweep with the corrected harness is a tracked follow-up; until then,
+> treat the specific figures here as indicative only.
+>
+> Two further corrections apply to how these numbers were *computed*, so the tables
+> below are not directly comparable to output from the current harness:
+>
+> * **`rps` in these tables counted every request**, including failures. The harness
+>   now reports `attempted_rps` and `successful_rps` separately, and `successful_rps`
+>   is canonical — refusals are fast, so counting them as throughput rewards a server
+>   for declining work.
+> * **latency percentiles here included failed requests.** They are now computed from
+>   successful (2xx) responses only, with failure latency reported separately. A run
+>   containing any HTTP 429 is now rejected outright as performance evidence unless
+>   `--rate-limit-mode` is passed, because a rate-limited run measures the limiter
+>   rather than the request path.
 
 ## TL;DR
 
@@ -49,6 +62,14 @@ The harness ([`benchmark/perf/run_perf.py`](../benchmark/perf/run_perf.py)) driv
 concurrent HTTP load against a **running** server and records throughput, latency
 percentiles, and error rate. It is offline and deterministic in shape — no API
 keys, no DB.
+
+It fails closed rather than emitting a plausible number for a run that measured
+something else: latency percentiles come from successful requests only, throughput
+is split into `attempted_rps` and `successful_rps`, a scenario with no successes
+reports `null` latency instead of `0`, and any HTTP 429 invalidates a scenario
+(exit code 2) unless `--rate-limit-mode` is passed to measure the limiter
+deliberately. `--seed-per-scenario` counts seeding *requests*; the resulting store
+size is measured and reported as `memories_before`.
 
 ```bash
 # 1. start a server with the config you want to measure
@@ -162,7 +183,9 @@ burst of 100 chat requests (concurrency 10) from one tenant/IP:
 | `200` served | **30** |
 | `429` rate-limited | **70** |
 
-Exactly the 30/min cap; rejected requests fail fast (~5 ms). This confirms the
+Exactly the 30/min cap; rejected requests fail fast (~5 ms). Reproducing this now
+requires `--rate-limit-mode` — a burst like this is a limiter measurement, and the
+harness refuses to report it as request-path performance. This confirms the
 limiter works — **and** confirms the review's caveat: the counter is **in-process**.
 Each replica has its own 30/min budget, and a restart resets it. It is **local
 process protection, not distributed rate enforcement.** A Redis-backed limiter is
