@@ -1,0 +1,113 @@
+{
+  "base_sha": "0190bcda53ee9178e1c59f729483bfa12f1d272c",
+  "date": "2026-08-12",
+  "python": "3.13.2",
+  "postgres": "17.10",
+  "pgvector": "0.8.5",
+  "note": "Local single-node laptop measurement. Not a Railway or production figure.",
+  "artifact": "postgres_pgvector_phase-c",
+  "harness": "benchmark/perf/run_perf.py",
+  "storage": "postgres",
+  "llm_provider": "stub",
+  "embedding_provider": "stub",
+  "rate_limit_enabled": false,
+  "latency_basis": "successful (2xx) requests only",
+  "dataset": {
+    "total_rows": 100001,
+    "target_tenant_rows": 10000,
+    "note": "scenarios use fresh scopes seeded with 20 seed requests; the 10k tenant is the scale dataset"
+  },
+  "scenarios": [
+    {
+      "operation": "retrieval",
+      "concurrency": 1,
+      "repetitions": 2,
+      "valid_repetitions": 2,
+      "successful_rps_median": 42.3,
+      "attempted_rps_median": 42.3,
+      "p50_ms_median": 21.639,
+      "p95_ms_median": 28.797,
+      "p99_ms_median": 30.95,
+      "error_rate_max": 0.0,
+      "rate_limited_total": 0
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 5,
+      "repetitions": 2,
+      "valid_repetitions": 2,
+      "successful_rps_median": 45.65,
+      "attempted_rps_median": 45.65,
+      "p50_ms_median": 105.528,
+      "p95_ms_median": 131.477,
+      "p99_ms_median": 155.625,
+      "error_rate_max": 0.0,
+      "rate_limited_total": 0
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 25,
+      "repetitions": 2,
+      "valid_repetitions": 2,
+      "successful_rps_median": 41.8,
+      "attempted_rps_median": 41.8,
+      "p50_ms_median": 553.448,
+      "p95_ms_median": 737.214,
+      "p99_ms_median": 788.29,
+      "error_rate_max": 0.0,
+      "rate_limited_total": 0
+    },
+    {
+      "operation": "retrieval",
+      "concurrency": 50,
+      "repetitions": 2,
+      "valid_repetitions": 2,
+      "successful_rps_median": 40.7,
+      "attempted_rps_median": 40.7,
+      "p50_ms_median": 1010.067,
+      "p95_ms_median": 1456.645,
+      "p99_ms_median": 1467.285,
+      "error_rate_max": 0.0,
+      "rate_limited_total": 0
+    }
+  ],
+  "retrieval_scale_p50_ms": {
+    "100": 26.0,
+    "1000": 31.0,
+    "10000": 87.2
+  },
+  "retrieval_scale_p95_ms": {
+    "100": 29.8,
+    "1000": 32.5,
+    "10000": 94.2
+  },
+  "query_plan": {
+    "at_100k_total_rows_10k_tenant": "Bitmap Index Scan idx_memory_user_status -> Bitmap Heap Scan (10000 rows) -> top-N exact vector sort; IVFFlat NOT chosen",
+    "at_10k_single_tenant": "Index Scan using idx_memory_embedding (IVFFlat), 49/50 recall at ivfflat.probes=1",
+    "conclusion": "index presence does not imply ANN execution; the planner's choice is data- and query-dependent"
+  },
+  "db_pool_experiment": {
+    "default_pool_size": 5,
+    "default_max_overflow": 10,
+    "observed_peak_connections_default": 15,
+    "widened_pool_size": 50,
+    "widened_max_overflow": 50,
+    "observed_peak_connections_widened": 45,
+    "successful_rps_default": {
+      "1": 31.9,
+      "5": 43.7,
+      "10": 39.8,
+      "25": 40.4,
+      "50": 39.8
+    },
+    "successful_rps_widened": {
+      "1": 32.5,
+      "5": 44.2,
+      "10": 40.6,
+      "25": 40.5,
+      "50": 38.8
+    },
+    "conclusion": "pool saturation observed at default; widening did not materially improve throughput, so pool capacity was not the primary local bottleneck",
+    "committed": false
+  }
+}
