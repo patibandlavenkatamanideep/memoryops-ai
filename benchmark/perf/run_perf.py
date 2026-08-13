@@ -16,6 +16,27 @@ thread pool of `concurrency` workers and reports requests/sec, p50/p95/p99 (and
 min/mean/max) latency, and the non-2xx error rate. Optionally samples the server
 process RSS via `ps` for a coarse memory figure.
 
+What makes a scenario *evidence*
+--------------------------------
+The harness fails closed rather than emitting a plausible-looking number for a run
+that measured something else:
+
+* **Latency is success-only.** p50/p95/p99/min/mean/max come from 2xx requests
+  alone. A failed request's duration says how fast the server gave up, which is a
+  different quantity; mixing them yields a number that describes neither. Failure
+  latency is reported separately as `failed_p50_ms`.
+* **Throughput is split.** `attempted_rps` is offered load; `successful_rps` is
+  useful work completed and is the canonical figure. Refusals are fast, so counting
+  them as throughput makes a server look faster the more work it declines.
+* **HTTP 429 invalidates a scenario.** A rate-limited run can sit far below
+  `--max-error-rate` while its latency and throughput describe the limiter instead
+  of the request path. Measuring the limiter deliberately is legitimate and needs
+  `--rate-limit-mode`, which labels the artifact accordingly.
+* **No successes means no latency.** Percentiles are `null`, not 0.0, so an
+  entirely-failed scenario cannot read as the fastest one in the sweep.
+
+Invalid scenarios exit non-zero (2) and are excluded from the aggregate medians.
+
 What this harness controls for (so concurrency is closer to the only variable)
 -----------------------------------------------------------------------------
 * **Reused, bounded HTTP clients.** One ``httpx.Client`` is created *per scenario*
@@ -26,9 +47,12 @@ What this harness controls for (so concurrency is closer to the only variable)
 * **Fresh scope per scenario.** Every scenario runs under a unique
   ``tenant_id``/``user_id``, so store size, duplicate-detection state, and the
   retrieval working set do not accumulate across the sweep.
-* **Fixed, identical seed count.** Each scenario's fresh scope is pre-seeded to the
-  same ``--seed-per-scenario`` memory count, so the retrieval workload is the same
-  in every scenario regardless of order.
+* **Fixed, identical seed request count.** Each scenario's fresh scope receives the
+  same number of ``--seed-per-scenario`` seeding *requests*, so the retrieval
+  workload is set up identically regardless of order. A seed message is not
+  guaranteed to produce a memory — the policy broker decides — so the resulting
+  store size is measured and reported as ``memories_before`` rather than assumed
+  equal to the request count.
 * **Repetitions + randomized order.** Each (operation × concurrency) is repeated
   ``--repetitions`` times and the scenarios are run in a randomized order (seeded
   via ``--rng-seed`` for reproducibility), so warm-up drift and ordering effects
@@ -58,8 +82,9 @@ Usage
         --repetitions 3 --seed-per-scenario 50 \
         --out results.json
 
-Exit code is 0 unless a scenario exceeds --max-error-rate (default 0.5),
-so a smoke run can gate CI.
+Exit codes: 0 on success, 2 if any scenario is invalid as evidence (rate-limited, or
+no successful requests), 1 if a scenario exceeds --max-error-rate (default 0.5) — so
+a smoke run can gate CI.
 """
 
 from __future__ import annotations
@@ -105,12 +130,28 @@ def _op_body(op: str, tenant: str, user: str, i: int) -> dict:
 
 
 # ── metrics ───────────────────────────────────────────────────────────────────
-def _pct(sorted_vals: list[float], p: float) -> float:
+def _fmt(value: float | None) -> str:
+    """Render a metric, making "no data" visibly different from a fast result."""
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def _pct(sorted_vals: list[float], p: float) -> float | None:
+    """Linear-interpolated percentile, or ``None`` when there is no distribution.
+
+    Returning ``None`` rather than 0.0 is deliberate: a scenario where every request
+    failed has no latency, and 0.0 renders as the best possible result.
+    """
     if not sorted_vals:
-        return 0.0
+        return None
     k = (len(sorted_vals) - 1) * p
     lo, hi = int(k), min(int(k) + 1, len(sorted_vals) - 1)
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
+
+
+#: A scenario carrying any of these is not performance evidence. 429 means the
+#: limiter answered instead of the request path, and its latency describes how fast
+#: the server can decline work — see `--rate-limit-mode` to measure that on purpose.
+RATE_LIMITED_STATUS = 429
 
 
 @dataclass
@@ -118,17 +159,40 @@ class ScenarioResult:
     operation: str
     concurrency: int
     repetition: int
-    n: int
+    n: int  # requests attempted
+    successes: int
     errors: int
     error_rate: float
     wall_s: float
+    #: Offered load, including work the server refused. Never a measure of capacity.
+    attempted_rps: float
+    #: Canonical throughput: useful work completed per second.
+    successful_rps: float
+    #: Back-compatible alias of ``successful_rps`` so older readers of these artifacts
+    #: keep working. It was previously computed from *all* requests, which counted
+    #: refusals as throughput.
     rps: float
-    p50_ms: float
-    p95_ms: float
-    p99_ms: float
-    min_ms: float
-    mean_ms: float
-    max_ms: float
+    #: Latency percentiles over successful (2xx) requests only. ``None`` when a
+    #: scenario had no successes — reporting 0.0 there would read as "infinitely
+    #: fast" for a scenario that in fact completed nothing.
+    p50_ms: float | None
+    p95_ms: float | None
+    p99_ms: float | None
+    min_ms: float | None
+    mean_ms: float | None
+    max_ms: float | None
+    #: Failure latency, kept strictly separate so it can never move a percentile above.
+    failed_n: int
+    failed_p50_ms: float | None
+    rate_limited: int
+    #: False when the scenario is not usable as performance evidence.
+    valid: bool
+    invalid_reason: str | None
+    #: Number of seeding *requests* issued, not memories created — a seed message is
+    #: not guaranteed to produce a memory. ``memories_before`` is the authoritative
+    #: resulting store size.
+    seed_requests: int
+    #: Retained under its original name for artifact compatibility; same value.
     seed_count: int
     memories_before: int | None
     memories_after: int | None
@@ -145,11 +209,21 @@ def _run_scenario(
     user: str,
     seed_count: int,
     memories_before: int | None,
+    *,
+    rate_limit_mode: bool = False,
 ) -> ScenarioResult:
-    """Fire `n` requests for `op` through `concurrency` workers on a shared client."""
-    latencies: list[float] = []
+    """Fire `n` requests for `op` through `concurrency` workers on a shared client.
+
+    Successful and failed latencies are kept apart from the moment they are recorded.
+    A failed request's duration describes how quickly the server gave up, which is a
+    different quantity from how long the work takes; averaging the two produces a
+    number that is neither.
+    """
+    ok_latencies: list[float] = []
+    failed_latencies: list[float] = []
     statuses: dict[str, int] = {}
     errors = 0
+    rate_limited = 0
 
     def _one(i: int) -> tuple[float, int]:
         body = _op_body(op, tenant, user, i)
@@ -166,29 +240,64 @@ def _run_scenario(
         futures = [pool.submit(_one, i) for i in range(n)]
         for f in as_completed(futures):
             ms, code = f.result()
-            latencies.append(ms)
             key = str(code)
             statuses[key] = statuses.get(key, 0) + 1
-            if not (200 <= code < 300):
+            if 200 <= code < 300:
+                ok_latencies.append(ms)
+            else:
+                failed_latencies.append(ms)
                 errors += 1
+                if code == RATE_LIMITED_STATUS:
+                    rate_limited += 1
     wall = time.perf_counter() - t_start
 
-    latencies.sort()
+    ok_latencies.sort()
+    failed_latencies.sort()
+    successes = len(ok_latencies)
+
+    def _round(value: float | None) -> float | None:
+        return None if value is None else round(value, 3)
+
+    valid, invalid_reason = True, None
+    if rate_limited and not rate_limit_mode:
+        # Fail closed: the limiter answered, so this is not request-path evidence.
+        valid = False
+        invalid_reason = (
+            f"{rate_limited} rate-limited (HTTP {RATE_LIMITED_STATUS}) response(s); "
+            "disable the limiter for performance runs, or pass --rate-limit-mode to "
+            "measure the limiter deliberately"
+        )
+    elif successes == 0 and not rate_limit_mode:
+        # A fully-rejected run is the *expected* result when deliberately measuring a
+        # saturated limiter, so it only invalidates an ordinary performance scenario.
+        # The latency percentiles stay null either way — there is still no distribution.
+        valid = False
+        invalid_reason = "no successful requests; no latency distribution exists"
+
     return ScenarioResult(
         operation=op,
         concurrency=concurrency,
         repetition=repetition,
         n=n,
+        successes=successes,
         errors=errors,
         error_rate=errors / n if n else 0.0,
         wall_s=round(wall, 4),
-        rps=round(n / wall, 1) if wall else 0.0,
-        p50_ms=round(_pct(latencies, 0.50), 3),
-        p95_ms=round(_pct(latencies, 0.95), 3),
-        p99_ms=round(_pct(latencies, 0.99), 3),
-        min_ms=round(latencies[0], 3),
-        mean_ms=round(statistics.fmean(latencies), 3),
-        max_ms=round(latencies[-1], 3),
+        attempted_rps=round(n / wall, 1) if wall else 0.0,
+        successful_rps=round(successes / wall, 1) if wall else 0.0,
+        rps=round(successes / wall, 1) if wall else 0.0,
+        p50_ms=_round(_pct(ok_latencies, 0.50)),
+        p95_ms=_round(_pct(ok_latencies, 0.95)),
+        p99_ms=_round(_pct(ok_latencies, 0.99)),
+        min_ms=_round(ok_latencies[0] if ok_latencies else None),
+        mean_ms=_round(statistics.fmean(ok_latencies) if ok_latencies else None),
+        max_ms=_round(ok_latencies[-1] if ok_latencies else None),
+        failed_n=len(failed_latencies),
+        failed_p50_ms=_round(_pct(failed_latencies, 0.50)),
+        rate_limited=rate_limited,
+        valid=valid,
+        invalid_reason=invalid_reason,
+        seed_requests=seed_count,
         seed_count=seed_count,
         memories_before=memories_before,
         memories_after=None,  # filled in by the caller after the run
@@ -243,24 +352,40 @@ def _server_rss_mb(pid: int | None) -> float | None:
 
 # ── aggregation ───────────────────────────────────────────────────────────────
 def _aggregate(results: list[ScenarioResult]) -> list[dict]:
-    """Median across repetitions for each (operation, concurrency)."""
+    """Median across repetitions for each (operation, concurrency).
+
+    Only *valid* repetitions contribute to the latency/throughput medians. An
+    invalid scenario has no meaningful distribution, and letting one into the median
+    would launder it into the headline number. The invalid count stays visible so a
+    partially-invalid group cannot be mistaken for a clean one.
+    """
     groups: dict[tuple[str, int], list[ScenarioResult]] = {}
     for r in results:
         groups.setdefault((r.operation, r.concurrency), []).append(r)
 
+    def med(vals: list[float | None]) -> float | None:
+        present = [v for v in vals if v is not None]
+        return round(statistics.median(present), 3) if present else None
+
     agg: list[dict] = []
     for (op, conc), rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1])):
-        med = lambda vals: round(statistics.median(vals), 3)  # noqa: E731
+        usable = [r for r in rs if r.valid]
         agg.append(
             {
                 "operation": op,
                 "concurrency": conc,
                 "repetitions": len(rs),
-                "rps_median": med([r.rps for r in rs]),
-                "p50_ms_median": med([r.p50_ms for r in rs]),
-                "p95_ms_median": med([r.p95_ms for r in rs]),
-                "p99_ms_median": med([r.p99_ms for r in rs]),
+                "valid_repetitions": len(usable),
+                "invalid_repetitions": len(rs) - len(usable),
+                "attempted_rps_median": med([r.attempted_rps for r in usable]),
+                "successful_rps_median": med([r.successful_rps for r in usable]),
+                # Back-compatible alias; now success-only, like the field it mirrors.
+                "rps_median": med([r.successful_rps for r in usable]),
+                "p50_ms_median": med([r.p50_ms for r in usable]),
+                "p95_ms_median": med([r.p95_ms for r in usable]),
+                "p99_ms_median": med([r.p99_ms for r in usable]),
                 "error_rate_max": round(max(r.error_rate for r in rs), 4),
+                "rate_limited_total": sum(r.rate_limited for r in rs),
             }
         )
     return agg
@@ -281,7 +406,10 @@ def main() -> int:
         "--seed-per-scenario",
         type=int,
         default=50,
-        help="fixed memory count seeded into each scenario's fresh scope",
+        help=(
+            "seed *requests* issued into each scenario's fresh scope (not a guaranteed "
+            "memory count — see memories_before for the resulting store size)"
+        ),
     )
     ap.add_argument(
         "--no-randomize",
@@ -292,6 +420,14 @@ def main() -> int:
     ap.add_argument("--server-pid", type=int, default=None, help="sample this pid's RSS")
     ap.add_argument("--label", default="in-memory/stub", help="config label for the report")
     ap.add_argument("--max-error-rate", type=float, default=0.5)
+    ap.add_argument(
+        "--rate-limit-mode",
+        action="store_true",
+        help=(
+            "measure the RATE LIMITER on purpose: HTTP 429 stops invalidating a "
+            "scenario. Results are limiter behaviour, not request-path performance"
+        ),
+    )
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -336,27 +472,33 @@ def main() -> int:
             res = _run_scenario(
                 client, op, conc, args.requests, rep, tenant, user,
                 args.seed_per_scenario, mem_before,
+                rate_limit_mode=args.rate_limit_mode,
             )
             res.memories_after = _memory_count(client, tenant, user)
         finally:
             client.close()
         results.append(res)
         print(
-            f"{op:10s} c={conc:<3d} rep={rep} rps={res.rps:<8.1f} "
-            f"p50={res.p50_ms:<8.3f} p95={res.p95_ms:<9.3f} p99={res.p99_ms:<9.3f} "
+            f"{op:10s} c={conc:<3d} rep={rep} "
+            f"ok_rps={_fmt(res.successful_rps):<8s} att_rps={_fmt(res.attempted_rps):<8s} "
+            f"p50={_fmt(res.p50_ms):<9s} p95={_fmt(res.p95_ms):<9s} p99={_fmt(res.p99_ms):<9s} "
             f"err={res.error_rate:.1%} mem={res.memories_before}->{res.memories_after} "
             f"{res.status_counts}"
+            + ("" if res.valid else f"  INVALID: {res.invalid_reason}")
         )
     rss_after = _server_rss_mb(args.server_pid)
 
     aggregates = _aggregate(results)
-    print("\naggregates (median across repetitions):")
+    print("\naggregates (median across VALID repetitions; latency = successful requests only):")
     for a in aggregates:
+        suffix = ""
+        if a["invalid_repetitions"]:
+            suffix = f"  [{a['invalid_repetitions']}/{a['repetitions']} repetitions INVALID]"
         print(
             f"  {a['operation']:10s} c={a['concurrency']:<3d} "
-            f"rps={a['rps_median']:<8.1f} p50={a['p50_ms_median']:<8.3f} "
-            f"p95={a['p95_ms_median']:<9.3f} p99={a['p99_ms_median']:<9.3f} "
-            f"err_max={a['error_rate_max']:.1%}"
+            f"ok_rps={_fmt(a['successful_rps_median']):<8s} "
+            f"p50={_fmt(a['p50_ms_median']):<9s} p95={_fmt(a['p95_ms_median']):<9s} "
+            f"p99={_fmt(a['p99_ms_median']):<9s} err_max={a['error_rate_max']:.1%}" + suffix
         )
 
     report = {
@@ -364,7 +506,12 @@ def main() -> int:
         "base_url": args.base_url,
         "requests_per_scenario": args.requests,
         "repetitions": args.repetitions,
+        # Seeding *requests*, not a guaranteed memory count; each scenario's
+        # `memories_before` is the authoritative resulting store size.
+        "seed_requests_per_scenario": args.seed_per_scenario,
         "seed_per_scenario": args.seed_per_scenario,
+        "rate_limit_mode": args.rate_limit_mode,
+        "latency_basis": "successful (2xx) requests only",
         "randomized": not args.no_randomize,
         "rng_seed": args.rng_seed,
         "server_rss_mb": {"before": rss_before, "after": rss_after},
@@ -377,7 +524,32 @@ def main() -> int:
             json.dump(report, fh, indent=2)
         print(f"wrote {args.out}")
 
-    worst = max((r.error_rate for r in results), default=0.0)
+    # Fail closed on invalid scenarios *before* the error-rate gate. A rate-limited
+    # run can sit under --max-error-rate while its latency and throughput describe
+    # refusals rather than work, which is precisely the shape this guard exists to
+    # stop from being published as evidence.
+    invalid = [r for r in results if not r.valid]
+    if invalid:
+        print(
+            f"FAIL: {len(invalid)}/{len(results)} scenario(s) are not valid performance "
+            "evidence:",
+            file=sys.stderr,
+        )
+        for r in invalid:
+            print(
+                f"  {r.operation} c={r.concurrency} rep={r.repetition}: {r.invalid_reason}",
+                file=sys.stderr,
+            )
+        return 2
+
+    # Under --rate-limit-mode a 429 is the measured outcome, not a fault, so it does
+    # not count against the error gate. Every other failure still does — deliberately
+    # measuring the limiter must not become a way to tolerate real errors.
+    def _gated_error_rate(r: ScenarioResult) -> float:
+        counted = r.errors - r.rate_limited if args.rate_limit_mode else r.errors
+        return counted / r.n if r.n else 0.0
+
+    worst = max((_gated_error_rate(r) for r in results), default=0.0)
     if worst > args.max_error_rate:
         print(f"FAIL: worst error rate {worst:.1%} > {args.max_error_rate:.1%}", file=sys.stderr)
         return 1
