@@ -1,0 +1,87 @@
+{
+  "base_sha": "0190bcda53ee9178e1c59f729483bfa12f1d272c",
+  "date": "2026-08-12",
+  "python": "3.13.2",
+  "postgres": "17.10",
+  "pgvector": "0.8.5",
+  "note": "Local single-node laptop measurement. Not a Railway or production figure.",
+  "artifact": "postgres_sql_profile_phase-c",
+  "tool": "benchmark/perf/sqlprofile.py",
+  "method": "SQLAlchemy before/after_cursor_execute; bound parameters never captured; statements normalized before recording",
+  "read_dominant_request": {
+    "statements_per_request": {
+      "median": 117,
+      "min": 117,
+      "max": 117
+    },
+    "transactions_per_request": 73.4,
+    "db_execution_ms_per_request": 63.3,
+    "top_shapes_per_request": [
+      {
+        "count": 66.0,
+        "ms": 5.25,
+        "shape": "select set_config(?, ?, true)"
+      },
+      {
+        "count": 15.0,
+        "ms": 1.17,
+        "shape": "SELECT loop_runs ..."
+      },
+      {
+        "count": 13.0,
+        "ms": 1.59,
+        "shape": "SELECT loop_events ..."
+      },
+      {
+        "count": 13.0,
+        "ms": 1.28,
+        "shape": "INSERT INTO loop_events ..."
+      },
+      {
+        "count": 2.0,
+        "ms": 0.18,
+        "shape": "INSERT INTO loop_runs ..."
+      },
+      {
+        "count": 2.0,
+        "ms": 0.21,
+        "shape": "UPDATE loop_runs ..."
+      },
+      {
+        "count": 1.0,
+        "ms": 53.13,
+        "shape": "SELECT memory_records ... ORDER BY embedding <=> <vector> LIMIT ?"
+      },
+      {
+        "count": 1.0,
+        "ms": 0.08,
+        "shape": "SELECT memory_settings ..."
+      },
+      {
+        "count": 4.0,
+        "ms": 0.41,
+        "shape": "audit chain head read/write + memory_audit_logs insert"
+      }
+    ]
+  },
+  "single_candidate_write_request": {
+    "statements_per_request": {
+      "median": 130,
+      "min": 130,
+      "max": 130
+    }
+  },
+  "driver_wait_interpretation": {
+    "observed_connection_wait_per_request": 282,
+    "measured_sql_statements_per_request": 117,
+    "conclusion": "the request path is genuinely chatty, but driver waits are not SQL statements and not network round trips; ~2.4 waits per statement",
+    "disallowed_claim": "282 DB round trips per request"
+  },
+  "structural_cause": {
+    "location": "PostgresRepository._scoped()",
+    "behaviour": "opens a new Session/transaction for repository operations outside an explicit transaction(), re-establishing RLS context with 2 set_config statements each",
+    "amplifier": "the loop-engineering layer performs many repository calls per request",
+    "status": "measured, NOT changed in Phase C \u2014 transaction consolidation moves the RLS boundary and needs its own FORCE-RLS cross-tenant evidence"
+  },
+  "gil_claim": "NOT PROVEN \u2014 not separately measured"
+}

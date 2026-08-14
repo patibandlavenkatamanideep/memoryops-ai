@@ -1,0 +1,150 @@
+{
+  "base_sha": "0190bcda53ee9178e1c59f729483bfa12f1d272c",
+  "date": "2026-08-12",
+  "python": "3.13.2",
+  "postgres": "17.10",
+  "pgvector": "0.8.5",
+  "note": "Local single-node laptop measurement. Not a Railway or production figure.",
+  "artifact": "gemini-2.5-flash_phase-c",
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
+  "other_providers_called": [],
+  "storage": "postgres",
+  "embedding_provider": "stub (local, not a provider call)",
+  "retry_ownership": {
+    "memoryops_max_attempts_per_logical_call": 3,
+    "gemini_sdk_internal_default_retries": 0,
+    "note": "OpenAI/Anthropic nest their own retries; neither was called here"
+  },
+  "workloads": [
+    {
+      "label": "A read-dominant/no-candidate chat",
+      "concurrency": 1,
+      "requests": 25,
+      "successes": 25,
+      "errors": 0,
+      "status_counts": {
+        "200": 25
+      },
+      "successful_rps": 1.15,
+      "attempted_rps": 1.15,
+      "p50_ms": 820.36,
+      "p95_ms": 996.77,
+      "p99_ms": 1752.63,
+      "logical_provider_calls": 25,
+      "physical_provider_attempts": 25,
+      "retries": 0
+    },
+    {
+      "label": "A read-dominant/no-candidate chat",
+      "concurrency": 5,
+      "requests": 25,
+      "successes": 25,
+      "errors": 0,
+      "status_counts": {
+        "200": 25
+      },
+      "successful_rps": 5.81,
+      "attempted_rps": 5.81,
+      "p50_ms": 833.35,
+      "p95_ms": 994.23,
+      "p99_ms": 1147.5,
+      "logical_provider_calls": 25,
+      "physical_provider_attempts": 25,
+      "retries": 0
+    },
+    {
+      "label": "B single-candidate write",
+      "concurrency": 1,
+      "requests": 25,
+      "successes": 25,
+      "errors": 0,
+      "status_counts": {
+        "200": 25
+      },
+      "successful_rps": 0.46,
+      "attempted_rps": 0.46,
+      "p50_ms": 2196.45,
+      "p95_ms": 2564.67,
+      "p99_ms": 2675.47,
+      "logical_provider_calls": 50,
+      "physical_provider_attempts": 50,
+      "retries": 0
+    },
+    {
+      "label": "B single-candidate write",
+      "concurrency": 5,
+      "requests": 25,
+      "successes": 25,
+      "errors": 0,
+      "status_counts": {
+        "200": 25
+      },
+      "successful_rps": 2.01,
+      "attempted_rps": 2.01,
+      "p50_ms": 2230.2,
+      "p95_ms": 3011.64,
+      "p99_ms": 3267.85,
+      "logical_provider_calls": 50,
+      "physical_provider_attempts": 50,
+      "retries": 0
+    }
+  ],
+  "call_shape_verified": {
+    "A read-dominant/no-candidate chat": {
+      "extraction": 1.0,
+      "conflict_detection": 0.0,
+      "embedding_local": 1.0,
+      "candidates": 0
+    },
+    "B single-candidate write": {
+      "extraction": 1.0,
+      "conflict_detection": 1.0,
+      "embedding_local": 1.2,
+      "candidates": 1
+    }
+  },
+  "accepted_workload_totals": {
+    "user_level_requests": 100,
+    "logical_provider_calls": 150,
+    "physical_provider_attempts": 150,
+    "retries": 0,
+    "errors": 0,
+    "rate_limited": 0
+  },
+  "token_accounting": {
+    "scope": "SESSION-LEVEL \u2014 includes the 2 positive wiring-assertion calls, so these are NOT workload-only totals",
+    "calls_covered": 152,
+    "input_tokens": 54898,
+    "output_tokens": 6423,
+    "thinking_tokens": 10483,
+    "total_tokens": 71804,
+    "estimated_cost_usd": 0.0587,
+    "pricing_assumption_usd_per_m": {
+      "input": 0.3,
+      "output": 2.5,
+      "note": "thinking tokens bill as output"
+    },
+    "thinking_share_of_billed_output_pct": 62
+  },
+  "session_accounting": {
+    "note": "includes the wiring probe, a 1-request smoke, and calls spent by an aborted setup run whose provider patch missed app/services/extractor.py",
+    "physical_attempts_upper_bound": 174,
+    "estimated_cost_usd_upper_bound": 0.07,
+    "approved_ceiling_attempts": 450,
+    "approved_ceiling_usd": 2.0,
+    "budget_respected": true
+  },
+  "async_verdict": {
+    "conclusion": "Blanket async migration is not justified by the current measurements.",
+    "evidence": "Workload A c=1 -> c=5: throughput 1.15 -> 5.81 rps while p50 held at 820.4 -> 833.4 ms; the synchronous path overlapped provider waiting through the tested concurrency",
+    "limitations": [
+      "only gemini-2.5-flash tested",
+      "provider-backed concurrency only through c=5",
+      "other providers may differ",
+      "higher concurrency not measured",
+      "Railway-scale behaviour not measured"
+    ],
+    "disallowed_claim": "async can never help"
+  }
+}

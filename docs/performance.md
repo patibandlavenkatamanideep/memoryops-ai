@@ -1,9 +1,14 @@
 # Performance (P4.3)
 
-> **Status: first pass — in-memory + stub providers, single process.**
-> This is a starting observation, not a tuned result and not a root-cause analysis.
-> Postgres/pgvector, real providers, and per-stage CPU/pool instrumentation are the
-> follow-ups that would let us attribute *cause* (see the end).
+> **Status: characterized on real Postgres + pgvector and a real provider (Phase C).**
+> The follow-ups the first pass called for — Postgres/pgvector, a real provider,
+> SQL-statement and pool instrumentation — have been run. Their results are in
+> [Phase C](#phase-c--real-request-path-characterization) below, with machine-readable
+> artifacts in [`benchmark/perf/results/`](../benchmark/perf/results/).
+>
+> **Everything measured here is a single-node laptop measurement.** It is not a
+> Railway figure, not a production throughput number, and not a claim about
+> providers other than the one tested.
 
 > **⚠️ Read the numbers below as observations, not proofs.** The tables in this
 > document were produced by an **earlier version of the harness** that created a
@@ -96,6 +101,26 @@ Operations map to the three user-facing paths:
 Raw JSON for every run below lives in
 [`benchmark/perf/results/`](../benchmark/perf/results/).
 
+### Reproducing the Phase C measurements
+
+Point the same harness at a Postgres-backed server (`MEMORYOPS_STORAGE=postgres`,
+`MEMORYOPS_DATABASE_URL=…`) with pgvector installed and the migrations applied.
+
+Two benchmark-only tools support the deeper measurements, both under
+`benchmark/perf/` and never imported by `services/api`:
+
+| tool | what it gives you |
+|---|---|
+| [`sqlprofile.py`](../benchmark/perf/sqlprofile.py) | statements/request, normalized query shapes, per-shape time. Attach with `attach(repo._engine)`. Bound parameters are never captured, so shapes carry no tenant, user, content, embedding or credential. |
+| [`provider_accounting.py`](../benchmark/perf/provider_accounting.py) | logical calls vs physical attempts, token/cost accounting, and hard ceilings enforced *before* a request is sent. |
+
+Any live-provider run must call `assert_live_provider_wired()` first. It issues one
+request and fails if the provider was not actually called — because `deps.gateway()`
+is `lru_cache`d, a rebind after the gateway is built leaves the cached instance on the
+old provider, and a stubbed run then produces clean latency numbers and zero provider
+calls that look exactly like a successful live run. That happened during Phase C; the
+guard exists so it fails loudly instead.
+
 ## Environment & honesty caveats
 
 - Measured on a laptop (macOS, Apple Silicon), **single uvicorn worker**, Python
@@ -112,7 +137,13 @@ Raw JSON for every run below lives in
 
 ## Results
 
-### 1. Concurrency sweep — in-memory / stub / rate-limit off / hybrid ranker
+> **⚠️ Sections 1–3 are HISTORICAL and SUPERSEDED.** They were produced by the
+> earlier harness and the in-memory backend, and their `rps` counted failed requests
+> while their percentiles mixed failure latency into success latency. They are kept
+> for provenance. For current evidence use
+> [Phase C](#phase-c--real-request-path-characterization).
+
+### 1. Concurrency sweep — in-memory / stub / rate-limit off / hybrid ranker *(historical)*
 
 400 requests per scenario. `rps` = requests/sec (higher better); latency in ms.
 
@@ -148,7 +179,7 @@ cost charged to every latency sample) and let the store grow across the sweep, s
 client overhead, thread-pool limits, CPU work, and store growth are all still on the
 table. See the caveat at the top.
 
-### 2. Latency vs store size — retrieval, in-memory (linear scan)
+### 2. Latency vs store size — retrieval, in-memory (linear scan) *(historical)*
 
 Retrieval p50 as the store grows (single client):
 
@@ -161,19 +192,28 @@ Retrieval p50 as the store grows (single client):
 the HTTP write path is **O(n²)** (every seed write also runs a read over the
 growing store), so the 5 k / 10 k points were not driven locally — but the trend
 above already shows the shape. The in-memory repository scans **O(n)** candidates
-per query, so retrieval cost grows with the store. This is a property of the **dev/default** backend, not of
-MemoryOps as designed: on Postgres, retrieval goes through the **pgvector ANN
-index** (and the `VectorIndex` abstraction, ADR-021), which is sub-linear.
-Postgres + pgvector **is** available and is exercised locally and in CI (the
-`api-postgres` job); quantifying the ANN-vs-linear retrieval curve on it is the
-tracked follow-up below. Store **memory** also grows with row count — RSS rose from
+per query, so retrieval cost grows with the store. This is a property of the
+**dev/default** backend, not of MemoryOps as designed.
+
+> **Correction (Phase C).** An earlier version of this paragraph stated that on
+> Postgres "retrieval goes through the pgvector ANN index … which is sub-linear."
+> That claim was not measured, and **measurement contradicts it as a general
+> statement**. At 100 k total rows with a 10 k-row tenant, the planner did **not**
+> choose the IVFFlat index: it used the tenant/status btree, bitmap-heap-scanned all
+> 10 000 tenant rows, and top-N sorted them by exact vector distance. IVFFlat *was*
+> chosen on a smaller single-tenant dataset. **An index existing is not an index
+> being used**, and retrieval on Postgres is not universally ANN or sub-linear —
+> the plan is data- and query-dependent. See
+> [Phase C](#phase-c--real-request-path-characterization).
+
+Store **memory** also grows with row count — RSS rose from
 **37 MB → 234 MB** over the concurrency sweep — but the harness did not record the
 exact memory count for those runs, so **no reliable per-memory byte figure can be
 derived** from them. (An earlier draft's "~33 KB/memory" divided RSS by an *assumed*
 row count and has been removed.) The corrected harness now records actual before/
 after memory counts, so a defensible per-memory figure can be measured on the re-run.
 
-### 3. Rate limiter — per-process, fail-fast
+### 3. Rate limiter — per-process, fail-fast *(historical)*
 
 `MEMORYOPS_RATE_LIMIT_ENABLED=true`, defaults (chat = 30/min per tenant/IP). A
 burst of 100 chat requests (concurrency 10) from one tenant/IP:
@@ -191,7 +231,158 @@ Each replica has its own 30/min budget, and a restart resets it. It is **local
 process protection, not distributed rate enforcement.** A Redis-backed limiter is
 the fix for a real multi-replica limit (follow-up).
 
+## Phase C — real request-path characterization
+
+Measured on **PostgreSQL 17.10 + pgvector 0.8.5** (isolated local cluster, Python
+3.13.2), base `0190bcd`. Artifacts:
+[`postgres_pgvector_phase-c.json`](../benchmark/perf/results/postgres_pgvector_phase-c.json),
+[`postgres_sql_profile_phase-c.json`](../benchmark/perf/results/postgres_sql_profile_phase-c.json),
+[`gemini-2.5-flash_phase-c.json`](../benchmark/perf/results/gemini-2.5-flash_phase-c.json).
+
+All numbers below come from the corrected harness: latency is success-only,
+throughput is `successful_rps`, and every scenario was valid (0 errors, 0 × 429).
+
+### C1. Local ceiling — Postgres + stub provider
+
+| conc | successful_rps | p50 | p95 | p99 | errors |
+|-----:|---------------:|----:|----:|----:|:------:|
+| 1  | 42.3 | 21.6 ms   | 28.8 ms   | 31.0 ms   | 0 |
+| 5  | 45.7 | 105.5 ms  | 131.5 ms  | 155.6 ms  | 0 |
+| 25 | 41.8 | 553.4 ms  | 737.2 ms  | 788.3 ms  | 0 |
+| 50 | 40.7 | 1010.1 ms | 1456.6 ms | 1467.3 ms | 0 |
+
+`attempted_rps == successful_rps` throughout. Throughput is flat at ~40 rps from
+concurrency 5 upward while latency grows linearly — added concurrency queues rather
+than parallelizes. **This ceiling appears with small scopes too**, so it is not
+caused by retrieval store size.
+
+### C2. Retrieval latency vs tenant store size
+
+| tenant memories | p50 | p95 |
+|----------------:|----:|----:|
+| 100    | 26.0 ms | 29.8 ms |
+| 1 000  | 31.0 ms | 32.5 ms |
+| 10 000 | 87.2 ms | 94.2 ms |
+
+Latency grows with the **tenant's** row count, consistent with the exact top-N sort
+in the plan below.
+
+### C3. Query plan — an index existing is not an index being used
+
+At **100 k total rows / 10 k tenant rows**, Postgres did **not** choose IVFFlat:
+
+```
+Limit → Sort (top-N heapsort)
+  → Bitmap Heap Scan on memory_records (rows=10000)
+    → Bitmap Index Scan on idx_memory_user_status
+```
+
+That is exact brute-force KNN over the tenant's memories. On a smaller 10 k
+single-tenant dataset the same query *did* use `idx_memory_embedding` (IVFFlat),
+returning 49/50 rows at the default `ivfflat.probes=1`. The planner's choice is
+data- and query-dependent, so **no universal ANN or sub-linear claim holds**.
+
+### C4. SQL statement profile
+
+Measured with [`sqlprofile.py`](../benchmark/perf/sqlprofile.py) via SQLAlchemy
+cursor events. Bound parameters are never captured.
+
+| request | statements/request | transactions/request | DB execution/request |
+|---|---:|---:|---:|
+| read-dominant | **117** (min 117, max 117) | ~73 | 63.3 ms |
+| single-candidate write | **130** (min 130, max 130) | — | — |
+
+Per read-dominant request:
+
+| count | ms | shape |
+|------:|---:|---|
+| **66** | 5.25 | `select set_config(?, ?, true)` |
+| 15 | 1.17 | `SELECT loop_runs …` |
+| 13 | 1.59 | `SELECT loop_events …` |
+| 13 | 1.28 | `INSERT INTO loop_events …` |
+| 4 | 0.39 | `INSERT`/`UPDATE loop_runs` |
+| **1** | **53.13** | `SELECT memory_records … ORDER BY embedding <=> … LIMIT ?` |
+| 4 | 0.41 | audit chain head + `memory_audit_logs` |
+
+Two different things, which must not be conflated: **statement count** is dominated
+by `set_config` and loop engineering; **DB time** is dominated by the single
+retrieval query (53 ms of 63 ms).
+
+> **On the ~282 `psycopg` `connection.wait` calls per request** seen in an earlier
+> CPU profile: the request path is genuinely chatty, but a driver wait is not a SQL
+> statement and not a network round trip. The measured figure is **117 statements**,
+> i.e. roughly 2.4 waits per statement. *"282 DB round trips per request" is not a
+> supported claim.* **GIL causality is likewise NOT PROVEN** — it was never
+> separately measured.
+
+**Structural cause (measured, deliberately not changed here).**
+`PostgresRepository._scoped()` opens a new `Session` — and therefore a new
+transaction — for repository operations outside an explicit `transaction()`,
+re-establishing RLS context with two `set_config` statements each. The
+loop-engineering layer makes many such calls per request. Consolidating transactions
+moves the boundary around RLS context and needs its own Postgres + `FORCE ROW LEVEL
+SECURITY` cross-tenant evidence, so it is tracked as a follow-up rather than done
+opportunistically.
+
+### C5. DB pool — saturated, but not the bottleneck
+
+Defaults are `pool_size=5` + `max_overflow=10` (15 connections), and peak
+connections did reach 15 at high concurrency. A **measurement-only** widening to
+~100 raised peak connections to 45 and changed throughput not at all:
+
+| conc | successful_rps @ 15 | successful_rps @ 100 |
+|-----:|--------------------:|---------------------:|
+| 5  | 43.7 | 44.2 |
+| 10 | 39.8 | 40.6 |
+| 25 | 40.4 | 40.5 |
+| 50 | 39.8 | 38.8 |
+
+Pool saturation was therefore a *symptom*, not the cause. **The widened pool is not
+committed.**
+
+### C6. Live provider — Gemini 2.5 Flash
+
+Call shape was verified before spending budget. Workload A is *not* "retrieval-only":
+a question still runs extraction.
+
+| workload | conc | requests | successful_rps | p50 | p95 | p99 | logical | physical | retries | errors |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:--:|
+| A read-dominant / no-candidate chat | 1 | 25 | 1.15 | 820.4 ms | 996.8 ms | 1752.6 ms | 25 | 25 | 0 | 0 |
+| A read-dominant / no-candidate chat | 5 | 25 | 5.81 | 833.4 ms | 994.2 ms | 1147.5 ms | 25 | 25 | 0 | 0 |
+| B single-candidate write | 1 | 25 | 0.46 | 2196.5 ms | 2564.7 ms | 2675.5 ms | 50 | 50 | 0 | 0 |
+| B single-candidate write | 5 | 25 | 2.01 | 2230.2 ms | 3011.6 ms | 3267.9 ms | 50 | 50 | 0 | 0 |
+
+Accepted workload: **100 user-level requests, 150 logical calls, 150 physical
+attempts, 0 retries, 0 errors.** Workload B issues two sequential provider calls per
+request (extraction + conflict detection), which is why its latency is ~2.7× A's.
+
+**Token accounting is session-level**, covering 152 calls — the 150 workload calls
+plus 2 positive wiring-assertion calls. It is not split into a workload-only figure
+because the counters were not partitioned at the time:
+
+| | tokens |
+|---|---:|
+| input | 54 898 |
+| output | 6 423 |
+| thinking | 10 483 |
+| **total** | **71 804** |
+
+Estimated **$0.0587** at assumed rates of $0.30/1M input and $2.50/1M output.
+**Thinking tokens are 62 % of billed output** — visible response text badly
+understates output billing on this model.
+
+Provider latency dominates: ~820 ms for one call versus 63 ms of DB work per request.
+
 ## The async decision (P2.1) — verdict: **defer the blanket migration; tune and measure the synchronous path first**
+
+> **Phase C update — blanket async migration is not justified by the current
+> measurements.** Going from concurrency 1 → 5 on the provider-backed path took
+> throughput from **1.15 → 5.81 rps while p50 held at 820.4 → 833.4 ms**: the
+> synchronous path overlapped provider waiting effectively through the tested
+> concurrency. Limitations, stated plainly: only `gemini-2.5-flash` was tested,
+> provider-backed concurrency only reached **5**, other providers may behave
+> differently, higher concurrency was not measured, and Railway-scale behaviour was
+> not measured at all. This is **not** a claim that async can never help.
 
 `POST /api/chat` is a **synchronous** FastAPI route. Starlette executes sync routes
 through AnyIO's threadpool, so requests **already overlap** their network and database
@@ -240,14 +431,29 @@ Until that evidence exists, a blanket async rewrite is **not** justified.
 
 ## Follow-ups (measured next, tracked separately)
 
-- [ ] **Corrected-harness re-run** of the full sweep (reused clients, fresh scope +
-      fixed seed per scenario, repetitions, randomized order) to replace the
-      confounded tables above with numbers that isolate concurrency.
-- [ ] **Postgres + pgvector** run of the same sweep. pgvector is available and
-      CI-exercised (`api-postgres`); this run quantifies In-memory-vs-Postgres and
-      ANN-vs-linear retrieval.
-- [ ] **Real providers** (OpenAI / Anthropic) latency + fallback frequency in the
-      hot path — the I/O-bound numbers that gate the async decision.
+Phase C closed the first three of these; each remaining item is a **separate,
+measured** change, not an opportunistic edit. In particular, nothing in Phase C
+changed runtime application code.
+
+- [x] **Corrected-harness re-run** — done, see [C1](#c1-local-ceiling--postgres--stub-provider).
+- [x] **Postgres + pgvector** run — done, see [C1–C4](#phase-c--real-request-path-characterization).
+      It also corrected the ANN assumption ([C3](#c3-query-plan--an-index-existing-is-not-an-index-being-used)).
+- [x] **Real provider** latency in the hot path — done for `gemini-2.5-flash`
+      ([C6](#c6-live-provider--gemini-25-flash)). OpenAI/Anthropic remain unmeasured.
+
+Opened by Phase C, each needing its own evidence:
+
+- [ ] **Repository transaction consolidation** — ~73 transactions and 66 `set_config`
+      statements per request. Moves the RLS context boundary, so it requires Postgres
+      + `FORCE ROW LEVEL SECURITY` cross-tenant proof before it can land.
+- [ ] **Retrieval candidate bounding / query redesign** — one query is 53 ms of the
+      63 ms DB time and scales with tenant row count; IVFFlat is not chosen under the
+      tenant filter at scale.
+- [ ] **Conflict-detection context bounding** — `detect_conflicts` sends *all*
+      existing memories untruncated, so write-path prompt size and provider cost grow
+      linearly with scope size. This is a cost-correctness issue as much as a
+      performance one.
+- [ ] **Loop-engineering write volume** — ~43 of the 117 statements per request.
 - [ ] **Retrieval quality** comparison vector-only vs BM25-only vs hybrid
       (Recall@5 / MRR / nDCG). Ranker mode is a *quality* lever with negligible
       latency impact (latency is dominated by the O(n) candidate scan), so it lives

@@ -643,12 +643,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      # The harness decides what counts as valid evidence, so its own rules need
-      # tests: success-only percentiles, split attempted/successful throughput, and
-      # 429 failing closed. Without this step they would live in the repository
-      # without ever running — `services/api` pytest does not collect this path.
-      - name: Load-harness evidence rules
-        run: python -m pytest benchmark/perf/tests/test_run_perf.py -q
+      # The perf tooling decides what counts as valid evidence, so its own rules need
+      # tests: success-only percentiles, split attempted/successful throughput, 429
+      # failing closed, SQL-shape normalization (which must never capture tenant,
+      # user, content or credential values), and the guard that stops a stubbed run
+      # being published as live-provider evidence. Without this step they would live
+      # in the repository without ever running — `services/api` pytest does not
+      # collect this path.
+      - name: Perf tooling evidence rules
+        run: python -m pytest benchmark/perf/tests/ -q
 
       # Boots the real app (in-memory, stub providers, rate-limit off) and drives a
       # small concurrency sweep. --max-error-rate 0 makes this a zero-tolerance
