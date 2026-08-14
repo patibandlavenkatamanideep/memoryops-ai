@@ -227,7 +227,9 @@ A route added without a spec fails the build, and
 is **generated** from the spec — the published matrix cannot drift from the code.
 
 `planned` is stated deliberately. A route listed as enforced that is not would be
-worse than an unlisted one, because the matrix is what a reader trusts.
+worse than an unlisted one, because the matrix is what a reader trusts. No route
+carries `planned` today; the status remains in the model so a future route declaring
+a contract it does not yet check has an honest way to say so.
 
 ### The four helpers
 
@@ -491,9 +493,10 @@ it is read by operators who may not be cleared for the memory itself.
 
 This is an authorization boundary, not an authorization product. Roles are coarse
 named bundles, not per-record ACLs; there is no delegation, no attribute-based policy,
-and no per-field redaction by role. Route statuses are moving from `planned` to
-`enforced` incrementally — **10 of 39 today** — so read the generated matrix for the
-current state rather than assuming the whole surface is covered.
+and no per-field redaction by role. Every route is now classified: **31 of 40 enforced,
+9 public by design, 0 planned** — read the generated matrix for the current state
+rather than trusting this sentence, since the matrix is regenerated from the code and
+this prose is not.
 
 Two limits specific to the memory routes:
 

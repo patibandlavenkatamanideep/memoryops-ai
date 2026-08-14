@@ -62,12 +62,28 @@ def test_factory_rejects_unknown_backend():
 
 
 def test_external_adapters_import_guarded():
-    # Selecting an external backend never raises at construction; when its client
-    # isn't installed the index simply reports unavailable (→ keyword-only).
-    for name in ("qdrant", "lancedb", "weaviate"):
-        idx = create_vector_index(name)
+    """Selecting an external backend never raises at construction, and reports its
+    readiness as a plain bool rather than throwing.
+
+    The contract under test is the import guard and graceful degradation, which hold
+    regardless of what happens to be installed. An earlier version asserted
+    ``available() is False`` unconditionally, which silently depended on the optional
+    client being *absent* from the environment: installing the benchmark extra pulls
+    in `qdrant-client` transitively, and the test then failed for a reason that had
+    nothing to do with the code under test. Whether a client is installed is a
+    property of the environment, so it is checked rather than assumed below.
+    """
+    import importlib.util
+
+    for name, module in (("qdrant", "qdrant_client"), ("lancedb", "lancedb"), ("weaviate", "weaviate")):
+        idx = create_vector_index(name)  # must not raise, installed or not
         assert idx.name == name
-        assert idx.available() is False  # no client / server in the test env
+        assert isinstance(idx.available(), bool), "readiness must degrade, never throw"
+
+        if importlib.util.find_spec(module) is None:
+            # Client absent: the adapter must report unavailable so retrieval falls
+            # back to keyword-only rather than failing the request (invariant #4).
+            assert idx.available() is False
 
 
 # ── the repository actually uses the seam (load-bearing, not decorative) ─────────

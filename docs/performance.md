@@ -18,8 +18,9 @@
 > bounded clients, a **fresh scope per scenario**, a **fixed identical seed *request*
 > count**, **≥3 repetitions**, **randomized scenario order**, and **actual
 > before/after memory counts** — see [`run_perf.py`](../benchmark/perf/run_perf.py)).
-> Re-running the sweep with the corrected harness is a tracked follow-up; until then,
-> treat the specific figures here as indicative only.
+> The sweep has since been re-run with the corrected harness on Postgres — see
+> [Phase C](#phase-c--real-request-path-characterization), which supersedes the
+> figures below. Treat the tables in this section as historical only.
 >
 > Two further corrections apply to how these numbers were *computed*, so the tables
 > below are not directly comparable to output from the current harness:
