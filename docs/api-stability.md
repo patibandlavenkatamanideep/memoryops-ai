@@ -11,10 +11,10 @@ questions and move independently, so a single number would be misleading:
 
 | Track | Where it lives | Current | Meaning |
 |-------|----------------|---------|---------|
-| **Platform release** | git tags `vX.Y`, the README release badge, `CHANGELOG.md` | **v2.4.1** | "What shipped" — the feature-set milestone of the whole repo (API + workers + SDK + docs + demos). |
+| **Platform release** | git tags `vX.Y`, the README release badge, `CHANGELOG.md` | **v2.5** | "What shipped" — the feature-set milestone of the whole repo (API + workers + SDK + docs + demos). |
 | **Public API + SDK contract** | `app.__version__`, `packages/memoryops-sdk` `version` | **1.0.0** | The compatibility promise of the public HTTP API and Python SDK. Stays `1.x` as long as the surface is additive-compatible. |
 
-So platform **v2.4.1** ships the **1.0.0** API/SDK contract: the milestone counter has
+So platform **v2.5** ships the **1.0.0** API/SDK contract: the milestone counter has
 advanced through many feature phases while the *public surface* has only grown
 additively and so remains `1.x`. `app.__version__` and the SDK package version are
 kept in lock-step; the platform milestone is independent.

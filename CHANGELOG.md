@@ -3,6 +3,58 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
+## v2.5 — Evidence & Systems Depth (2026-08-15)
+Additive under the `1.x` compatibility promise; the public API + SDK contract is
+unchanged at `1.0.0`. No new product surface — v2.5 makes existing claims checkable,
+and corrects several that could previously pass while proving nothing.
+
+### Evidence that fails closed
+- **Real-Postgres RLS verification cannot silently skip.** The behavioural probe runs
+  as a non-superuser, non-`BYPASSRLS` role and observes zero cross-tenant rows; if it
+  cannot execute at all, the checker now reports failure instead of a quiet skip.
+- **Recorded Gemini extraction evidence replays offline** from a committed cassette
+  with no credential and no network, and asserts extraction *mode* — so HTTP request
+  count can no longer be mistaken for structured extractions when the heuristic
+  answered.
+- **The load harness rejects misleading runs.** Latency percentiles are computed from
+  successful requests only, throughput is split into `attempted_rps` and
+  `successful_rps`, and any HTTP 429 invalidates an ordinary performance scenario. A
+  rate-limited run previously sat under the error threshold and published limiter
+  latency as request-path evidence.
+
+### Provider correctness
+- **Gemini migrated to the supported `google-genai` SDK.** The retired
+  `google-generativeai` is gone from every requirements set and is no longer imported.
+- **Gemini's REST minimum request deadline is enforced.** An 8-second budget was being
+  rejected outright, degrading every call to the deterministic heuristic.
+- **Retries are classified.** Transient failures (connection, timeout, 429, 5xx, and
+  the 408/409 cases both SDKs document as retryable) are retried; deterministic
+  failures — bad request, bad key, local errors — now fail fast after one attempt
+  instead of spending the whole retry budget to reach the same result.
+
+### Measurement and comparison
+- **External memory-system baseline including Mem0**, run provider-free, with
+  `UNSUPPORTED` reported as a capability finding rather than a failure. On the four
+  current deterministic probes a plain vector baseline also passes, so these probes do
+  not by themselves establish a governance advantage.
+- **Real Postgres/pgvector and live Gemini request-path characterization**, with
+  machine-readable artifacts in `benchmark/perf/results/`. The planner's index choice
+  was observed to be data- and query-dependent, so retrieval is not universally ANN or
+  sub-linear. Current measurements did not justify a blanket async migration; that
+  conclusion is scoped to the tested provider and concurrency.
+
+### Repository truth
+- Release, version and status drift reconciled against what actually shipped; the
+  phase-gate index corrected to cover all 18 gate files. Phase-gate documents were
+  deliberately **retained**, not archived — CI rules reference their existing paths.
+- Verified historical secret-shaped test fixtures pinned by exact fingerprint, without
+  disabling a rule or excluding a path. A full-history scan is clean: 209 commits, 0
+  findings.
+
+Performance figures are single-node local measurements and are not production or
+Railway-equivalent. Full evidence, including what this release explicitly does not
+claim, is in [`docs/releases/v2.5-release-truth.md`](docs/releases/v2.5-release-truth.md).
+
 ## v2.4.1 — Railway Deployment Hardening (2026-08-10)
 Deployment reproducibility only; no API or runtime behaviour change. Makes the
 production Railway deployment reproducible from the repository (canonical
