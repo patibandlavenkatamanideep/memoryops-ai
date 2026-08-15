@@ -3,7 +3,19 @@
 All notable releases. Git tags + GitHub Releases are the source of truth; this
 file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 
-## Unreleased — API authorization boundary
+## v2.4.1 — Railway Deployment Hardening (2026-08-10)
+Deployment reproducibility only; no API or runtime behaviour change. Makes the
+production Railway deployment reproducible from the repository (canonical
+per-service configuration, Dockerfile-owned start commands) and closes the
+deployment drift found during the v2.4 rollout. See the
+[v2.4.1 release](https://github.com/patibandlavenkatamanideep/memoryops-ai/releases/tag/v2.4.1).
+
+## v2.4 — API Trust Boundary (2026-08-09)
+Closes the trust boundary between authenticated identities, tenant data,
+operational access, and the production deployment. The subsections below were
+written incrementally as the work landed and shipped together in this release.
+
+### API authorization boundary
 
 - **Every route is classified, and the classification is enforced in CI.**
   `app/auth/authz_spec.py` states each route's scope (public / authenticated /
@@ -24,7 +36,7 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
 - **`GET /api/audit`** now resolves its subject through the shared helper; only
   the resolved tenant/user reach the repository.
 
-### Behaviour changes
+#### Behaviour changes
 - **`PATCH /api/memories/{id}` with no changed field now returns 422** (was 200
   with the unchanged record). Such a body requests no action, so there is no
   permission it could be authorized against, and it wrote a governance loop run
@@ -35,7 +47,7 @@ file is the consolidated narrative. Versions are `vMAJOR.MINOR[.PATCH]`.
   correction rather than an additive change; every patch that requests a real
   change is unaffected.
 
-## Unreleased — repository trust guards
+### repository trust guards
 
 Structural checks for regressions this repository has actually had, in
 `scripts/repo_trust_guards.py`. Not general linting — each guard was written from a
@@ -48,7 +60,7 @@ documenting the constants it no longer exports, and `import redis` matched
 `test_no_unused_infrastructure`'s docstring. A guard that fires on its own
 documentation trains people to ignore it.
 
-### Fixed
+#### Fixed
 - **`services/worker/jobs.py` mutated `sys.path` at import time** — inserting
   `../api` so it could reach the API package — while `services/worker/pyproject.toml`
   stated that no such call remained in a production entrypoint. The file ships in the
@@ -64,14 +76,14 @@ documentation trains people to ignore it.
 - The Redis import check moved from substring matching to the AST guard, which also
   stops confusing `redis_notes` for `redis`.
 
-### Guards
+#### Guards
 `sys-path-mutation` · `committed-secret-literal` · `demo-identity-in-server-code` ·
 `retired-infrastructure`. Documented in
 [docs/security/repository-trust-guards.md](docs/security/repository-trust-guards.md),
 enforced in CI, and each with negative tests proving a representative bad edit is
 rejected — plus the false-positive cases it must *not* fire on.
 
-## Unreleased — web capabilities replace the role ladder
+### web capabilities replace the role ladder
 
 - **`hasAtLeast()`, `ROLE_RANK` and `requiredRole()` are gone.** The web ranked
   personas — viewer < developer < auditor < memory_admin < owner — and asked "is this
@@ -95,7 +107,7 @@ rejected — plus the false-positive cases it must *not* fire on.
 - `NEVER_WEB_ASSIGNABLE` is now emitted to the web mirror and enforced: no persona can
   resolve to `service_worker` or `platform_operator`.
 
-### The boundary this deliberately does not cross
+#### The boundary this deliberately does not cross
 The web answers *may this persona attempt this route and action shape* — never *is
 this operation authorized on this record*. The browser does not know a memory's stored
 owner, whether a call is self- or tenant-scoped, the record's lifecycle status, or
@@ -104,11 +116,11 @@ anything about legal hold, revisions or consent. So `status: "active"` is treate
 resolving the real transition after loading the record. This layer only ever removes
 access; the API stays authoritative.
 
-## Unreleased — the platform operational boundary
+### the platform operational boundary
 
 **31 of 40 routes enforced. Zero planned.** 9 public, each reviewed below.
 
-### The distinction this draws
+#### The distinction this draws
 "Administrator of tenant A" and "operator of this deployment" are different
 authorities. Three surfaces describe the *installation* rather than any tenant, and
 now say so: `/api/traces` (a process-wide span buffer), `/api/evals/{latest,run}` (a
@@ -125,13 +137,13 @@ harness over its own fixtures and a process-wide result store), and the worker f
 - `GET /api/loops/{runs,events,trace}` now use `audit:read:tenant`; both they and the
   audit trail answer "who acted in this tenant", and `traces:read:tenant` is retired.
 
-### Fixed
+#### Fixed
 - **`tenant_admin` was `frozenset(set(Permission))`** — every permission in the enum,
   including ones that did not exist yet. Any capability added anywhere became tenant
   authority by definition. The bundle is explicit, and a guard fails while any
   permission is neither granted nor recorded as deployment-scoped with a reason.
 
-### Behaviour changes
+#### Behaviour changes
 - **`tenant_admin` no longer reads `/api/admin/workers/health`.** Fleet health is
   deployment state; it held that only through the blanket grant.
 - **`auditor` and `tenant_admin` no longer read or run deployment evaluations.**
@@ -148,7 +160,7 @@ harness over its own fixtures and a process-wide result store), and the worker f
   authenticates that path when the switch is on — without a principal the route's
   check would silently no-op and the setting would look enforced while doing nothing.
 
-## Unreleased — governance mutations enforced
+### governance mutations enforced
 
 **28 of 39 routes enforced.** Planned 2 (`POST /api/evals/run`, `GET /api/traces`),
 public 9.
@@ -157,7 +169,7 @@ public 9.
   `consent:manage`.** `auditor` reads governance state and cannot change it;
   `memory_admin` and `tenant_admin` manage it within their tenant.
 
-### Fixed
+#### Fixed
 - **An admin could not govern another user's memory.** `_load()` ran
   `enforce_scope(request, tenant_id, user_id)` and then looked the record up with
   `repo.get_memory(tenant_id, user_id, memory_id)` — both halves trusting the
@@ -166,7 +178,7 @@ public 9.
   request's `user_id` is a compatibility hint about where to look, and the lookup is
   tenant-scoped and user-spanning.
 
-### Audit evidence
+#### Audit evidence
 - **Actor and target are recorded separately.** Once an admin can change someone
   else's governance state, `audit.user_id = "bob"` cannot say whether Bob acted or was
   acted upon. `user_id` stays the *target* for query compatibility, and content-free
@@ -174,7 +186,7 @@ public 9.
   service_account), `target_user_id`, `authorized_permission`, and
   `acted_on_behalf_of_another_user`. Never the credential, its claims, or memory text.
 
-## Unreleased — governance and evidence reads enforced
+### governance and evidence reads enforced
 
 **24 of 39 routes enforced** (was 10). Planned 6, public 9.
 
@@ -197,7 +209,7 @@ public 9.
 - Every route forces the query to `principal.tenant_id` after authorizing; the
   request's own value is not reused.
 
-### Behaviour changes
+#### Behaviour changes
 - **`GET /api/evals/latest` is now a pure read** and returns `404 no_result_available`
   when the process has completed no run. It previously regenerated whenever the cache
   was cold or older than `evals_cache_ttl_seconds`, so holding `evals:read` granted
@@ -210,7 +222,7 @@ public 9.
   *These are deployment-wide results — the harness runs against its own isolated
   fixtures — not per-tenant evidence; the route takes no tenant parameter.*
 
-### Deliberately still `planned`
+#### Deliberately still `planned`
 - **`GET /api/traces`** is permission-gated (`traces:read:tenant`) as defence in
   depth, but stays `planned` because it is **not tenant-isolated**: the in-process
   span buffer has no tenant dimension, so a permitted caller observes the timing,
@@ -223,9 +235,9 @@ public 9.
   A tenant auditor should not implicitly become a deployment-wide observability
   operator.
 
-## Unreleased — governance read boundary
+### governance read boundary
 
-### Fixed
+#### Fixed
 - **Loop evidence could be read across tenants on the in-memory backend.**
   `list_loop_runs` / `list_loop_events` filtered with `if tenant_id:`, so an empty
   string meant *no filter* and returned every tenant's loop runs — who did what,
@@ -241,7 +253,7 @@ public 9.
   lookup is skipped instead, so evidence recording can never be the reason a request
   fails (invariant #4).
 
-## Unreleased — memory routes enforced
+### memory routes enforced
 
 Ten of 39 routes now enforce their declared permission (was three): `POST /api/chat`,
 `GET /api/memories`, and the five `/api/memories/{id}` routes join `/api/audit`,
@@ -269,7 +281,7 @@ Ten of 39 routes now enforce their declared permission (was three): `POST /api/c
   audited — authorization decides whether a caller may *attempt* deletion, never
   whether a preservation control applies.
 
-### Fixed
+#### Fixed
 - **A JWT `roles` claim in array form was silently discarded.** `claim_path` rejects
   containers by design (a tenant or subject arriving as a list is malformed), but
   roles are normally a JSON array — so `["auditor"]` read as *no claim* and every
@@ -289,7 +301,7 @@ Ten of 39 routes now enforce their declared permission (was three): `POST /api/c
   valid → those roles. Identity claims are unchanged, where absent and `null` are
   correctly identical because there is no fallback to reach.
 
-## Unreleased — worker mutation atomicity
+### worker mutation atomicity
 Additive; completes invariant #7 across the whole system.
 
 - **Background workers now commit mutation + audit atomically.** v2.3 made the
