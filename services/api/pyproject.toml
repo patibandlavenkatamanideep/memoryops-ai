@@ -25,8 +25,8 @@ dependencies = [
   # Explicit patched pin — <1.0.1 carries the PYSEC-2026-161/248/249/1942/2280/2281
   # Starlette advisories. Pinned directly (not just transitively via fastapi) so a
   # patched Starlette can't silently regress.
-  "starlette==1.4.1",
-  "uvicorn[standard]==0.52.1",
+  "starlette==1.6.0",
+  "uvicorn[standard]==0.52.3",
   "pydantic==2.13.4",
   "pydantic-settings==2.15.0",
   "tenacity==9.1.4",
