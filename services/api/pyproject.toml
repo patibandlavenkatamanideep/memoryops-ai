@@ -92,7 +92,7 @@ production = [
 dev = [
   "pytest==8.3.4",
   "httpx==0.28.1",
-  "ruff==0.8.4",
+  "ruff==0.16.3",
   # Records real LLM-provider responses once, replays them in CI without keys (P1.1).
   "pytest-recording==0.13.2",
 ]
