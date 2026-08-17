@@ -46,12 +46,12 @@ Browser ──(same-origin session cookie)──▶ Next.js BFF route handler
 | Module | Responsibility |
 | --- | --- |
 | `lib/identity.ts` | `server-only`. Resolves mode + identity. Never falls back to demo in authenticated mode — a broken session fails closed. |
-| `lib/roles.ts` | Pure role model + path→role policy. No `server-only`/NextAuth imports, so it is directly unit-testable. |
+| `lib/webRoles.ts`, `lib/capabilities.ts` | The persona list and the generated capability contract. No `server-only`/NextAuth imports, so both are directly unit-testable. |
 | `lib/scope.ts` | Strips client-supplied `tenant_id`/`user_id` from query and body. The security boundary. |
 | `lib/memoryopsToken.ts` | Mints the short-lived API credential. Never reaches the browser. |
 | `app/api/memoryops/[...path]/route.ts` | The BFF proxy. The browser's only route to the API. |
 | `auth.ts` | Auth.js v5 config; the `jwt` callback maps provider claims → `tenantId`/`memoryopsUserId`/`role`. |
-| `middleware.ts` | Redirects unauthenticated humans to `/signin`. **Not** the security boundary. |
+| `middleware.ts` | Redirects unauthenticated humans to `/signin`. **Not** the security boundary. See [Route protection](#route-protection). |
 
 ### Why the browser cannot switch tenant
 
@@ -68,6 +68,64 @@ exists for the banner only and is never consulted for access decisions.
 
 The upstream API base is `MEMORYOPS_API_URL` (server-only), so no API credential is
 exposed through `NEXT_PUBLIC_*`.
+
+## Route protection
+
+In `MEMORYOPS_WEB_MODE=authenticated`, `middleware.ts` decides which surfaces an
+anonymous visitor may reach. In demo mode it is a no-op — the public demo has no
+sign-in to redirect to.
+
+| Route | Anonymous | Why |
+| --- | --- | --- |
+| `/` | **public** (v2.6) | Product landing surface. Static; makes no authenticated API call. |
+| `/architecture` | public | Public reference, and the Railway web healthcheck (`railway/web.railway.json`). |
+| `/signin` | public | The sign-in flow itself. |
+| `/api/auth/*` | public | Auth.js callback, CSRF and session endpoints. |
+| `/chat` | protected | |
+| `/memories`, `/memories/{id}` | protected | |
+| `/governance` | protected | |
+| `/audit` | protected | |
+| `/loops` | protected | |
+| `/admin` | protected | |
+| `/api/memoryops/*` | protected | The BFF proxy. Also refuses independently — a forged cookie gets a 401 here. |
+
+### `/` is matched exactly, and must stay that way
+
+Public paths were previously all tested with `pathname.startsWith(p)`. Under that
+rule the single character `/` is a prefix of every route in the application, so
+adding `/` to the list would have made the entire control plane anonymous in one
+line — without naming `/chat`, `/memories`, `/governance`, `/audit`, `/loops` or
+`/admin` anywhere in the diff.
+
+`middleware.ts` therefore keeps two lists: `PUBLIC_EXACT` (matched with `===`,
+holding `/`) and `PUBLIC_PREFIXES` (matched as the path itself or a `/`-delimited
+descendant, so `/architecture-internal` is not covered by `/architecture`). Paths
+containing a dot segment — literal or percent-encoded — are refused public status
+outright: `new URL()` resolves `..` before `nextUrl.pathname` is read but does not
+decode `%2e%2e`, so `/architecture/%2e%2e/chat` would otherwise satisfy a prefix
+test while routing elsewhere.
+
+`__tests__/middleware-route-protection.test.ts` asserts the matrix route by route
+rather than re-deriving the rule, including `/memories/{id}`, the `__Secure-`
+cookie name, demo mode, an unset mode, and the `config.matcher` exclusion list.
+Reverting to the naive one-list implementation fails 12 of those tests.
+
+### The public landing page must stay session-independent
+
+A page that is publicly reachable but session-dependent does not fail politely:
+`resolveIdentity()` throws in authenticated mode and the BFF returns 401, so the
+new public surface would render as an error for exactly the visitors it was opened
+for — and only in production, since demo mode resolves an identity for everyone.
+
+`__tests__/public-landing-independence.test.ts` walks the whole first-party import
+graph from `app/page.tsx` and `app/architecture/page.tsx` and fails if any module
+in it reaches `lib/api`, `lib/identity` or `auth`. The realistic regression is not
+a deliberate import — it is a later stage adding a live-metrics widget several
+components deep.
+
+Middleware remains a redirect for humans, not the boundary. Authorization is the
+BFF's `canAttempt()` check plus the API's own re-decision after it loads the
+record.
 
 ## Roles
 
