@@ -4,7 +4,8 @@ import { defineConfig } from "vitest/config";
 
 /**
  * Unit tests for the web app's security-relevant logic: BFF scope sanitisation, the
- * role model, the web↔API role contract, and the demo credential boundary.
+ * role model, the web↔API role contract, the demo credential boundary, and the
+ * public/protected route matrix in middleware.ts.
  * Node-only and fast — no Next.js runtime, no DOM, no network.
  */
 export default defineConfig({
@@ -23,6 +24,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["lib/__tests__/**/*.test.ts"],
+    // `__tests__/` at the root covers modules that do not live under lib/ —
+    // middleware.ts is at the app root because Next.js requires it there.
+    include: ["lib/__tests__/**/*.test.ts", "__tests__/**/*.test.ts"],
   },
 });
