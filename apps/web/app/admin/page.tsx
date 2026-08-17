@@ -1,7 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, AuditEvent } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+
+import { ApiError, api, AuditEvent } from "@/lib/api";
+import AuditTimeline from "@/components/audit/AuditTimeline";
+import {
+  Badge,
+  Button,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  MetricGrid,
+  PageHeader,
+  Panel,
+  PanelBody,
+  PanelFooter,
+  PanelHeader,
+  SectionHeader,
+} from "@/components/ui";
 
 type Metrics = Awaited<ReturnType<typeof api.metrics>>;
 type Ready = Awaited<ReturnType<typeof api.ready>>;
@@ -12,14 +28,29 @@ type EvalSummary = {
   loop_engineering?: Record<string, string | boolean | number | null>;
 };
 
+/**
+ * Operational view of the runtime.
+ *
+ * Everything on this page is a value the API returned. Two things that used to sit in
+ * metric cards no longer do: "Wrong-tenant blocked: RLS" and "Release gate: documented"
+ * were statements about the codebase rendered in the shape of measurements, so they
+ * read as counters that were always healthy. They are now prose in the panel footer,
+ * where a claim belongs.
+ *
+ * A metric that has not loaded renders as pending rather than as `0` — on an
+ * operations surface, "none happened" and "we could not ask" must not look identical.
+ */
 export default function AdminPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [ready, setReady] = useState<Ready | null>(null);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [evals, setEvals] = useState<EvalSummary | null>(null);
+  const [evalsRunning, setEvalsRunning] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
       const [m, a, r] = await Promise.all([api.metrics(), api.audit(), api.ready()]);
       setMetrics(m);
@@ -27,185 +58,213 @@ export default function AdminPage() {
       setReady(r);
       setError("");
     } catch (e) {
-      setError(String(e));
+      setError(e instanceof ApiError ? `The API returned ${e.status}.` : String(e));
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
-  const cards = metrics
-    ? [
-        { label: "Total memories", value: metrics.total_memories },
-        { label: "Active", value: metrics.by_status.active ?? 0 },
-        { label: "Pending", value: metrics.by_status.pending ?? 0 },
-        { label: "Blocked", value: metrics.by_action.memory_blocked ?? 0 },
-        { label: "Deleted", value: metrics.by_status.deleted ?? 0 },
-        { label: "Retrievals", value: metrics.by_action.memory_retrieved ?? 0 },
-        { label: "Audit events", value: metrics.audit_events },
-      ]
-    : [];
+  async function runEvals() {
+    setEvalsRunning(true);
+    try {
+      setEvals(await api.runEvals());
+      setError("");
+    } catch (e) {
+      setError(e instanceof ApiError ? `Eval run failed: ${e.status}.` : String(e));
+    } finally {
+      setEvalsRunning(false);
+    }
+  }
+
+  /** `null` while metrics are unknown, so the card shows pending rather than zero. */
+  const count = (value: number | undefined) => (metrics ? (value ?? 0) : null);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Admin & audit</h1>
-        <button
-          className="btn"
-          onClick={async () => setEvals(await api.runEvals())}
-        >
-          Run evals
-        </button>
-      </div>
-      {error && <p className="text-sm text-rose-400">API error: {error}</p>}
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Operations"
+        title="Admin"
+        description="Runtime counters, retrieval configuration and readiness for this tenant, as reported by the API."
+        actions={
+          <>
+            <Button size="sm" onClick={() => void load()} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => void runEvals()}
+              disabled={evalsRunning}
+            >
+              {evalsRunning ? "Running evals…" : "Run evals"}
+            </Button>
+          </>
+        }
+      />
 
-      {evals && (
-        <div className="card space-y-2">
-          <span className="chip border-emerald-600 text-emerald-400">
-            evals {evals.passed}/{evals.total} passed · {(evals.pass_rate * 100).toFixed(0)}%
-          </span>
-          {evals.loop_engineering && Object.keys(evals.loop_engineering).length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(evals.loop_engineering).map(([loop, status]) => (
-                <span key={loop} className="chip">
-                  {loop.replace(/_/g, " ")}: {String(status)}
+      {error ? (
+        <ErrorState
+          detail={error}
+          action={
+            <Button size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
+
+      {loading && !metrics ? <LoadingState label="Loading runtime state…" rows={4} /> : null}
+
+      {evals ? (
+        <Panel tone={evals.passed === evals.total ? "ok" : "warn"}>
+          <PanelHeader
+            title="Eval run"
+            description="Result of the run you just triggered, not a stored or historical score."
+            actions={
+              <Badge tone={evals.passed === evals.total ? "ok" : "warn"}>
+                {evals.passed}/{evals.total} passed · {(evals.pass_rate * 100).toFixed(0)}%
+              </Badge>
+            }
+          />
+          {evals.loop_engineering && Object.keys(evals.loop_engineering).length > 0 ? (
+            <PanelBody>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(evals.loop_engineering).map(([loop, status]) => (
+                  <Badge key={loop} tone="quiet">
+                    {loop.replace(/_/g, " ")}: {String(status)}
+                  </Badge>
+                ))}
+              </div>
+            </PanelBody>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      <section className="space-y-3">
+        <SectionHeader
+          title="Memory inventory"
+          description="Counts across the governed lifecycle for this tenant."
+        />
+        <MetricGrid>
+          <MetricCard label="Total memories" value={count(metrics?.total_memories)} />
+          <MetricCard label="Active" value={count(metrics?.by_status.active)} tone="ok" />
+          <MetricCard label="Pending approval" value={count(metrics?.by_status.pending)} tone="warn" />
+          <MetricCard label="Blocked" value={count(metrics?.by_action.memory_blocked)} tone="danger" />
+          <MetricCard
+            label="Deleted"
+            value={count(metrics?.by_status.deleted)}
+            hint="Excluded from every retrieval path"
+          />
+          <MetricCard label="Retrievals" value={count(metrics?.by_action.memory_retrieved)} />
+          <MetricCard
+            label="Fallback retrievals"
+            value={count(metrics?.by_action.retrieval_fallback)}
+            hint="Keyword-only, after an embedding failure"
+          />
+          <MetricCard label="Audit events" value={count(metrics?.audit_events)} />
+        </MetricGrid>
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeader
+          title="Retrieval & data layer"
+          description="Configuration reported by the API's readiness endpoint."
+        />
+        <Panel>
+          <PanelBody>
+            <MetricGrid className="lg:grid-cols-3">
+              <MetricCard
+                label="Embedding provider"
+                value={
+                  ready ? (
+                    <span className="text-lg">
+                      {ready.embeddings_provider}
+                      <span className="ml-1.5 text-sm font-normal text-fg-muted">
+                        {ready.embedding_dim}d
+                      </span>
+                    </span>
+                  ) : null
+                }
+              />
+              <MetricCard
+                label="Storage"
+                value={ready ? <span className="text-lg">{ready.storage}</span> : null}
+              />
+              <MetricCard
+                label="LLM provider"
+                value={ready ? <span className="text-lg">{ready.llm_provider}</span> : null}
+              />
+            </MetricGrid>
+
+            {ready?.checks && Object.keys(ready.checks).length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {Object.entries(ready.checks).map(([name, check]) => (
+                  <Badge
+                    key={name}
+                    tone={check.status === "ok" ? "ok" : "warn"}
+                    title={check.reason_code}
+                  >
+                    {name}: {check.status}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+          </PanelBody>
+          <PanelFooter>
+            Tenant isolation is enforced at the database by Postgres Row-Level Security
+            (migration <span className="font-mono">004_rls_policies.sql</span>,{" "}
+            <span className="font-mono">FORCE</span> plus the{" "}
+            <span className="font-mono">app.tenant_id</span> session GUC) in addition to
+            application-level <span className="font-mono">tenant_id</span>/
+            <span className="font-mono">user_id</span> filtering. See ADR-006. This is a
+            property of the deployment, not a counter — the API returns no
+            wrong-tenant-attempt metric.
+          </PanelFooter>
+        </Panel>
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeader
+          title="Loop engineering"
+          description="Aggregate loop-run counters from the metrics endpoint."
+        />
+        <MetricGrid className="lg:grid-cols-4">
+          <MetricCard label="Loop runs" value={count(metrics?.loops?.total_runs)} />
+          <MetricCard label="Failed" value={count(metrics?.loops?.failed)} tone="danger" />
+          <MetricCard
+            label="Safe-degraded"
+            value={count(metrics?.loops?.safe_degraded)}
+            tone="warn"
+            hint="Degraded without blocking a response"
+          />
+          <MetricCard
+            label="Most common failure"
+            value={
+              metrics ? (
+                <span className="text-base">
+                  {metrics.loops?.most_common_failure_mode ?? "none recorded"}
                 </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+              ) : null
+            }
+          />
+        </MetricGrid>
+      </section>
 
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {cards.map((c) => (
-          <div key={c.label} className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">{c.label}</p>
-            <p className="mt-1 text-2xl font-bold text-white">{c.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="card space-y-3">
-        <h2 className="font-semibold text-white">Retrieval & data layer</h2>
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Embedding provider</p>
-            <p className="mt-1 text-lg font-bold text-white">
-              {ready?.embeddings_provider ?? "—"}
-              <span className="ml-1 text-sm font-normal text-slate-500">
-                {ready ? `· ${ready.embedding_dim}d` : ""}
-              </span>
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Storage</p>
-            <p className="mt-1 text-lg font-bold text-white">{ready?.storage ?? "—"}</p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Retrievals</p>
-            <p className="mt-1 text-lg font-bold text-white">
-              {metrics?.by_action.memory_retrieved ?? 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Fallback retrievals</p>
-            <p className="mt-1 text-lg font-bold text-white">
-              {metrics?.by_action.retrieval_fallback ?? 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Wrong-tenant blocked</p>
-            <p className="mt-1 text-lg font-bold text-white">RLS</p>
-            <p className="text-[11px] text-slate-500">enforced at DB</p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Deleted-memory blocked</p>
-            <p className="mt-1 text-lg font-bold text-white">
-              {metrics?.by_status.deleted ?? 0}
-            </p>
-            <p className="text-[11px] text-slate-500">never retrievable</p>
-          </div>
-        </div>
-        <p className="text-xs text-slate-500">
-          Tenant isolation is enforced at the database via Postgres Row-Level Security
-          (migration <span className="text-slate-300">004_rls_policies.sql</span>,{" "}
-          <span className="text-slate-300">FORCE</span> + <span className="text-slate-300">app.tenant_id</span>{" "}
-          session GUC), in addition to application-level <span className="text-slate-300">tenant_id</span>/
-          <span className="text-slate-300">user_id</span> filtering. See ADR-006.
-        </p>
-      </div>
-
-      <div className="card space-y-3">
-        <h2 className="font-semibold text-white">Loop engineering</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Loop runs</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {metrics?.loops?.total_runs ?? 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Failed loops</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {metrics?.loops?.failed ?? 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Safe-degraded</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {metrics?.loops?.safe_degraded ?? 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Common failure</p>
-            <p className="mt-1 text-sm font-semibold text-white">
-              {metrics?.loops?.most_common_failure_mode ?? "none"}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Release gate</p>
-            <p className="mt-1 text-sm font-semibold text-emerald-400">documented</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2 className="mb-3 font-semibold text-white">Audit log (append-only)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="p-2">When</th>
-                <th className="p-2">Action</th>
-                <th className="p-2">Reason</th>
-                <th className="p-2">Trace</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audit.map((e) => (
-                <tr key={e.id} className="border-t border-slate-800">
-                  <td className="whitespace-nowrap p-2 text-slate-500">
-                    {new Date(e.created_at).toLocaleTimeString()}
-                  </td>
-                  <td className="p-2">
-                    <span className="chip">{e.action}</span>
-                  </td>
-                  <td className="p-2 text-slate-400">{e.reason}</td>
-                  <td className="p-2 text-slate-600">{e.trace_id?.slice(0, 8)}</td>
-                </tr>
-              ))}
-              {audit.length === 0 && (
-                <tr>
-                  <td className="p-2 text-slate-500" colSpan={4}>
-                    No audit events yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <section className="space-y-3">
+        <SectionHeader
+          title="Audit log"
+          description="Append-only lifecycle history across this tenant, newest first."
+        />
+        <Panel>
+          <PanelBody>
+            <AuditTimeline events={audit} />
+          </PanelBody>
+        </Panel>
+      </section>
     </div>
   );
 }

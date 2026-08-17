@@ -1,4 +1,4 @@
-# Governance UI (v0.5)
+# Governance UI (v2.6)
 
 The browser-facing control plane for MemoryOps' governed memory lifecycle. It
 makes the lifecycle **operable by a human** without weakening any invariant —
@@ -27,14 +27,15 @@ every view is tenant-scoped and every action is audited. See
     explain why a memory is used.
   - `MemoryActions` — approve / reject / archive / restore / delete. Each maps to
     an audited backend route; deleted memories expose no actions.
-  - `statusStyles.ts` — shared status→badge styling; `deleted` is visually
-    distinct and struck through.
 - `components/governance/`
   - `PendingMemoryQueue` — the approval queue (approve/reject).
   - `PolicyDecisionCard` — renders one recorded policy decision (SAVE / PENDING /
     BLOCKED / DROPPED / UPDATED / MERGED) with its rationale.
 - `components/audit/`
   - `AuditTimeline` — reusable append-only timeline (used on detail and `/audit`).
+- `components/ui/`, `components/shell/` — the shared design system and application
+  shell every surface above composes. See
+  [Design system and shell (v2.6)](#design-system-and-shell-v26).
 
 ## Action → backend mapping
 
@@ -59,9 +60,80 @@ every view is tenant-scoped and every action is audited. See
 
 ## Identity
 
-Demo identity (`tenant_demo` / `user_demo`) is provided by `apps/web/lib/api.ts`.
-In production these come from auth/session; the API already scopes by
-`tenant_id` + `user_id` on every route.
+Identity is resolved **server-side only**, by `apps/web/lib/identity.ts`, and is
+never accepted from the client. `lib/api.ts` carries no tenant/user argument at
+all; the BFF (`app/api/memoryops/[...path]/route.ts`) strips any scope the browser
+supplied and substitutes the server-resolved values. In demo mode that is the
+shared `tenant_demo` / `user_demo` persona, labelled as such by `ModeBanner`; in
+`authenticated` mode it comes from the Auth.js session, and a missing session
+fails closed rather than falling back to the demo identity.
+
+The shell surfaces that scope in the sidebar footer and top bar, so which tenant
+an operator is acting on never has to be inferred from the data on screen. That
+display is a plain projection (`ShellIdentity`) carrying no credential and no
+capability set — the BFF re-decides every request regardless.
+
+## Design system and shell (v2.6)
+
+Before v2.6 each surface restyled itself: colours were re-picked at the call
+site, there were several competing status-badge maps, and nothing guaranteed a
+contrast floor or a consistent focus treatment.
+
+- `apps/web/app/globals.css` declares the design tokens once, as space-separated
+  RGB channels so Tailwind's `<alpha-value>` modifier works against them. Four
+  elevation tiers, two border weights, a three-step foreground ramp whose lowest
+  step still clears 4.5:1 on `surface`, and semantic status hues.
+- `apps/web/tailwind.config.ts` resolves those variables into semantic utilities
+  and contains no literal colour, so the token file stays the only place a colour
+  is decided.
+- `apps/web/components/ui/` holds the first-party primitives — `Panel`, `Button`,
+  `Badge`/`StatusBadge`, `DataTable`, form controls, `PageHeader`/`SectionHeader`,
+  `MetricCard`, `Timeline`, `DetailPanel`/`Disclosure`/`EvidenceBlock`, the
+  empty/loading/error states, and value treatments (`Code`, `MonoId`, `KeyValue`,
+  `ScoreBar`). No UI framework or icon package was introduced.
+- `apps/web/components/shell/` holds `AppShell` (fixed sidebar on desktop,
+  off-canvas drawer below `lg`), `SidebarNav`, `TopBar` and the navigation model.
+
+Lifecycle status → badge tone now lives in one place (`components/ui/Badge.tsx`,
+`MEMORY_STATUS_TONE` / `RUN_STATUS_TONE`), replacing the former
+`components/memories/statusStyles.ts`. An unrecognised status resolves to a
+neutral tone, never a success one, and `deleted` is de-toned **and** struck
+through — colour alone is not perceivable to every operator, and invariant #2 is
+the one state that must never be presented as active.
+
+### `navigation.ts` is presentation, not authorization
+
+`components/shell/navigation.ts` declares what the rail, the drawer and the top
+bar's section label show. Adding an entry grants no access and removing one
+protects nothing: page navigation is gated by `apps/web/middleware.ts` and every
+API call by the BFF's `canAttempt()` check. `/signin` renders without chrome
+because a rail of sections the visitor cannot open yet is noise — hiding chrome
+is a usability decision, exactly as hiding a control is.
+
+### Accessibility floor
+
+Applies to every surface, enforced by the primitives rather than per page:
+
+- one `:focus-visible` ring for the whole app, defined with the token set;
+- a skip link as the first focusable element, and `aria-current="page"` on the
+  active section;
+- form controls labelled by wrapping — no generated id to drift or lose, and no
+  placeholder standing in for a label;
+- tables as labelled, focusable scroll regions with real `<th scope="col">`, so
+  overflowing columns are reachable by keyboard and not only by trackpad;
+- loading announced with `role="status"`, failures with `role="alert"`;
+- `prefers-reduced-motion` respected globally.
+
+Every token pair used for text measures at or above WCAG AA (4.5:1) on its
+surface; the lowest is `fg-muted` on `surface-raised` at 4.85:1.
+
+### Real state only
+
+Empty datasets render an explanation of why they are empty and what fills them,
+never sample rows. A metric that has not loaded renders as pending rather than as
+`0` — on an operations surface, "none happened" and "we could not ask" must not
+look identical. Statements about the codebase (RLS enforcement, release gates) are
+prose, not metric cards, so they cannot read as counters that are always healthy.
 
 ## Control visibility is generated, not ranked (v2.4)
 

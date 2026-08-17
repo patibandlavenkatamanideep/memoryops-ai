@@ -1,16 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+
 import {
+  ApiError,
   AuditEvent,
   MemoryProvenance as Provenance,
   MemoryRecord,
   api,
 } from "@/lib/api";
-import { statusClass } from "./statusStyles";
+import {
+  Badge,
+  Button,
+  ErrorState,
+  LoadingState,
+  MonoId,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  StatusBadge,
+  TextArea,
+  Field,
+} from "@/components/ui";
+import AuditTimeline from "@/components/audit/AuditTimeline";
 import MemoryActions from "./MemoryActions";
 import MemoryProvenance from "./MemoryProvenance";
-import AuditTimeline from "@/components/audit/AuditTimeline";
 
 // Full control-plane view for one memory: content (editable), lifecycle
 // actions, provenance/explainability, and the per-memory audit timeline.
@@ -39,7 +53,13 @@ export default function MemoryDetailPanel({ memoryId }: { memoryId: string }) {
       setDraft(m.content);
       setError("");
     } catch (e) {
-      setError(String(e));
+      setError(
+        e instanceof ApiError
+          ? `The API returned ${e.status} for this memory.`
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
     } finally {
       setLoading(false);
     }
@@ -49,8 +69,19 @@ export default function MemoryDetailPanel({ memoryId }: { memoryId: string }) {
     load();
   }, [load]);
 
-  if (loading && !memory) return <p className="text-sm text-slate-400">Loading…</p>;
-  if (error) return <p className="text-sm text-rose-400">API error: {error}</p>;
+  if (loading && !memory) return <LoadingState label="Loading memory…" rows={4} />;
+  if (error) {
+    return (
+      <ErrorState
+        detail={error}
+        action={
+          <Button size="sm" onClick={() => void load()}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
   if (!memory) return null;
 
   async function saveEdit() {
@@ -66,64 +97,79 @@ export default function MemoryDetailPanel({ memoryId }: { memoryId: string }) {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="card space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`chip ${statusClass(memory.status)}`}>{memory.status}</span>
-              <span className="chip">{memory.memory_type}</span>
-              <span className="chip">sensitivity: {memory.sensitivity}</span>
+    <div className="space-y-4">
+      <Panel>
+        {/* The heading is the word "Memory": lifecycle badges belong in the body, not
+            inside an <h2>, where they would make the document outline read
+            "active preference sensitivity: low". */}
+        <PanelHeader
+          title="Memory"
+          description={<MonoId value={memory.id} chars={36} label="id" />}
+          actions={<MemoryActions memory={memory} onChanged={load} />}
+        />
+        <PanelBody className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={memory.status} />
+            <Badge tone="quiet">{memory.memory_type}</Badge>
+            <Badge tone="quiet">sensitivity: {memory.sensitivity}</Badge>
+          </div>
+          {editing ? (
+            <div className="space-y-3">
+              <Field label="Memory content">
+                <TextArea
+                  rows={4}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  disabled={saving}
+                />
+              </Field>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" size="sm" disabled={saving} onClick={saveEdit}>
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => {
+                    setDraft(memory.content);
+                    setEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-xs text-fg-muted">
+                Editing content is an audited lifecycle mutation; the revision is recorded
+                on the timeline below.
+              </p>
             </div>
-            <p className="font-mono text-xs text-slate-600">{memory.id}</p>
-          </div>
-          <MemoryActions memory={memory} onChanged={load} layout="stacked" />
-        </div>
-
-        {editing ? (
-          <div className="space-y-2">
-            <textarea
-              className="w-full rounded-lg border border-slate-700 bg-ink p-3 text-sm"
-              rows={4}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            <div className="flex gap-3 text-sm">
-              <button className="btn" disabled={saving} onClick={saveEdit}>
-                {saving ? "Saving…" : "Save"}
-              </button>
-              <button
-                className="text-slate-400 hover:text-white"
-                onClick={() => {
-                  setDraft(memory.content);
-                  setEditing(false);
-                }}
-              >
-                cancel
-              </button>
+          ) : (
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="min-w-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-fg">
+                {memory.content}
+              </p>
+              {memory.status !== "deleted" ? (
+                <Button size="sm" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              ) : null}
             </div>
-          </div>
-        ) : (
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-slate-100">{memory.content}</p>
-            {memory.status !== "deleted" && (
-              <button
-                className="shrink-0 text-sm text-accent hover:underline"
-                onClick={() => setEditing(true)}
-              >
-                edit
-              </button>
-            )}
-          </div>
-        )}
-      </section>
+          )}
+        </PanelBody>
+      </Panel>
 
       <MemoryProvenance provenance={provenance} />
 
-      <section className="card space-y-3">
-        <h3 className="font-semibold text-white">Audit timeline</h3>
-        <AuditTimeline events={events} emptyLabel="No audit events for this memory." />
-      </section>
+      <Panel>
+        <PanelHeader
+          title="Audit timeline"
+          description="Append-only history for this memory."
+        />
+        <PanelBody>
+          <AuditTimeline events={events} emptyLabel="No audit events for this memory." />
+        </PanelBody>
+      </Panel>
     </div>
   );
 }
