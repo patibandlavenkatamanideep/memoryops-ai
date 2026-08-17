@@ -2,22 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * MemoryOps control-plane design tokens.
+ *
+ * Every colour the UI uses is declared once here and consumed through Tailwind's
+ * semantic names (bg-surface, text-fg-muted, border-line, …) rather than being
+ * re-picked per component. The previous approach hard-coded slate-800/slate-400
+ * at ~200 call sites, so "make panels one step lighter" was a find-and-replace and
+ * a contrast regression waiting to happen.
+ *
+ * Values are space-separated RGB channels, not hex, so Tailwind's `<alpha-value>`
+ * modifier works (`bg-accent/10`). Changing a token here changes the whole surface.
+ */
+
 :root {
   color-scheme: dark;
+
+  /* Elevation: canvas is the page, surface is a panel, raised sits on a panel,
+     sunken is for inputs and code where content is recessed rather than lifted. */
+  --mo-canvas: 7 9 16;
+  --mo-surface: 12 15 24;
+  --mo-surface-raised: 17 21 31;
+  --mo-surface-hover: 22 27 39;
+  --mo-surface-sunken: 5 7 13;
+
+  /* Two border weights only. `line` separates, `line-strong` encloses an
+     interactive control. More weights than that stops reading as a hierarchy. */
+  --mo-border: 28 33 46;
+  --mo-border-strong: 42 49 65;
+
+  /* Foreground ramp. All three clear 4.5:1 on `surface`; `fg-muted` is the floor
+     and is still AA for body text, so no tier here is unreadable. */
+  --mo-fg: 232 234 240;
+  --mo-fg-secondary: 163 171 187;
+  --mo-fg-muted: 123 132 150;
+
+  --mo-accent: 91 140 255;
+  --mo-accent-strong: 124 162 255;
+
+  /* Status hues. Semantic, not decorative: every one of these maps to a real
+     lifecycle or policy state, never to "make this look important". */
+  --mo-ok: 52 211 153;
+  --mo-warn: 251 191 36;
+  --mo-danger: 251 113 133;
+  --mo-info: 56 189 248;
+  --mo-neutral: 148 163 184;
+
+  --mo-focus: 124 162 255;
 }
 
-body {
-  @apply bg-ink text-slate-200;
+@layer base {
+  body {
+    @apply bg-canvas text-fg antialiased;
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, sans-serif;
+    /* Numeric columns (scores, counts, timestamps) must not jitter between rows. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * One focus treatment for the whole app, on :focus-visible so a mouse click does
+   * not leave a ring behind. Keyboard operation of a control plane is not optional —
+   * the ring is high-contrast on every surface tier by design.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-focus ring-offset-2 ring-offset-canvas;
+  }
+
+  ::placeholder {
+    @apply text-fg-muted;
+  }
+
+  /* Respect the OS setting rather than shipping motion nobody asked for. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-.card {
-  @apply rounded-xl border border-slate-800 bg-panel p-5;
-}
-
-.btn {
-  @apply rounded-lg bg-accent px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50;
-}
-
-.chip {
-  @apply inline-flex items-center gap-1 rounded-full border border-slate-700 px-2 py-0.5 text-xs;
-}
+/*
+ * There are deliberately no `.card` / `.btn` / `.chip` component classes here any
+ * more. Every surface now composes <Panel>, <Button> and <Badge> from components/ui,
+ * which carry their variants, focus states and disabled handling with them — a bare
+ * `.btn` class carried none of that, so each caller re-added a different subset.
+ */
