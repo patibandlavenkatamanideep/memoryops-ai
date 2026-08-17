@@ -1,20 +1,38 @@
 "use client";
 
-import { AuditEvent } from "@/lib/api";
+import Link from "next/link";
 
-// Append-only lifecycle history (invariant #7), newest first.
-const ACTION_DOT: Record<string, string> = {
-  memory_created: "bg-emerald-400",
-  memory_approved: "bg-emerald-400",
-  memory_pending_approval: "bg-amber-400",
-  memory_updated: "bg-sky-400",
-  memory_merged: "bg-sky-400",
-  memory_archived: "bg-slate-400",
-  memory_rejected: "bg-rose-400",
-  memory_blocked: "bg-rose-400",
-  memory_dropped: "bg-rose-400",
-  memory_deleted: "bg-rose-500",
-  memory_viewed: "bg-slate-600",
+import { AuditEvent } from "@/lib/api";
+import {
+  Badge,
+  EmptyState,
+  MonoId,
+  Timeline,
+  TimelineItem,
+  type Tone,
+} from "@/components/ui";
+
+/**
+ * Append-only lifecycle history (invariant #7), newest first.
+ *
+ * Tone comes from what the event *is*, so the timeline can be read as governance
+ * rather than as a log: writes and approvals read as allowed, blocks and deletions as
+ * denied or destructive. An action this UI has not been taught about renders neutral —
+ * never as a success.
+ */
+const ACTION_TONE: Record<string, Tone> = {
+  memory_created: "ok",
+  memory_approved: "ok",
+  memory_updated: "info",
+  memory_merged: "info",
+  memory_pending_approval: "warn",
+  memory_archived: "neutral",
+  memory_rejected: "danger",
+  memory_blocked: "danger",
+  memory_dropped: "danger",
+  memory_deleted: "danger",
+  memory_viewed: "quiet",
+  memory_retrieved: "quiet",
 };
 
 export default function AuditTimeline({
@@ -25,34 +43,39 @@ export default function AuditTimeline({
   emptyLabel?: string;
 }) {
   if (events.length === 0) {
-    return <p className="text-sm text-slate-500">{emptyLabel}</p>;
+    return (
+      <EmptyState
+        title={emptyLabel}
+        description="Every lifecycle mutation commits together with its audit event, so this fills as memory is captured, governed and forgotten."
+      />
+    );
   }
+
   return (
-    <ol className="space-y-3">
+    <Timeline>
       {events.map((e) => (
-        <li key={e.id} className="flex gap-3">
-          <span
-            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-              ACTION_DOT[e.action] ?? "bg-slate-500"
-            }`}
-          />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-slate-200">{e.action}</span>
-              <span className="text-xs text-slate-500">
-                {new Date(e.created_at).toLocaleString()}
-              </span>
-            </div>
-            <p className="text-sm text-slate-400">{e.reason}</p>
-            {e.memory_id && (
-              <p className="font-mono text-[10px] text-slate-600">
-                memory {e.memory_id.slice(0, 8)}
-                {e.trace_id ? ` · trace ${e.trace_id}` : ""}
-              </p>
-            )}
-          </div>
-        </li>
+        <TimelineItem
+          key={e.id}
+          tone={ACTION_TONE[e.action] ?? "neutral"}
+          title={<span className="font-mono text-xs">{e.action}</span>}
+          timestamp={new Date(e.created_at).toLocaleString()}
+          description={e.reason}
+          meta={
+            <>
+              {e.memory_id ? (
+                <Link
+                  href={`/memories/${e.memory_id}`}
+                  className="rounded-sm underline-offset-4 hover:underline"
+                >
+                  <MonoId label="memory" value={e.memory_id} chars={10} />
+                </Link>
+              ) : null}
+              {e.trace_id ? <MonoId label="trace" value={e.trace_id} chars={10} /> : null}
+              {e.user_id ? <Badge tone="quiet">{e.user_id}</Badge> : null}
+            </>
+          }
+        />
       ))}
-    </ol>
+    </Timeline>
   );
 }

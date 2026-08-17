@@ -1,3 +1,18 @@
+import { PageHeader, Panel, PanelBody, PanelHeader, SectionHeader } from "@/components/ui";
+
+/**
+ * Public architecture reference.
+ *
+ * Also the web service's Railway healthcheck target (`railway/web.railway.json`), which
+ * constrains it in one important way: it must stay a static server component with no
+ * data fetching and no session dependency, so a degraded API or an unauthenticated
+ * probe still gets a 200. Adding a `fetch` here would make deploys fail whenever the
+ * API is the thing that is unhealthy.
+ *
+ * Content is unchanged in this revision — only its presentation moved onto the shared
+ * design system.
+ */
+
 const sections = [
   {
     title: "Write path",
@@ -38,34 +53,53 @@ const invariants = [
 export default function ArchitecturePage() {
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-white">Architecture</h1>
+      <PageHeader
+        eyebrow="Reference"
+        title="Architecture"
+        description="How the governed memory runtime is put together: the two request paths, the background lifecycle, and the planes that wrap them."
+      />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {sections.map((s) => (
-          <div key={s.title} className="card">
-            <h2 className="font-semibold text-white">{s.title}</h2>
-            <p className="mt-2 text-sm text-slate-400">{s.body}</p>
-          </div>
+          <Panel key={s.title}>
+            <PanelHeader title={s.title} />
+            <PanelBody>
+              <p className="text-sm leading-relaxed text-fg-secondary">{s.body}</p>
+            </PanelBody>
+          </Panel>
         ))}
-      </div>
+      </section>
 
-      <div className="card">
-        <h2 className="font-semibold text-white">Enterprise invariants</h2>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-400">
-          {invariants.map((i) => (
-            <li key={i}>{i}</li>
-          ))}
-        </ul>
-      </div>
+      <section className="space-y-3">
+        <SectionHeader
+          title="Enterprise invariants"
+          description="Enforced in the API's code and asserted by its test and eval suites."
+        />
+        <Panel>
+          <PanelBody>
+            <ul className="grid gap-2.5 sm:grid-cols-2">
+              {invariants.map((i) => (
+                <li key={i} className="flex gap-2.5 text-sm text-fg-secondary">
+                  <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
+                  <span className="leading-relaxed">{i}</span>
+                </li>
+              ))}
+            </ul>
+          </PanelBody>
+        </Panel>
+      </section>
 
-      <div className="card">
-        <h2 className="font-semibold text-white">Production upgrade path</h2>
-        <p className="mt-2 text-sm text-slate-400">
-          Heuristic LLM/embeddings → provider adapters. RLS enabled → enforced. Soft delete →
-          crypto-shred retention worker. Logs → OpenTelemetry traces + Prometheus metrics + Langfuse.
-          In-memory store → Postgres + pgvector. Loop worker → Celery/Temporal with retries + DLQs.
-        </p>
-      </div>
+      <Panel>
+        <PanelHeader title="Production upgrade path" />
+        <PanelBody>
+          <p className="text-sm leading-relaxed text-fg-secondary">
+            Heuristic LLM/embeddings → provider adapters. RLS enabled → enforced. Soft
+            delete → crypto-shred retention worker. Logs → OpenTelemetry traces +
+            Prometheus metrics + Langfuse. In-memory store → Postgres + pgvector. Loop
+            worker → Celery/Temporal with retries + DLQs.
+          </p>
+        </PanelBody>
+      </Panel>
     </div>
   );
 }

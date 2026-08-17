@@ -1,11 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AuditEvent, MemoryRecord, api } from "@/lib/api";
+
+import { ApiError, AuditEvent, MemoryRecord, api } from "@/lib/api";
 import PendingMemoryQueue from "@/components/governance/PendingMemoryQueue";
 import PolicyDecisionCard, {
   POLICY_ACTIONS,
 } from "@/components/governance/PolicyDecisionCard";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  SectionHeader,
+} from "@/components/ui";
 
 export default function GovernancePage() {
   const [pending, setPending] = useState<MemoryRecord[]>([]);
@@ -24,7 +33,7 @@ export default function GovernancePage() {
       setDecisions(audit.filter((e) => POLICY_ACTIONS.includes(e.action)).slice(0, 30));
       setError("");
     } catch (e) {
-      setError(String(e));
+      setError(e instanceof ApiError ? `The API returned ${e.status}.` : String(e));
     } finally {
       setLoading(false);
     }
@@ -36,31 +45,55 @@ export default function GovernancePage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Governance</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Human-in-the-loop approvals and the policy broker&apos;s recorded decisions.
-        </p>
-      </div>
-      {error && <p className="text-sm text-rose-400">API error: {error}</p>}
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
+      <PageHeader
+        eyebrow="Governance"
+        title="Governance"
+        description="Human-in-the-loop approvals and the policy broker's recorded decisions. The broker runs before any write and stays authoritative — this surface shows what it decided, and lets an operator resolve what it deferred."
+        actions={
+          <Button size="sm" onClick={() => void load()} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </Button>
+        }
+      />
+
+      {error ? (
+        <ErrorState
+          title="Could not load governance state"
+          detail={error}
+          action={
+            <Button size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
+
+      {loading && pending.length === 0 && decisions.length === 0 ? (
+        <LoadingState label="Loading governance state…" rows={5} />
+      ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-white">
-          Approval queue
-          <span className="ml-2 text-sm font-normal text-slate-500">
-            {pending.length} pending
-          </span>
-        </h2>
+        <SectionHeader
+          title="Approval queue"
+          count={`${pending.length} pending`}
+          description="Candidates the broker routed to PENDING_APPROVAL rather than storing. Approving or rejecting is an audited lifecycle mutation."
+        />
         <PendingMemoryQueue rows={pending} onChanged={load} />
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-white">Recent policy decisions</h2>
+        <SectionHeader
+          title="Recent policy decisions"
+          count={decisions.length > 0 ? `${decisions.length} shown` : undefined}
+          description="Policy verdicts drawn from the append-only audit log — saved, deferred, blocked, dropped or merged."
+        />
         {decisions.length === 0 ? (
-          <p className="text-sm text-slate-500">No policy decisions recorded yet.</p>
+          <EmptyState
+            title="No policy decisions recorded yet"
+            description="The broker records a verdict for every candidate memory. Start a chat session to produce the first one."
+          />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 xl:grid-cols-2">
             {decisions.map((e) => (
               <PolicyDecisionCard key={e.id} event={e} />
             ))}

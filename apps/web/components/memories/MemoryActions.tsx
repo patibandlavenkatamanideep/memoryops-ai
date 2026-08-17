@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+
 import { MemoryRecord, api } from "@/lib/api";
 import type { UiCapabilities } from "@/lib/capabilities";
+import { Button, cn } from "@/components/ui";
 
 // Every button maps 1:1 to an audited backend action (PATCH / DELETE).
 // Deleted memories expose no actions — they can never be reactivated.
@@ -32,7 +34,7 @@ export default function MemoryActions({
   };
 
   if (memory.status === "deleted") {
-    return <span className="text-xs text-slate-600">deleted — no actions</span>;
+    return <span className="text-xs text-fg-muted">deleted — no actions</span>;
   }
 
   async function run(fn: () => Promise<unknown>) {
@@ -45,66 +47,77 @@ export default function MemoryActions({
     }
   }
 
-  const wrap =
-    layout === "stacked"
-      ? "flex flex-col items-start gap-2"
-      : "space-x-3 whitespace-nowrap";
-
   return (
-    <div className={wrap}>
-      {memory.status === "pending" && may.approveOrReject && (
+    <div
+      className={cn(
+        "flex gap-2",
+        layout === "stacked" ? "flex-col items-start" : "flex-wrap items-center",
+      )}
+    >
+      {memory.status === "pending" && may.approveOrReject ? (
         <>
-          <button
-            className="text-emerald-400 hover:underline disabled:opacity-40"
+          <Button
+            size="sm"
+            variant="secondary"
             disabled={busy}
             onClick={() => run(() => api.patchMemory(memory.id, { status: "active" }))}
           >
-            approve
-          </button>
-          <button
-            className="text-rose-400 hover:underline disabled:opacity-40"
+            Approve
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
             disabled={busy}
             onClick={() => run(() => api.patchMemory(memory.id, { status: "rejected" }))}
           >
-            reject
-          </button>
+            Reject
+          </Button>
         </>
-      )}
-      {may.archiveOrRestore &&
-        (memory.status === "archived" ? (
-        <button
-          className="text-emerald-400 hover:underline disabled:opacity-40"
+      ) : null}
+
+      {may.archiveOrRestore ? (
+        memory.status === "archived" ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => run(() => api.patchMemory(memory.id, { status: "active" }))}
+          >
+            Restore
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => run(() => api.patchMemory(memory.id, { status: "archived" }))}
+          >
+            Archive
+          </Button>
+        )
+      ) : null}
+
+      {may.delete ? (
+        <Button
+          size="sm"
+          variant="danger"
           disabled={busy}
-          onClick={() => run(() => api.patchMemory(memory.id, { status: "active" }))}
+          onClick={() => {
+            // Soft delete is a governed, audited state change that permanently removes
+            // the memory from every future retrieval. It is not an undo, so it is
+            // confirmed rather than fired on a single click.
+            if (
+              window.confirm(
+                `Soft-delete this memory?\n\n"${memory.content}"\n\nIt will be excluded from all future retrieval and cannot be restored.`,
+              )
+            ) {
+              void run(() => api.deleteMemory(memory.id));
+            }
+          }}
         >
-          restore
-        </button>
-      ) : (
-        <button
-          className="text-slate-400 hover:underline disabled:opacity-40"
-          disabled={busy}
-          onClick={() => run(() => api.patchMemory(memory.id, { status: "archived" }))}
-        >
-          archive
-        </button>
-        ))}
-      {may.delete && (
-      <button
-        className="text-rose-400 hover:underline disabled:opacity-40"
-        disabled={busy}
-        onClick={() => {
-          if (
-            confirm(
-              "Soft-delete this memory? It will be excluded from all future retrieval."
-            )
-          ) {
-            run(() => api.deleteMemory(memory.id));
-          }
-        }}
-      >
-        delete
-      </button>
-      )}
+          Delete
+        </Button>
+      ) : null}
     </div>
   );
 }

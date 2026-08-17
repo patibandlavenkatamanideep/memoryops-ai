@@ -2,22 +2,33 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+
 import MemoryDetailPanel from "@/components/memories/MemoryDetailPanel";
+import { ErrorState, PageHeader } from "@/components/ui";
 
 export default function MemoryDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
 
   return (
-    <div className="space-y-6">
-      <Link href="/memories" className="text-sm text-slate-400 hover:text-white">
-        ← Back to memories
-      </Link>
-      <h1 className="text-2xl font-bold text-white">Memory detail</h1>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Runtime · Memories"
+        title="Memory detail"
+        description="Content, provenance and the append-only audit history for a single governed memory."
+        actions={
+          <Link
+            href="/memories"
+            className="rounded-md text-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
+          >
+            ← Back to memories
+          </Link>
+        }
+      />
       {id ? (
         <MemoryDetailPanel memoryId={id} />
       ) : (
-        <p className="text-sm text-rose-400">Missing memory id.</p>
+        <ErrorState title="Missing memory id" detail="This route requires a memory id." />
       )}
     </div>
   );
