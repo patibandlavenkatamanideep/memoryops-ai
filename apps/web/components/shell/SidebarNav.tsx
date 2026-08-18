@@ -30,8 +30,11 @@ export default function SidebarNav({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-line px-4 py-4">
+        {/* Points at the control plane's first surface, not `/`. Since v2.6 `/` is
+            the public product page, so a brand link there would walk an operator
+            out of the application they are working in. */}
         <Link
-          href="/"
+          href="/chat"
           onClick={onNavigate}
           className="flex items-center gap-2.5 rounded-md text-sm font-semibold tracking-tight text-fg"
         >

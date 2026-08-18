@@ -11,7 +11,6 @@
  */
 
 export type NavGlyph =
-  | "overview"
   | "chat"
   | "memories"
   | "governance"
@@ -37,12 +36,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     label: "Runtime",
     items: [
-      {
-        href: "/",
-        label: "Overview",
-        summary: "What MemoryOps governs and how the lifecycle fits together",
-        glyph: "overview",
-      },
+      // `/` is deliberately absent. Since v2.6 it is the public product page, not a
+      // control-plane surface — listing it here would send an operator from the
+      // sidebar straight out of the application and into the marketing shell.
       {
         href: "/chat",
         label: "Chat",
@@ -126,14 +122,21 @@ export function activeNavItem(pathname: string): NavItem | undefined {
 }
 
 /**
- * Routes that render without the control-plane chrome.
+ * Routes that render without the control-plane chrome, because they supply their
+ * own: `/` uses the public product shell, `/signin` is a bare centred form.
  *
- * Presentation only. `/signin` is the one surface where a sidebar full of links the
- * visitor cannot yet open would be noise rather than navigation.
+ * Presentation only — this grants and protects nothing. `/` is public because
+ * middleware.ts says so, not because it appears here.
+ *
+ * `/` is matched **exactly** and must never move into `CHROMELESS_PREFIXES`. Prefix
+ * matching on `/` would strip the sidebar from every authenticated surface in the
+ * app, which is the same trap the middleware's public-path matching had to avoid.
  */
+const CHROMELESS_EXACT = new Set<string>(["/"]);
 const CHROMELESS_PREFIXES = ["/signin"] as const;
 
 export function isChromeless(pathname: string): boolean {
+  if (CHROMELESS_EXACT.has(pathname)) return true;
   return CHROMELESS_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
