@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -25,10 +25,19 @@ import { describe, expect, it } from "vitest";
 
 const WEB_ROOT = join(__dirname, "..");
 
-/** Entry points that must stay renderable with no session. */
+/**
+ * Entry points that must stay renderable with no session.
+ *
+ * The graph walk below reaches everything under `components/public/` through
+ * `app/page.tsx`, so the landing sections are covered transitively. The shell is
+ * also listed directly: a section that is written but not yet wired into the page
+ * would otherwise sit outside the graph and go unchecked until the day it is
+ * imported — which is the day it would break production.
+ */
 const PUBLIC_ENTRY_POINTS = [
   join("app", "page.tsx"),
   join("app", "architecture", "page.tsx"),
+  join("components", "public", "PublicShell.tsx"),
 ];
 
 /**
@@ -116,5 +125,61 @@ describe("public landing pages are session-independent", () => {
     const graph = importGraph(join("app", "layout.tsx"));
     const specifiers = [...graph.values()].flat().map((s) => s.replace(/^@\//, ""));
     expect(specifiers).toContain("lib/identity");
+  });
+});
+
+/**
+ * Directory sweep over `components/public/`.
+ *
+ * The graph walk above only reaches components that are actually imported. A
+ * section written, committed, and wired in a later change would sit outside the
+ * graph until the moment it ships — so every file in the public tree is checked
+ * whether or not anything imports it yet.
+ */
+describe("the public component tree is inert", () => {
+  const PUBLIC_DIR = join(WEB_ROOT, "components", "public");
+
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+  }
+
+  const files = walk(PUBLIC_DIR);
+
+  it("contains the sections it is supposed to", () => {
+    // Guards the guard: an empty or mis-resolved directory would pass everything.
+    expect(files.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("imports no session-dependent module anywhere", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const specifier of importsOf(file)) {
+        const bare = specifier.replace(/^@\//, "");
+        if (SESSION_DEPENDENT.some((m) => bare === m || bare.startsWith(`${m}/`))) {
+          offenders.push(`${file.slice(WEB_ROOT.length + 1)} -> ${specifier}`);
+        }
+      }
+    }
+    expect(offenders, offenders.join("\n")).toEqual([]);
+  });
+
+  it("issues no network call of its own", () => {
+    // The governance simulator is illustrative and must stay that way. A `fetch`
+    // here would either hit the BFF (401 for the anonymous visitors this page
+    // exists for) or an external host from a page that promises it sends nothing.
+    const offenders: string[] = [];
+    for (const file of files) {
+      const code = readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/\b(fetch|XMLHttpRequest|EventSource|WebSocket)\s*\(/.test(code)) {
+        offenders.push(file.slice(WEB_ROOT.length + 1));
+      }
+    }
+    expect(offenders, offenders.join("\n")).toEqual([]);
   });
 });

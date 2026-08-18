@@ -13,15 +13,6 @@ import type { NavGlyph } from "./navigation";
  * decorative: every link has a text label, so the SVG is `aria-hidden`.
  */
 const PATHS: Record<NavGlyph, React.ReactNode> = {
-  // Four panes — the whole surface at a glance.
-  overview: (
-    <>
-      <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
-      <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
-      <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
-      <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
-    </>
-  ),
   // A turn of conversation.
   chat: (
     <>
