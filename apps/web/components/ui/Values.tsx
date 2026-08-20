@@ -103,7 +103,15 @@ export function DefinitionList({
   return <dl className={cn("grid gap-x-6 gap-y-4", cols, className)}>{children}</dl>;
 }
 
-/** Quoted provenance excerpt — source text, visually distinct from governed content. */
+/**
+ * Quoted provenance excerpt — source text, visually distinct from governed content.
+ *
+ * `break-words` is load-bearing, not cosmetic. A source excerpt is verbatim user
+ * text, so it routinely contains a URL or an opaque identifier with no break
+ * opportunity in it. Without this the token painted straight past its container and
+ * pushed the whole document sideways: a memory whose excerpt held a runbook URL
+ * gave `/memories/{id}` 78px of horizontal page overflow at 360px.
+ */
 export function SourceQuote({
   children,
   className,
@@ -115,6 +123,7 @@ export function SourceQuote({
     <blockquote
       className={cn(
         "border-l-2 border-line-strong bg-surface-sunken/60 py-2 pl-3 pr-2 text-sm italic text-fg-secondary",
+        "break-words",
         className,
       )}
     >

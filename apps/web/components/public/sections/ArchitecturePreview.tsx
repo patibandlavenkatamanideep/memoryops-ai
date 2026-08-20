@@ -131,7 +131,7 @@ export default function ArchitecturePreview() {
             operator-facing technical reference, which renders in a different shell. */}
         <Link
           href="/architecture"
-          className="rounded-sm text-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
+          className="inline-flex min-h-[2.5rem] items-center rounded-sm text-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
         >
           View the technical architecture reference →
         </Link>

@@ -60,7 +60,7 @@ export default function PolicyDecisionCard({ event }: { event: AuditEvent }) {
           {event.memory_id ? (
             <Link
               href={`/memories/${event.memory_id}`}
-              className="ml-auto rounded-sm text-xs text-accent-strong underline-offset-4 hover:underline"
+              className="ml-auto inline-flex min-h-[2rem] items-center rounded-sm text-xs text-accent-strong underline-offset-4 hover:underline"
             >
               View memory →
             </Link>

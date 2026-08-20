@@ -18,7 +18,14 @@ every view is tenant-scoped and every action is audited. See
 ## Components
 
 - `components/memories/`
-  - `MemoryTable` — inventory table; rows link to detail; inline actions.
+  - `MemoryTable` — the inventory in two presentations of the same records: a
+    dense eight-column table at `md` and wider, and a card list below it. The
+    table needs ~40rem, so on a 390px viewport Status and Actions sat roughly
+    600px inside a horizontal scroll region the operator had no reason to know
+    existed. The card carries every field the row does — content, type,
+    sensitivity, importance, confidence, status, source and the same actions — so
+    it is a reflow, not a mobile-only subset, and only one presentation is in the
+    accessibility tree at a time.
   - `MemoryFilters` — search + status + type filters (`deleted` is intentionally
     not selectable — it is never part of the active inventory).
   - `MemoryDetailPanel` — self-fetching detail (memory + provenance + audit),
@@ -117,6 +124,24 @@ Applies to every surface, enforced by the primitives rather than per page:
 - one `:focus-visible` ring for the whole app, defined with the token set;
 - a skip link as the first focusable element, and `aria-current="page"` on the
   active section;
+- exactly one `<main id="main-content">` per page, owned by whichever shell
+  actually wraps the route. `AppShell`'s chromeless branch emits none, because a
+  chromeless route supplies its own — when both emitted one, `/` shipped nested
+  `<main>` elements and a duplicate id, and the skip link resolved to the outer
+  wrapper instead of the content;
+- the mobile navigation drawer traps Tab while open and returns focus to the
+  control that opened it. `aria-modal` marks the background inert for assistive
+  tech but moves no focus, so without a trap an operator could tab onto — and
+  activate — a destructive control the scrim was covering. Restoration happens at
+  the point of dismissal, not in an effect cleanup, because by cleanup time the
+  panel is unmounted and focus has fallen to `<body>`; following a nav link
+  deliberately does not restore, since the destination decides where focus goes;
+- every primitive that renders verbatim server text (`SourceQuote`, `KeyValue`,
+  `TimelineItem`, `ErrorState`) declares a wrapping rule. Provenance excerpts and
+  audit reasons routinely carry a URL or an opaque identifier with no break
+  opportunity, and such a token paints past its container and grows the document
+  while every element still reports itself in bounds — `/memories/{id}` carried
+  78px of horizontal overflow at 360px before this was found;
 - form controls labelled by wrapping — no generated id to drift or lose, and no
   placeholder standing in for a label;
 - tables as labelled, focusable scroll regions with real `<th scope="col">`, so
@@ -126,6 +151,18 @@ Applies to every surface, enforced by the primitives rather than per page:
 
 Every token pair used for text measures at or above WCAG AA (4.5:1) on its
 surface; the lowest is `fg-muted` on `surface-raised` at 4.85:1.
+
+Verified by driving the built app in a real browser (system Chrome over CDP, no
+browser dependency in the repo) at 360 / 390 / 768 / 1024 / 1440 / 1920 against a
+live API with seeded data: 0px horizontal overflow on every route, a focus ring on
+every tab stop, the skip link first in tab order, 0 console errors and 0 hydration
+mismatches, and every animation and transition clamped under
+`prefers-reduced-motion: reduce`.
+
+One accepted limitation: `/loops` still scrolls its four-column run table
+horizontally at 360-390px. The columns are informational, no control is stranded,
+and the scroll region is labelled and keyboard-reachable, so it is recorded rather
+than reflowed.
 
 ### Real state only
 

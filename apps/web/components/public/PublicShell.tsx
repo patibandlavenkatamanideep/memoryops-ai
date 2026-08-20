@@ -61,7 +61,7 @@ function PublicHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/90 backdrop-blur supports-[backdrop-filter]:bg-canvas/75">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5 sm:px-8">
-        <Link href="/" className="shrink-0 rounded-md">
+        <Link href="/" className="inline-flex min-h-[2.5rem] shrink-0 items-center rounded-md">
           <Wordmark />
         </Link>
 
@@ -73,7 +73,7 @@ function PublicHeader() {
             <a
               key={link.href}
               href={link.href}
-              className="rounded-sm text-sm text-fg-secondary transition-colors hover:text-fg"
+              className="inline-flex min-h-[2rem] items-center rounded-sm text-sm text-fg-secondary transition-colors hover:text-fg"
             >
               {link.label}
             </a>
@@ -115,13 +115,13 @@ function PublicFooter() {
         <nav aria-label="Footer" className="flex flex-col gap-2 text-sm">
           <Link
             href="/chat"
-            className="rounded-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
+            className="inline-flex min-h-[2rem] items-center rounded-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
           >
             Open control plane
           </Link>
           <Link
             href="/architecture"
-            className="rounded-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
+            className="inline-flex min-h-[2rem] items-center rounded-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
           >
             Technical architecture reference
           </Link>

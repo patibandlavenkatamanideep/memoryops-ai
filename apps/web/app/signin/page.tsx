@@ -29,7 +29,10 @@ export default function SignInPage({
   const failed = Boolean(searchParams?.error);
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-16">
+    <main
+      id="main-content"
+      className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-16"
+    >
       <div className="mb-8 space-y-2">
         <span className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-fg">
           <span
@@ -89,6 +92,6 @@ export default function SignInPage({
         Your session determines the tenant and user every request is scoped to. The
         browser never chooses that scope — it is attached server-side on each call.
       </p>
-    </div>
+    </main>
   );
 }
