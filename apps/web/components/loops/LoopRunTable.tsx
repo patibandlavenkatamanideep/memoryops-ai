@@ -12,9 +12,11 @@ import {
   toneForRunStatus,
 } from "@/components/ui";
 
+// Four informational columns and no controls, so 26rem is what the widest row
+// genuinely needs — the region scrolls far less than the registry's default.
 export default function LoopRunTable({ runs }: { runs: LoopRun[] }) {
   return (
-    <DataTable caption="Recent loop runs" className="min-w-0">
+    <DataTable caption="Recent loop runs" className="min-w-0" minWidth="26rem">
       <THead>
         <TH>Loop</TH>
         <TH>Status</TH>

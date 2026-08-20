@@ -34,8 +34,34 @@ export default function AppShell({
   const pathname = usePathname() ?? "/";
   const [navOpen, setNavOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
+  /** Whatever had focus when the drawer opened — almost always the toggle button. */
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
-  const closeNav = useCallback(() => setNavOpen(false), []);
+  /**
+   * Dismiss and hand focus back to whatever opened it.
+   *
+   * Restoring here rather than in an effect cleanup is deliberate: by the time a
+   * cleanup runs the panel is already unmounted and focus has fallen to <body>, so
+   * there is no longer any way to tell whether focus *was* inside the drawer. Doing
+   * it at the point of dismissal keeps the decision unambiguous.
+   */
+  const closeNav = useCallback(() => {
+    setNavOpen(false);
+    const target = restoreFocusRef.current;
+    if (target?.isConnected) {
+      // After the commit that removes the drawer, or the browser drops the focus.
+      requestAnimationFrame(() => target.focus());
+    }
+  }, []);
+
+  /**
+   * Dismiss because the user is navigating away.
+   *
+   * No focus restoration: the destination page decides where focus belongs, and
+   * yanking it back to a hamburger button the user has just navigated away from
+   * would be worse than leaving it at the document start.
+   */
+  const dismissForNavigation = useCallback(() => setNavOpen(false), []);
 
   // Navigating with the drawer open must not leave it covering the page it just
   // loaded. Keyed on the path so it also fires for links inside the content.
@@ -43,21 +69,63 @@ export default function AppShell({
     setNavOpen(false);
   }, [pathname]);
 
-  // Escape closes the drawer — the expected exit from any overlay, and the only one
-  // available to a keyboard user who cannot click the backdrop.
+  /**
+   * Keyboard contract for the open drawer: Escape closes it, and Tab stays inside it.
+   *
+   * The trap is the load-bearing half. The panel already declares
+   * `role="dialog" aria-modal="true"`, which tells assistive tech the background is
+   * inert — but `aria-modal` moves no focus. Without this, tabbing past the last nav
+   * link walked straight into the page underneath, which the scrim has covered: an
+   * operator could focus and activate a Delete button they could not see.
+   */
   useEffect(() => {
     if (!navOpen) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setNavOpen(false);
+
+    function focusable(): HTMLElement[] {
+      const root = drawerRef.current;
+      if (!root) return [];
+      return [
+        ...root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
     }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeNav();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      // Wrap at both ends, and pull focus back in if it is somehow outside already.
+      if (!drawerRef.current?.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [navOpen]);
+  }, [navOpen, closeNav]);
 
-  // Move focus into the drawer when it opens so the next Tab lands on a nav link
-  // rather than continuing through the page behind it.
+  // Seed focus inside the drawer, and remember where to send it back to.
   useEffect(() => {
-    if (navOpen) drawerRef.current?.focus();
+    if (!navOpen) return;
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    drawerRef.current?.focus();
   }, [navOpen]);
 
   // Stop the page behind the overlay from scrolling with it.
@@ -71,12 +139,15 @@ export default function AppShell({
   }, [navOpen]);
 
   if (isChromeless(pathname)) {
+    // A chromeless route supplies its own landmarks. Wrapping `children` in a
+    // <main> here produced two nested <main> elements on `/` — one from this
+    // branch and one from PublicShell — both carrying id="main-content", so the
+    // document had a duplicate id and the skip link pointed at the outer wrapper
+    // rather than the page content.
     return (
       <>
         {banner}
-        <main id="main-content" className="min-h-screen">
-          {children}
-        </main>
+        {children}
       </>
     );
   }
@@ -122,7 +193,7 @@ export default function AppShell({
             >
               <SidebarNav
                 pathname={pathname}
-                onNavigate={closeNav}
+                onNavigate={dismissForNavigation}
                 footer={<ShellFooter identity={identity} />}
               />
             </div>

@@ -19,7 +19,7 @@ export default function MemoryDetailPage() {
         actions={
           <Link
             href="/memories"
-            className="rounded-md text-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
+            className="inline-flex min-h-[2.25rem] items-center rounded-md text-sm text-fg-secondary underline-offset-4 hover:text-fg hover:underline"
           >
             ← Back to memories
           </Link>

@@ -65,7 +65,7 @@ export default function AuditTimeline({
               {e.memory_id ? (
                 <Link
                   href={`/memories/${e.memory_id}`}
-                  className="rounded-sm underline-offset-4 hover:underline"
+                  className="inline-flex min-h-[2rem] items-center rounded-sm underline-offset-4 hover:underline"
                 >
                   <MonoId label="memory" value={e.memory_id} chars={10} />
                 </Link>

@@ -22,11 +22,21 @@ export function DataTable({
   caption,
   children,
   className,
+  minWidth = "40rem",
 }: {
   /** Accessible name for the table and its scroll region. Required, not optional. */
   caption: string;
   children: ReactNode;
   className?: string;
+  /**
+   * Width below which the table starts scrolling horizontally inside its region.
+   *
+   * A single global 40rem was tuned for the eight-column memory registry and made
+   * narrower tables scroll for no reason. Set it to what the widest row genuinely
+   * needs — the less a table scrolls, the less an operator has to discover that the
+   * region scrolls at all.
+   */
+  minWidth?: string;
 }) {
   return (
     <div
@@ -38,7 +48,10 @@ export function DataTable({
         className,
       )}
     >
-      <table className="w-full min-w-[40rem] border-collapse text-left text-sm">
+      <table
+        className="w-full border-collapse text-left text-sm"
+        style={{ minWidth }}
+      >
         <caption className="sr-only">{caption}</caption>
         {children}
       </table>

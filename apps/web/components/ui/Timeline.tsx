@@ -73,7 +73,11 @@ export function TimelineItem({
           ) : null}
         </div>
         {description ? (
-          <p className="text-sm leading-relaxed text-fg-secondary">{description}</p>
+          // Audit reasons and loop event reasons are server-supplied free text and
+          // can carry an unbroken identifier; break rather than push the page.
+          <p className="break-words text-sm leading-relaxed text-fg-secondary">
+            {description}
+          </p>
         ) : null}
         {meta ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{meta}</div>
