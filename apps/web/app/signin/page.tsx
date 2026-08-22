@@ -17,16 +17,19 @@ import { webMode } from "@/lib/identity";
  * presentation choice — the redirect that brought them here is middleware's, and the
  * BFF refuses independently.
  */
-export default function SignInPage({
+export default async function SignInPage({
   searchParams,
 }: {
-  searchParams?: { callbackUrl?: string; error?: string };
+  // Next 16 hands search params as a Promise (the async request APIs from 15).
+  // Awaiting it changes nothing about what `callbackUrl` resolves to.
+  searchParams?: Promise<{ callbackUrl?: string; error?: string }>;
 }) {
   // Nothing to sign into in demo mode.
   if (webMode() !== "authenticated") redirect("/");
 
-  const callbackUrl = searchParams?.callbackUrl ?? "/";
-  const failed = Boolean(searchParams?.error);
+  const resolved = await searchParams;
+  const callbackUrl = resolved?.callbackUrl ?? "/";
+  const failed = Boolean(resolved?.error);
 
   return (
     <main

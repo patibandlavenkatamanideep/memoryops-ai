@@ -39,8 +39,16 @@ const fetchMock = vi.fn<(...args: FetchArgs) => Promise<Response>>(
 );
 vi.stubGlobal("fetch", fetchMock);
 
+/**
+ * The framework's calling convention, not the thing under test.
+ *
+ * Next 16 hands route-handler params as a Promise, so this helper mirrors that.
+ * Only the shape of the framework's argument changed here — every assertion
+ * below is untouched, and each one still proves the same thing: a denied request
+ * returns 403 without `fetch` ever being called.
+ */
 function ctx(path: string[]) {
-  return { params: { path } };
+  return { params: Promise.resolve({ path }) };
 }
 
 function req(url: string, init?: RequestInit) {
