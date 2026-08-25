@@ -163,20 +163,25 @@ async function proxy(request: Request, path: string[]): Promise<Response> {
   });
 }
 
-type Ctx = { params: { path: string[] } };
+/**
+ * Next 16 hands route-handler params as a Promise (the async request APIs
+ * introduced in 15). Awaiting it is the whole change — the resolved value, and
+ * every authorization decision made from it, is identical to before.
+ */
+type Ctx = { params: Promise<{ path: string[] }> };
 
 export async function GET(request: Request, { params }: Ctx) {
-  return proxy(request, params.path);
+  return proxy(request, (await params).path);
 }
 export async function POST(request: Request, { params }: Ctx) {
-  return proxy(request, params.path);
+  return proxy(request, (await params).path);
 }
 export async function PATCH(request: Request, { params }: Ctx) {
-  return proxy(request, params.path);
+  return proxy(request, (await params).path);
 }
 export async function PUT(request: Request, { params }: Ctx) {
-  return proxy(request, params.path);
+  return proxy(request, (await params).path);
 }
 export async function DELETE(request: Request, { params }: Ctx) {
-  return proxy(request, params.path);
+  return proxy(request, (await params).path);
 }
