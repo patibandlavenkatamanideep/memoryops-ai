@@ -129,20 +129,91 @@ record.
 
 ## Roles
 
-Least privilege first: `viewer` → `developer` → `auditor` → `memory_admin` → `owner`.
+**Web roles are UI personas. API roles are authorization bundles.** They are
+different vocabularies, and the translation between them is explicit,
+single-sourced in `contracts/auth-role-map.json`, and tested from both sides.
 
-| API path | GET | Write |
-| --- | --- | --- |
-| `/api/memories` | `viewer` | `memory_admin` |
-| `/api/chat` | — | `developer` (chat writes memory) |
-| `/api/audit`, `/api/evidence` | `auditor` | `auditor` |
-| `/api/retention` | `auditor` | `owner` |
-| `/api/evals` | `owner` | `owner` |
-| anything else | `viewer` | `viewer` |
+| Web persona | API role |
+| --- | --- |
+| `viewer` | `memory_viewer` |
+| `developer` | `memory_user` |
+| `auditor` | `auditor` |
+| `memory_admin` | `memory_admin` |
+| `owner` | `tenant_admin` |
 
-Unknown paths default to the **least** privileged role, so a newly added endpoint
-is readable rather than accidentally open to mutation. This is defence in depth on
-top of the API's governance — it only ever *removes* access.
+Two API roles exist that no web persona maps to. `service_worker` is a machine
+identity for the worker fleet and is never assignable to a human at all.
+`platform_operator` *is* assignable to a person — it runs the deployment — but is
+**never web-assignable**: no customer's UI session may become deployment
+authority. Both are listed in `NEVER_WEB_ASSIGNABLE`, and `apiRoleFor()` returns
+`null` for either.
+
+### Personas are a list, not a ladder
+
+There is no ordinal ranking. Authority is **capability-based**: each API role
+holds a set of permissions, and those sets are not nested. Two concrete cases from
+the generated contract disprove any ordering:
+
+- `memory_admin` holds no `evidence:read`; `auditor` does. Managing memory does not
+  confer access to the evidence of who managed it.
+- `tenant_admin` (the `owner` persona) holds no `ops:*` permission of any kind;
+  only `platform_operator` does. The highest tenant role reaches no deployment
+  surface.
+
+Do not reintroduce prose implying that `memory_admin` outranks `auditor`, or that
+`owner` outranks everything. A ladder cannot express orthogonal capabilities, and
+the previous `hasAtLeast()` model let both of those mistakes through.
+
+### How a request is decided
+
+```
+web persona
+  → explicit persona → API-role mapping        (contracts/auth-role-map.json)
+  → generated authorization contract           (lib/authzCapabilities.generated.ts)
+  → route + HTTP method + action-shape check   (lib/capabilities.ts, canAttempt)
+  → BFF proxy decision                         (app/api/memoryops/[...path])
+  → API authoritative, record- and state-aware authorization
+```
+
+`lib/authzCapabilities.generated.ts` is generated from the API's own
+`authz_spec` and `roles` modules, so the web cannot drift from what the server
+enforces. A CI gate (`python scripts/generate_web_capabilities.py --check`)
+fails if it does.
+
+`canAttempt()` answers exactly one question:
+
+> May this persona attempt this request shape?
+
+It does **not** answer:
+
+> Is this operation authorized on this actual record?
+
+The browser does not know a memory's stored owner, whether a request resolves to
+self or tenant scope, the record's current lifecycle status, or anything about
+legal hold, consent or revisions. `status: "active"` is genuinely ambiguous from
+the client — it is *approve* from `pending` and *restore* from `archived` — so
+both readings are permitted to be attempted and the API resolves the real
+transition. **The API remains authoritative.** The BFF check only ever *removes*
+access; it never grants any.
+
+### Fail closed
+
+Every unrecognised shape is denied, not defaulted:
+
+| Situation | Result |
+| --- | --- |
+| Unknown or non-web-assignable persona | DENY |
+| Route with no authorization contract | DENY |
+| Unknown HTTP method for a known route | DENY |
+| Unrecognised field in a `PATCH` body | DENY |
+| Unrecognised lifecycle transition | DENY |
+| Body that requests no change at all | DENY |
+| Route classified but naming no permission | DENY |
+
+A newly added API endpoint is therefore **unreachable through the BFF until it is
+classified** — it is not readable by default. The earlier model fell through to the
+least-privileged role, which meant an unclassified endpoint was readable by
+everyone; that is the specific bug this replaced.
 
 ## Identity provider
 
@@ -179,6 +250,52 @@ MEMORYOPS_API_TOKEN_TTL_SECONDS=120
 `AUTH_SECRET` is a **runtime** signing key. The build does not need it, and no
 placeholder is baked into the image.
 
+## Runtime dependencies
+
+The web runtime is **Next.js 16.3.1** on React 18.3.1, with `next-auth`
+5.0.0-beta.32. The production dependency tree audits clean.
+
+### Why 16.3.1 specifically
+
+This is worth stating precisely, because the short version is wrong.
+
+The known **Next.js advisories themselves cleared earlier** — every one of them is
+fixed by 15.5.21. What forced the move to 16 was a transitive dependency: `next`
+pins `postcss` *exactly*, and the tested 15.x releases (15.5.21, 15.5.22, 15.5.23)
+and 16.0.0 all still bundle the vulnerable `postcss@8.4.31`. Because the pin is
+exact, no patched postcss could be hoisted underneath them.
+
+`next@16.3.1` is the first release that ships the patched `postcss@8.5.23`. On
+16.3.1 the nested `node_modules/next/node_modules/postcss` resolution disappears
+entirely and the tree dedupes to the patched top-level copy.
+
+So: **16.3.1 was selected to obtain a clean production dependency tree, not
+because the Next.js advisories required Next 16.** Do not restate it the short way.
+
+### Production tree vs development tree
+
+These are different questions and should not be collapsed:
+
+| Scope | Result |
+| --- | --- |
+| Production dependency tree (`npm audit --omit=dev`) | **clean** |
+| Full development tree (`npm audit`) | findings remain in the ESLint/glob chain |
+| Packages present in the production image | dev tooling excluded by the `prod-deps` stage |
+
+See [Known limitations](#known-limitations) for why the development-tooling chain
+is deferred rather than fixed.
+
+### The build compiler is pinned
+
+Next 16 defaults to Turbopack. The `build` and `dev` scripts pass `--webpack`
+explicitly, so the compiler did not change when the framework did. Builds report
+`▲ Next.js 16.3.1 (webpack)`. Adopting Turbopack is a separate, deliberate
+decision rather than a side effect of a dependency upgrade.
+
+`next lint` was removed in Next 16, so linting invokes ESLint directly
+(`eslint . --ext .ts,.tsx,.js,.jsx`) against the existing ESLint 8 configuration.
+That is a command-compatibility change only — no ESLint upgrade and no flat config.
+
 ## Known limitations
 
 - `next-auth@5.0.0-beta.32` is a **beta** release. It is the App-Router-native
@@ -193,5 +310,12 @@ placeholder is baked into the image.
 - Organisation/project/service-account management, and first-class consent /
   legal-hold / retention / evidence pages, are not built yet — the API and SDK
   expose them but the UI does not.
-- `next@14.2.35` currently carries open advisories (see `npm audit`); fixing them
-  requires a Next 16 upgrade, tracked separately from this change.
+- **Development-tooling advisories remain in the lockfile.** The production
+  dependency tree audits clean, but `eslint-config-next` →
+  `@next/eslint-plugin-next` → `glob` still carries findings. The vulnerable code
+  is the glob **CLI** (`-c/--cmd`), which lint tooling never invokes, and the
+  production image excludes these packages entirely via the `prod-deps` stage —
+  but **not shipped is not the same as remediated**. Remediating it requires
+  `eslint-config-next@16.3.1`, whose ESLint peer is `>=9.0.0`, i.e. an ESLint 9
+  flat-config migration. That is deliberately deferred and tracked separately.
+  Do not describe the repository's whole dependency graph as clean.
