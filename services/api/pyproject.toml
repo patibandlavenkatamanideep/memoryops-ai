@@ -94,7 +94,7 @@ dev = [
   "httpx==0.28.1",
   "ruff==0.8.4",
   # Records real LLM-provider responses once, replays them in CI without keys (P1.1).
-  "pytest-recording==0.13.2",
+  "pytest-recording==0.13.4",
 ]
 
 # ── External-baseline benchmark only (protocol §3, system S4) ────────────────
