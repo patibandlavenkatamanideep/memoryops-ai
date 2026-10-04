@@ -8,10 +8,10 @@
 # Hand-edits are reverted by the next regeneration and fail the CI drift gate.
 # ─────────────────────────────────────────────────────────────────────────
 # [project].dependencies
-fastapi==0.141.1
-starlette==1.4.1
-uvicorn[standard]==0.52.1
-pydantic==2.13.4
+fastapi==0.142.2
+starlette==1.7.0
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
 pydantic-settings==2.15.0
 tenacity==9.1.4
 python-dotenv==1.2.2
